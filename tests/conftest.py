@@ -1,0 +1,76 @@
+import pytest
+import pytest_asyncio
+from typing import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+
+# ── Database fixtures ─────────────────────────────────────────────────────────
+
+@pytest_asyncio.fixture
+async def async_engine():
+    """In-memory SQLite DB with full schema."""
+    from src.core.models import Base  # deferred: src not required at import time
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
+    """AsyncSession scoped to each test."""
+    factory = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+
+
+# ── Mocked LLM clients ────────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_anthropic_client() -> AsyncMock:
+    """AsyncMock of Anthropic client returning valid JSON extraction."""
+    mock = AsyncMock()
+    mock.messages.create.return_value = MagicMock(
+        content=[MagicMock(text='{"type": "context", "content": "test", "entities": [], "decisions": [], "tasks": []}')]
+    )
+    return mock
+
+
+@pytest.fixture
+def mock_voyage_client() -> MagicMock:
+    """MagicMock of Voyage AI client returning 1024-dim vector."""
+    mock = MagicMock()
+    mock.embed.return_value = MagicMock(embeddings=[[0.1] * 1024])
+    return mock
+
+
+# ── FastAPI test client ────────────────────────────────────────────────────────
+
+@pytest_asyncio.fixture
+async def test_client(async_session: AsyncSession):
+    """Async test client with DB dependency overridden to use test session."""
+    from httpx import AsyncClient, ASGITransport
+    from src.api.main import app          # deferred
+    from src.core.database import get_db  # deferred
+
+    async def override_get_db():
+        yield async_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+    app.dependency_overrides.clear()
+
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def api_key_headers() -> dict:
+    """Standard auth headers for test requests."""
+    return {"X-API-Key": "test-secret-key"}

@@ -17,15 +17,15 @@
 
 ---
 
-### Checkpoint 0: Test Infrastructure (FIRST — before any source code)
-- [ ] 0.1: Create `tests/__init__.py`
-- [ ] 0.2: Create `tests/conftest.py` — complete test infrastructure
+### Checkpoint 0: Test Infrastructure (FIRST — before any source code) ✅
+- [x] 0.1: Create `tests/__init__.py`
+- [x] 0.2: Create `tests/conftest.py` — complete test infrastructure
   - Async SQLite test DB (`create_async_engine`)
   - Fixtures: `async_session`, `mock_anthropic_client`, `mock_voyage_client`
   - FastAPI test client fixture + override_get_db dependency
   - API key headers fixture: `{"X-API-Key": "test-secret-key"}`
 
-**Verification**: `python -c "import pytest; from tests.conftest import *"` — imports cleanly
+**Verification**: `python -c "import pytest; from tests.conftest import *"` — imports cleanly ✅
 
 ---
 
