@@ -1,233 +1,111 @@
 # Claude Code Collaboration Guidelines
 
-**Project**: Open Brain
-**Date**: 2026-03-13
-**Owner**: Shu
-
----
-
-## Overview
-
-This document establishes how Claude Code agents should approach work on the Open Brain project. It covers decision-making, code style, architectural principles, and communication norms.
+**Project**: Open Brain | **Owner**: Shu | **Last Updated**: 2026-03-13
 
 ---
 
 ## Decision Authority & Escalation
 
-### Decisions Claude Can Make (no approval needed)
-- Code style, naming, formatting (within project conventions)
-- Module organization and file structure (within planned architecture)
+**Claude can decide alone** (no approval needed):
+- Code style, naming, formatting, comments
+- Module organization and file structure
 - Test implementation details and assertions
-- Error messages and logging statements
-- Dependency versions (within reasonable bounds)
-- Documentation and comments
-- Micro-optimizations that don't change logic
+- Error messages, logging statements, documentation
+- Micro-optimizations (no logic change)
+- Dependency versions (within reason)
 
-### Decisions Requiring Escalation to User
-- Any change to the database schema (add/remove/rename tables or columns)
-- Major architectural changes (e.g., swap from PostgreSQL queue to Redis)
-- New external dependencies (LLM providers, cloud services, databases)
-- Timeline changes or scope cuts
-- Changes to API contract (request/response shapes)
-- Security decisions (auth methods, encryption, key management)
-- Phase re-ordering or skipping
-
-**How to escalate**:
-- Stop work if the issue is blocking
-- Summarize the problem and 2-3 options with trade-offs
-- Ask user via AskUserQuestion or direct text (depending on complexity)
-- Wait for explicit approval before proceeding
+**Escalate to user** before proceeding:
+- **Schema changes**: Add/remove/rename tables or columns
+- **Architecture shifts**: Technology swaps (e.g., PostgreSQL → Redis queue)
+- **External dependencies**: New LLM providers, cloud services, databases
+- **Timeline/scope**: Deadline changes or phase cuts
+- **API contract**: Request/response shape changes
+- **Security**: Auth methods, encryption, key management, TLS setup
+- **Phase re-ordering or skipping**
 
 ---
 
 ## Code Style & Conventions
 
 ### Python
-- **Version**: 3.12+
-- **Format**: Black (line length 100 characters)
-- **Lint**: ruff (all rules enabled, no exclusions)
-- **Type hints**: Mandatory on all functions and methods
-- **Async**: All I/O operations must be async (no sync blocking)
-- **Logging**: structlog only, never print() or logging.basicConfig()
+- **Version**: 3.12+ | **Format**: Black (100 char) | **Lint**: ruff (all enabled)
+- **Type hints**: Mandatory on all functions/methods
+- **Async**: All I/O must be async; no sync blocking in event loop
+- **Logging**: structlog only (never print() or logging.basicConfig())
 
 ### FastAPI Routes
-- All routes prefixed `/v1/`
-- Path parameters and query params use lowercase_snake_case
+- Routes prefixed `/v1/` | Query/path params use `lowercase_snake_case`
 - Request/response bodies are Pydantic models
 - All 4xx/5xx responses documented in docstring
-- Auth: X-API-Key header checked via middleware (not in route)
+- Auth: X-API-Key header checked via middleware (not per-route)
 
 ### SQLAlchemy ORM
-- All PKs are UUID(as_uuid=True)
-- Use `Column(..., nullable=False)` to enforce NOT NULL
+- All PKs: `UUID(as_uuid=True)` | All FKs must match type
+- Use `nullable=False` to enforce NOT NULL
 - Use `ForeignKey(...)` with cascade options
-- Use relationships for navigation, not raw joins (when possible)
-- GENERATED columns defined in ORM but enforced at DDL in Alembic
+- Use relationships for navigation, not raw joins
+- GENERATED columns: defined in ORM, enforced at DDL in Alembic
 
 ### Testing
-- Use pytest + pytest-asyncio
-- Mock all external APIs (Anthropic, Voyage) — never hit production in tests
+- Framework: pytest + pytest-asyncio
+- Mock all external APIs (Anthropic, Voyage) — **never hit production in tests**
 - Fixtures in conftest.py, not inline
-- Test names follow `test_<function>_<scenario>`
-- Assertions use plain `assert` (not custom matchers)
+- Test names: `test_<function>_<scenario>`
+- Use plain `assert`, not custom matchers
 
 ### Naming Conventions
-- Database tables: `snake_case` (e.g., `memory_items`)
-- Python modules: `snake_case` (e.g., `entity_resolver.py`)
-- Python classes: `PascalCase` (e.g., `RefinementQueue`)
-- Python constants: `UPPER_SNAKE_CASE` (e.g., `WEIGHT_VECTOR = 0.50`)
+- Tables: `snake_case` | Modules: `snake_case` | Classes: `PascalCase` | Constants: `UPPER_SNAKE_CASE`
 - Pydantic models: `PascalCase` + suffix (e.g., `MemoryItemResponse`, `MemoryItemCreate`)
 
 ### Error Handling
-- Custom exception classes inherit from Exception (not BaseException)
-- Named exceptions for expected failures (ExtractionFailed, EmbeddingFailed, ValidationFailed)
-- Generic try/except only at task boundaries (worker process, HTTP route)
-- All exceptions logged with structlog before re-raising
+- Custom exceptions inherit from `Exception` (not `BaseException`)
+- Use named exceptions for expected failures (e.g., `ExtractionFailed`, `EmbeddingFailed`)
+- Generic try/except only at boundaries (worker, HTTP route)
+- Log all exceptions with structlog before re-raising
 
 ---
 
 ## Architectural Principles
 
-### Immutability
-- `raw_memory` is append-only, never deleted or updated
-- Corrections create new `memory_items` with `supersedes_memory_id` pointing to original
-- Original is marked `is_superseded = true` (for audit, not for hiding)
-- No soft deletes via status flags (use explicit is_superseded)
+**Immutability**: `raw_memory` is append-only. Corrections create new `memory_items` with `supersedes_memory_id`, mark original `is_superseded=true`. No soft deletes via flags.
 
-### Async-First
-- All database operations use asyncpg + SQLAlchemy async
-- All external API calls (Anthropic, Voyage) are async
-- No sync code except:
-  - External library calls wrapped in `asyncio.to_thread()` (e.g., voyageai.Client)
-  - Sync test fixtures (use `@pytest.fixture` not `@pytest_asyncio.fixture`)
-  - CLI entry point (sync, calls async code via asyncio.run())
+**Async-First**: All database (asyncpg + SQLAlchemy) and external API calls (Anthropic, Voyage) are async. Sync only for: external libs wrapped in `asyncio.to_thread()`, sync test fixtures, CLI entry point (via `asyncio.run()`).
 
-### Stateless Services
-- No in-process state shared across requests
-- No module-level mutable state (except config singleton + logging)
-- Queue-based processing: API enqueues, worker processes (decoupled)
+**Stateless Services**: No in-process state shared across requests, no module-level mutable state (except config singleton + logging). Queue-based: API enqueues, worker processes (decoupled).
 
-### Single Source of Truth
-- Settings come from environment only (no config files)
-- Ranking formula in one place (ranking.py constants)
-- Prompts in one place (llm/prompts.py)
-- Models in one place (core/models.py) — routes import from here, never duplicate definitions
+**Single Source of Truth**: Settings from environment only (no config files). Ranking formula, prompts, models each in one file. Routes import models, never duplicate definitions.
 
-### Security by Default
-- API keys in SecretStr (never log raw values)
-- `.env` excluded from git, `.dockerignore` excludes .env from image
-- User input wrapped in `<user_input>` delimiters in prompts (injection defense)
-- X-API-Key auth on all `/v1/*` routes (middleware, not per-route)
-- Bound to localhost:8000 until Caddy reverse proxy added
+**Security by Default**: API keys in `SecretStr` (never log raw). `.env` in .gitignore, `.dockerignore` excludes .env. User input wrapped in `<user_input>...</user_input>` delimiters in all prompts. X-API-Key auth on `/v1/*` routes (middleware). Bound to localhost:8000 until Caddy reverse proxy (Phase 4).
 
 ---
 
 ## Task Execution Workflow
 
-### Before Writing Code
-1. Read the relevant section of IMPLEMENTATION_PLAN.md
-2. Check PROGRESS.md for checkpoint dependencies
-3. If checkpoint has prerequisites, verify they exist and pass
-4. Summarize what needs to be done in a brief comment
+**Before writing code**: Read relevant IMPLEMENTATION_PLAN.md section. Check PROGRESS.md dependencies. Verify prerequisites exist and pass.
 
-### While Writing Code
-1. Follow this file's style and naming conventions
-2. Add type hints to all functions and methods
-3. Add docstrings to modules, classes, and public functions
-4. Log important decisions and transitions (structlog)
-5. Test-driven when possible (write test first, then code)
-6. Run `ruff check`, `black --check`, `mypy` before committing
+**While writing code**: Follow style conventions. Add type hints + docstrings. Log decisions with structlog. Test-driven when possible. Run `ruff check`, `black --check`, `mypy` before committing.
 
-### After Completing a Checkpoint
-1. Update PROGRESS.md: mark checkpoint tasks complete with [ x ]
-2. Run all tests for that checkpoint
-3. Verify gate conditions in Verification section
-4. Commit to git with message: `feat(phase-1): checkpoint-name — description`
-5. Report back with checkpoint summary and any blockers
+**After checkpoint**: Update PROGRESS.md (mark complete). Run tests. Verify gates. Commit: `feat(phase-X): checkpoint-name — description`. Report back with summary + blockers.
 
-### When Blocked
-- Do NOT try 3+ times to fix the same issue
-- Stop, document the blocker clearly
-- Ask user via AskUserQuestion (not in code)
-- Propose 2-3 workarounds if possible
-- Wait for guidance before retrying
-
----
-
-## Communication Norms
-
-### With User
-- **Daily**: Brief summary of completed checkpoints + blockers (if any)
-- **On decisions**: Escalate early, don't assume
-- **On changes**: If a completed checkpoint needs rework, ask first
-- **Tone**: Direct, terse, no filler ("Done X, next is Y" not "I have successfully completed...")
-
-### With Other Agents (if using team)
-- Use SendMessage tool for async coordination
-- Share critical files (models, migration, worker) — ensure alignment before parallel work
-- Test database-touching code together before parallel execution
-- Report progress via SendMessage at major milestones
-
-### In Code Comments
-- **Why** not what (code is self-documenting)
-- Flag architectural constraints (e.g., "GENERATED column, do not UPDATE directly")
-- Note non-obvious dependencies (e.g., "GIN index query must match expression exactly")
-- Leave FIXMEs only for post-MVP improvements, not blockers
+**When blocked** (same issue 3+ times): Stop. Document blocker. Ask user via AskUserQuestion. Propose 2–3 workarounds. Wait for guidance before retry.
 
 ---
 
 ## Git Workflow
 
-### Commits
-- One feature per commit
-- Message format: `<type>(<scope>): <description>`
-  - type: feat, fix, refactor, test, docs, chore
-  - scope: phase-1, phase-2, core, pipeline, api, retrieval
-  - description: short, imperative ("add worker poll loop" not "added")
-- Example: `feat(phase-1): add worker polling with stale lock reclaim`
+**Commit format**: `<type>(<scope>): <description>`
+- **type**: feat, fix, refactor, test, docs, chore
+- **scope**: phase-1, phase-2, core, pipeline, api, retrieval
+- **description**: short, imperative ("add X" not "added X")
+- **Example**: `feat(phase-1): add worker polling with stale lock reclaim`
 
-### Branches
-- Start feature work on `main`
-- Create feature branch if needed: `feature/phase-1-scaffold`
-- Never force push (--force, --force-with-lease forbidden)
-- Delete branches after merge
+**Branches**: Start on `main`. Create feature branch if needed. Never force push. Delete after merge.
 
-### Review
-- All code reviewed before merge (even if solo)
-- Self-review checklist:
-  - [ ] Imports are clean (no unused, no circular)
-  - [ ] All functions have type hints and docstrings
-  - [ ] Tests exist and pass
-  - [ ] No hardcoded secrets or PII
-  - [ ] Error messages are actionable
-  - [ ] Logging is structured (structlog, not print)
+**Code review**: All code reviewed before merge (solo review OK). Ensure: clean imports, type hints/docstrings, tests pass, no secrets/PII, actionable errors, structlog only.
 
 ---
 
-## Testing Requirements
-
-### Unit Tests (required)
-- All pure functions (ranking, normalization, validation)
-- All ORM models (constraints, relationships)
-- All Pydantic schemas (validation rules)
-
-### Integration Tests (required)
-- Pipeline stages in sequence (normalize → extract → validate → embed → store)
-- Worker polling + job processing
-- API routes (happy path + error cases)
-- Search ranking (verify score formula)
-
-### End-to-End Tests (Phase 1 only: minimal, Phase 4: comprehensive)
-- Ingest → refine → search → context builder
-- Run with real (mocked) API responses
-
-### Coverage Target
-- Phase 1: 70%+ overall, 95%+ on critical paths (worker, search)
-- Phase 2+: 80%+ overall
-
----
-
-## Critical Files (do NOT edit without care)
+## Critical Files
 
 | File | Why | Approval Needed? |
 |---|---|---|
@@ -267,60 +145,164 @@ This document establishes how Claude Code agents should approach work on the Ope
 
 ---
 
-## Success Criteria for Each Phase
+## Living Document Rule
 
-### Phase 1
-- All 8 verification gates pass
-- 70%+ test coverage
-- Code passes ruff + black + mypy
-- API responds to requests end-to-end
-- Worker successfully processes queue items
+**Update CLAUDE.md during implementation when you**:
+- Discover a new pitfall or gotcha
+- Make an architectural decision not covered here
+- Find a section that's stale or wrong
 
-### Phase 2
-- All Phase 1 gates still pass
-- CLI tool works (ob add, ob search, ob tasks)
-- Context builder formats output correctly
-- Entity resolution works (fuzzy match, auto-merge)
-- 80%+ test coverage
-
-### Phase 3
-- Dynamic importance updates daily
-- Weekly synthesis runs and stores reports
-- 85%+ test coverage
-- Observability logging is structured and queryable
-
-### Phase 4
-- Docker Compose production config works
-- VPS deployment successful
-- Caddy reverse proxy handles TLS
-- Backups and restore verification automated
-- API docs auto-generated and complete
+Add a new subsection under Common Pitfalls, or edit existing sections. This file grows as we learn, rather than trying to front-load everything.
 
 ---
 
-## Escalation Contacts
+## Continuous Learning Rule
 
-**For**: Architecture, scope, timeline, team decisions
-**Contact**: User (Shu)
-**Method**: Stop work, AskUserQuestion or direct message
+**At the end of every session**, update `/home/shu/.claude/projects/-home-shu-projects-open-brain/memory/learning.md`:
 
-**For**: Code review, best practices
-**Contact**: User or Lead Architect (if team)
-**Method**: SendMessage (if team) or ask in response
+1. **Identify**: Review features/tools touched (pgvector, OpenAI API, React hooks, etc.)
+2. **Log**: Add new concepts implemented but not deeply understood to "Current Session Topics"
+3. **Clean**: Move topics you've mastered to "Completed" section
+4. **Context**: Keep topics concise — goal is a "lookup list" for independent study
+
+This maintains a personal knowledge graph of what you've learned and what still needs deeper study.
 
 ---
 
 ## Resources
 
-- Implementation plan: `/home/shu/projects/open-brain/IMPLEMENTATION_PLAN.md`
-- Progress tracking: `/home/shu/projects/open-brain/PROGRESS.md`
-- Architectural review: `/home/shu/.claude/plans/atomic-puzzling-zephyr.md`
-- Original spec: `open-brain-implementation-plan.docx` (archived, reference only)
+- **Architecture**: `/home/shu/projects/open-brain/ARCHITECTURE.md` (design decisions, system overview)
+- **Implementation plan**: `/home/shu/projects/open-brain/IMPLEMENTATION_PLAN.md` (tasks, phases, file structure)
+- **Progress tracking**: `/home/shu/projects/open-brain/PROGRESS.md` (checkpoint tracking, gates)
+- **Arch review**: `/home/shu/.claude/plans/atomic-puzzling-zephyr.md`
 
 ---
 
-## Version History
+## Module Ownership
 
-| Date | Author | Change |
+Quick reference: which module owns which task.
+
+| Task | Module | Key Files |
 |---|---|---|
-| 2026-03-13 | Planning | Initial version, pre-Phase 1 |
+| Add API endpoint | `src/api/` | `routes/memory.py`, `routes/search.py`, `middleware/auth.py` |
+| Memory processing / pipeline | `src/pipeline/` | `worker.py`, `extractor.py`, `entity_resolver.py` |
+| Change ranking / hybrid search | `src/retrieval/` | `search.py`, `ranking.py`, `context_builder.py` |
+| Update prompts / LLM clients | `src/llm/` | `prompts.py`, `client.py` |
+| Database schema | `src/core/` + `alembic/` | `models.py`, `database.py`, `versions/0001_initial_schema.py` |
+| Shared config / settings | `src/core/` | `config.py` |
+| Intelligence jobs (daily/weekly) | `src/jobs/` | `importance.py`, `synthesis.py` |
+| CLI commands | `cli/` | `ob.py` |
+| Tests | `tests/` | `conftest.py`, `test_*.py` |
+
+---
+
+## Repository Map Governance
+
+Ensures architecture remains coherent as the codebase grows.
+
+### Mandatory Pre-Work
+
+Before implementing any task Claude must:
+
+1. Read the Module Ownership table above
+2. Identify the module responsible for the task
+3. Verify the change belongs in that module
+
+Claude must **never create new folders or modules** without first checking the table.
+
+---
+
+### When Module Ownership Must Be Updated
+
+If a change modifies any of the following:
+
+- folder structure
+- module responsibilities
+- architectural boundaries
+- new services (worker/API/CLI)
+- new core components or stack decisions
+
+Claude must update the Module Ownership table above.
+
+Example triggers:
+
+```
+new pipeline stage
+new retrieval module
+new database layer
+new CLI subsystem
+```
+
+Minor internal refactors do **not** require updates.
+
+---
+
+### Agent Swarm Rule
+
+If a change affects repository architecture, Claude must use an **Agent Swarm review process**.
+
+Agents involved:
+
+**Architect Agent**
+- verifies architecture consistency
+- ensures boundaries are preserved
+
+**Implementation Agent**
+- implements code changes
+
+**Documentation Agent**
+- updates Module Ownership table in CLAUDE.md
+- updates ARCHITECTURE.md
+
+Workflow:
+
+```
+Architect Agent
+      ↓
+Implementation Agent
+      ↓
+Documentation Agent
+```
+
+All three steps must complete before the task is considered finished.
+
+---
+
+### Swarm Conflict Resolution
+
+If agents disagree about structure:
+
+Priority order:
+
+```
+SPEC.md > ARCHITECTURE.md > CLAUDE.md > IMPLEMENTATION_PLAN.md
+```
+
+If ambiguity remains, Claude must escalate to the user.
+
+---
+
+### Repository Integrity Rule
+
+Claude must not:
+
+- create undocumented modules
+- introduce parallel architecture
+- duplicate responsibilities across folders
+
+All new structural components must be reflected in the Module Ownership table and ARCHITECTURE.md.
+
+---
+
+### Validation Step
+
+Before completing any structural change Claude must verify:
+
+```
+1. Code compiles
+2. Tests pass
+3. Module Ownership table in CLAUDE.md reflects the new structure
+4. ARCHITECTURE.md reflects design changes
+```
+
+Failure to update the documentation is considered an **incomplete task**.
