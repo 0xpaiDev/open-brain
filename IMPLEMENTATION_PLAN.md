@@ -26,10 +26,10 @@ This implementation plan incorporates:
 |---|---|---|
 | Language | Python 3.12 | Async, type-safe, FastAPI ecosystem |
 | Framework | FastAPI | Async HTTP, auto-docs, dependency injection |
-| Database | PostgreSQL 16 + pgvector + pg_trgm | Vector + relational + fuzzy matching in one system |
+| Database | Supabase (managed PostgreSQL 15/16) + pgvector + pg_trgm | Vector + relational + fuzzy matching; pgvector/pg_trgm pre-installed; SSL mandatory; free tier covers MVP |
 | LLM (extraction) | Claude Haiku (claude-haiku-4-5) | Cost-effective, strong JSON output, Anthropic credits |
 | Embeddings | Voyage AI voyage-3 (1024 dims) | Single vendor, Anthropic-integrated, free tier 200M tokens/mo |
-| Queue | PostgreSQL (SELECT FOR UPDATE SKIP LOCKED) | No external dependencies at MVP scale |
+| Queue | PostgreSQL (SELECT FOR UPDATE SKIP LOCKED) | No external dependencies at MVP scale. **Use direct connection (port 5432), not PgBouncer pooler** |
 | CLI | typer + requests | Simple, reuses API client, no new deps |
 | Settings | pydantic-settings | Env-based config with validation, SecretStr for keys |
 | Logging | structlog | Structured, machine-parseable logs |

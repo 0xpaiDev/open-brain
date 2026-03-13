@@ -9,8 +9,8 @@ class Settings(BaseSettings):
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
-    # Database
-    sqlalchemy_url: str = "postgresql+asyncpg://openbrain:openbrain-dev-secret@localhost:5432/openbrain"
+    # Database (Supabase direct connection, port 5432)
+    sqlalchemy_url: str = "postgresql+asyncpg://postgres:changeme@localhost:5432/postgres"
 
     # API
     api_key: str = "test-secret-key"

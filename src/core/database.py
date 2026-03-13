@@ -21,8 +21,12 @@ async def init_db() -> None:
         settings.sqlalchemy_url,
         echo=settings.log_level == "debug",
         pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=5,
+        pool_size=3,
+        max_overflow=2,
+        connect_args={
+            "ssl": "require",  # Supabase requires SSL
+            "statement_cache_size": 0,  # Required for PgBouncer compatibility
+        },
     )
 
     AsyncSessionLocal = sessionmaker(

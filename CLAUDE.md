@@ -140,6 +140,9 @@
 ❌ **Don't**: Mock LLM calls in some tests, hit real API in others
 ✅ **Do**: Always mock, never hit production in tests
 
+❌ **Don't**: Use Supabase PgBouncer pooler URL (port 6543) for worker — `SELECT FOR UPDATE SKIP LOCKED` breaks
+✅ **Do**: Use Supabase direct connection (port 5432) for all services. PgBouncer optimization deferred to Phase 4
+
 ❌ **Don't**: Create migration with `alembic revision --autogenerate` and trust it
 ✅ **Do**: Autogenerate, then manually verify HNSW/GIN/composite PKs/UUIDs
 

@@ -86,10 +86,10 @@ Core principles:
 |---|---|---|
 | Language | Python 3.12 | Async, type-safe, FastAPI ecosystem |
 | Framework | FastAPI | Async HTTP, auto-docs, dependency injection |
-| Database | PostgreSQL 16 + pgvector + pg_trgm | Vector + relational + fuzzy matching in one system |
+| Database | Supabase (managed PostgreSQL 15/16) + pgvector + pg_trgm | Vector + relational + fuzzy matching; pgvector/pg_trgm pre-installed; SSL mandatory; free tier with 200M token embeddings |
 | LLM (extraction) | Claude Haiku (claude-haiku-4-5) | Cost-effective, strong JSON output, on Anthropic credits |
 | Embeddings | Voyage AI voyage-3 (1024 dims) | Single vendor, Anthropic-integrated, free tier 200M tokens/mo |
-| Queue | PostgreSQL SELECT FOR UPDATE SKIP LOCKED | No external dependencies at MVP scale; proven at scale |
+| Queue | PostgreSQL SELECT FOR UPDATE SKIP LOCKED | No external dependencies at MVP scale; proven at scale. **Must use direct connection (port 5432), not PgBouncer pooler** |
 | CLI | typer | Simple, reuses API client, minimal new deps |
 | Settings | pydantic-settings | Env-based config with validation, SecretStr for keys |
 | Logging | structlog | Structured, machine-parseable, no logging.basicConfig() |
@@ -256,9 +256,13 @@ When B is created, set A.is_superseded=true. Keeps full audit trail.
 
 ## Key Design Decisions & Rationale
 
+### Supabase Managed PostgreSQL
+**Decision**: Use Supabase (managed PostgreSQL 15/16) with direct connection (port 5432).
+**Rationale**: Removes Docker database container ops burden. pgvector and pg_trgm pre-installed. Supabase is Anthropic-backed. Free tier covers MVP (200M embedding tokens/mo). Direct connection (not PgBouncer pooler) required for `SELECT FOR UPDATE SKIP LOCKED` used by worker. SSL is mandatory.
+
 ### PostgreSQL Queue over Redis
 **Decision**: Use PostgreSQL SELECT FOR UPDATE SKIP LOCKED for job queue.
-**Rationale**: At MVP scale (~50 memories/day), no external dependency. SELECT FOR UPDATE is battle-tested at scale. Simplifies ops: one database, one connection pool, one backup strategy. Easily scales to 1000s of jobs/day before hitting limits.
+**Rationale**: At MVP scale (~50 memories/day), no external dependency. SELECT FOR UPDATE is battle-tested at scale. Simplifies ops: one database, one connection pool, one backup strategy. Easily scales to 1000s of jobs/day before hitting limits. Worker must use Supabase direct connection (port 5432), not pooler (port 6543).
 
 ### Voyage AI over OpenAI Embeddings
 **Decision**: Use Voyage AI voyage-3 (1024 dims).
@@ -296,8 +300,9 @@ When B is created, set A.is_superseded=true. Keeps full audit trail.
 - Rate limiting middleware (requests/IP/key)
 - Request/response logging with structlog
 - Audit trail of schema changes (via Alembic versioning)
-- Data encryption at rest (PostgreSQL pgcrypto, config TBD)
+- Data encryption at rest (Supabase handles at infrastructure level; pgcrypto available for column-level encryption if needed)
 - Row-level security for multi-user support
+- Managed backups via Supabase (Pro tier) or manual pg_dump via direct connection
 
 ---
 

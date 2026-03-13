@@ -147,10 +147,10 @@
 
 **Verification**:
 ```bash
-docker compose up -d db
+# Set SQLALCHEMY_URL in .env from Supabase project dashboard (direct connection, port 5432)
 alembic upgrade head
-psql postgres://openbrain:...@localhost/openbrain -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'"
-# Should show 12 tables
+psql $SQLALCHEMY_URL -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'"
+# Should show 11 tables (public schema)
 ```
 
 **Note**: Tests are already written in Checkpoint 2 (test_models.py) to catch UUID/composite PK issues before migration
@@ -429,10 +429,10 @@ pytest tests/ -v --tb=short
 
 ## Phase 1 Verification Gates (must all pass before Phase 2)
 
-- [ ] Gate 1: `docker compose up` → all services healthy
-- [ ] Gate 2: `docker compose run db psql ... -c "SELECT COUNT(*) FROM pg_tables"` → 12 tables
+- [ ] Gate 1: `docker compose up` → api and worker services healthy (db service no longer exists; Supabase is external)
+- [ ] Gate 2: `psql $SQLALCHEMY_URL -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'"` → 11 tables
 - [ ] Gate 3: `POST /v1/memory` → 202 with raw_id
-- [ ] Gate 4: raw_memory + refinement_queue rows in DB
+- [ ] Gate 4: raw_memory + refinement_queue rows in Supabase DB
 - [ ] Gate 5: Worker processes job → memory_items + entities + embedding created
 - [ ] Gate 6: 3-failure retry path → failed_refinements row
 - [ ] Gate 7: Stale lock reclaim: set locked_at = now() - 6 min, worker reclaims
