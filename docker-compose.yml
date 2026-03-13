@@ -1,0 +1,81 @@
+version: '3.9'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: openbrain-db
+    environment:
+      POSTGRES_USER: openbrain
+      POSTGRES_PASSWORD: openbrain-dev-secret
+      POSTGRES_DB: openbrain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openbrain -d openbrain"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - openbrain
+
+  migrate:
+    build: .
+    container_name: openbrain-migrate
+    environment:
+      SQLALCHEMY_URL: postgresql+asyncpg://openbrain:openbrain-dev-secret@db:5432/openbrain
+      LOG_LEVEL: info
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - openbrain
+    profiles:
+      - migrate
+
+  api:
+    build: .
+    container_name: openbrain-api
+    environment:
+      SQLALCHEMY_URL: postgresql+asyncpg://openbrain:openbrain-dev-secret@db:5432/openbrain
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      API_KEY: ${API_KEY:-test-secret-key}
+      LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - openbrain
+    profiles:
+      - api
+
+  worker:
+    build: .
+    container_name: openbrain-worker
+    environment:
+      SQLALCHEMY_URL: postgresql+asyncpg://openbrain:openbrain-dev-secret@db:5432/openbrain
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      LOG_LEVEL: info
+      WORKER_POLL_INTERVAL: "5"
+    command: python -m src.pipeline.worker
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - openbrain
+    profiles:
+      - worker
+
+volumes:
+  postgres_data:
+
+networks:
+  openbrain:
+    driver: bridge

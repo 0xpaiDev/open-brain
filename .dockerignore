@@ -1,3 +1,7 @@
+# Git
+.git/
+.gitignore
+
 # Environment
 .env
 .env.local
@@ -32,7 +36,7 @@ MANIFEST
 venv/
 ENV/
 env/
-.venv
+.venv/
 env.bak/
 venv.bak/
 
@@ -43,7 +47,6 @@ venv.bak/
 *.swo
 *~
 .DS_Store
-.netrwhist
 
 # Testing
 .pytest_cache/
@@ -65,6 +68,13 @@ dmypy.json
 *.log
 logs/
 
+# Docker
+docker-compose.override.yml
+Dockerfile*
+
+# Alembic
+alembic/versions/__pycache__/
+
 # Build artifacts
 *.tar.gz
 *.zip
@@ -74,13 +84,5 @@ logs/
 .LSOverride
 Thumbs.db
 
-# Docker
-docker-compose.override.yml
-
-# Alembic
-alembic/versions/__pycache__/
-
-# Generated files
+# Claude
 .claude/
-.claude/plans/
-.claude/projects/
