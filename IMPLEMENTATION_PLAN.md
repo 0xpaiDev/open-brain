@@ -172,20 +172,21 @@ WHERE status = 'pending' OR (status = 'processing' AND locked_at < now() - inter
 
 ## Implementation Phases
 
-### Phase 1: Foundation (44h)
-**Goal**: Working ingestion → refinement → storage pipeline with basic search
+### Phase 1: Foundation (44h + 15h for test-first = 59h estimated)
+**Goal**: Working ingestion → refinement → storage pipeline with basic search, **with self-confirm test loop**
 
 **Critical path**:
+0. **Test Infrastructure First** (Checkpoint 0) — conftest.py with all fixtures before any source code
 1. Project scaffold (pyproject.toml, Docker, .env)
-2. Config + database setup (pydantic-settings, async engine, pool tuning)
-3. Models (all 12 tables with UUID PKs, GENERATED column)
+2. Config + database setup (with test_config.py, test_database.py)
+3. Models (with test_models.py to catch UUID/composite PK bugs)
 4. Alembic migration (HNSW, GIN, retrieval_events, manual DDL)
-5. LLM clients (Anthropic + Voyage AI module-level singletons)
-6. Pipeline stages (normalize → extract → validate → embed → store)
-7. Worker (SELECT FOR UPDATE SKIP LOCKED polling with stale lock reclaim)
-8. Ingestion endpoint (POST /v1/memory)
-9. Basic search (GET /v1/search with hybrid ranking)
-10. Tests (ingestion, pipeline, search end-to-end)
+5. LLM clients (with test_llm_clients.py, test_prompts.py)
+6. Pipeline stages (with test_normalizer.py, test_extractor.py, test_validator.py, test_embedder.py, test_entity_resolver.py) — HIGH PRIORITY tests
+7. Worker (with test_worker.py testing stale lock reclaim + 3-failure dead letter) — CRITICAL TESTS
+8. Ingestion endpoint (with test_ingestion.py testing 202 response + auth) — HIGH PRIORITY tests
+9. Basic search (with test_ranking.py, test_search.py testing hybrid ranking) — HIGH PRIORITY tests
+10. Full test suite pass (pytest all tests green, >80% coverage on critical modules)
 
 **Verification gate**: All 8 items in Verification Plan must pass before Phase 2
 
@@ -219,7 +220,7 @@ WHERE status = 'pending' OR (status = 'processing' AND locked_at < now() - inter
 - End-to-end integration tests
 - API docs + CLI help + README
 
-**Total**: ~113 hours (~6 weeks at ~20 hours/week)
+**Total**: ~113 hours base + ~15 hours for test-first approach = **~128 hours (~7 weeks at ~20 hours/week)**
 
 ---
 
@@ -359,15 +360,40 @@ open-brain/
 
 ---
 
+## Test-First Self-Confirm Loop (NEW — as of 2026-03-13)
+
+**Why test-first over big-bang testing?**
+
+The original plan had tests at Checkpoint 9 — after 40 hours of code. This meant bugs could compound silently and failures would be hard to trace.
+
+**New approach**: Each checkpoint includes paired test file(s). Tests are written first (red), then code (green). End result:
+
+```
+Checkpoint 1 (scaffold) ✅
+Checkpoint 2 (config + tests) ✅
+Checkpoint 3 (models + tests) ✅
+... → every checkpoint self-validates before next builds on it
+Checkpoint 9 (full suite pass) ✅
+```
+
+**Critical tests to prioritize** (by risk from PROGRESS.md):
+1. `test_worker.py` — Stale lock reclaim (FIX-2) + 3-failure dead letter (FIX-3)
+2. `test_ingestion.py` — Core API contract
+3. `test_pipeline.py` — Full end-to-end flow
+4. `test_entity_resolver.py` — Fuzzy merge threshold
+5. `test_ranking.py` + `test_search.py` — Hybrid ranking formula
+
+**Coverage target**: >80% on critical modules (worker, search, ingestion routes).
+
+---
+
 ## Next Steps
 
-1. **Initialize project structure** (this file, PROGRESS.md, CLAUDE.md, git)
-2. **Set up Phase 1 tasks** in PROGRESS.md
-3. **Configure team** (if using swarm agents) or assign Phase 1 to single agent
-4. **Checkpoint 1**: All project files created, no code yet
-5. **Phase 1 execution**: Follow task order in IMPLEMENTATION_PLAN.md
-6. **Phase 1 verification**: Run all 8 gates before Phase 2
-7. **Iterate Phases 2–4**
+1. **Checkpoint 0**: Create `tests/conftest.py` with all fixtures
+2. **Checkpoint 1**: All project files created, no code yet
+3. **Phase 1 execution**: Follow task order, write tests first, then code
+4. **Phase 1 verification**: All test suites pass + all 8 gates before Phase 2
+5. **Iterate Phases 2–4**
 
 ---
 

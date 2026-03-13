@@ -10,9 +10,24 @@
 ## Phase 1: Foundation (0% → target 25%)
 
 **Status**: Ready for execution
-**Est. Duration**: 44 hours
+**Est. Duration**: 44 hours + 15 hours (tests integrated)
 **Start Date**: (pending)
 **Target Completion**: (pending)
+**Approach**: Test-first self-confirm loop — each checkpoint includes paired test file(s)
+
+---
+
+### Checkpoint 0: Test Infrastructure (FIRST — before any source code)
+- [ ] 0.1: Create `tests/__init__.py`
+- [ ] 0.2: Create `tests/conftest.py` — complete test infrastructure
+  - Async SQLite test DB (`create_async_engine`)
+  - Fixtures: `async_session`, `mock_anthropic_client`, `mock_voyage_client`
+  - FastAPI test client fixture + override_get_db dependency
+  - API key headers fixture: `{"X-API-Key": "test-secret-key"}`
+
+**Verification**: `python -c "import pytest; from tests.conftest import *"` — imports cleanly
+
+---
 
 ### Checkpoint 1: Project Scaffold ✓ (prerequisites)
 - [ ] 1.0a: Create `.gitignore` (Python + environment)
@@ -27,20 +42,42 @@
 
 ---
 
-### Checkpoint 2: Core Infrastructure (1–2)
-- [ ] 1.1: `src/core/config.py` — pydantic-settings with SecretStr
+### Checkpoint 2: Core Infrastructure + Tests (1–2)
+
+**Write tests first:**
+- [ ] 1.1a: `tests/test_config.py`
+  - `test_settings_loads_from_env` — Settings() loads without error
+  - `test_secret_str_not_logged` — `str(settings.anthropic_api_key)` returns `"**********"`
+  - `test_embedding_dimensions_validator` — invalid dimension raises ValidationError
+
+- [ ] 1.2a: `tests/test_database.py`
+  - `test_get_db_yields_session` — yields AsyncSession
+  - `test_health_check_passes` — returns True
+
+**Then implement:**
+- [ ] 1.1b: `src/core/config.py` — pydantic-settings with SecretStr
   - Settings class with all env vars
   - Validators for embedding_dimensions
   - Module-level singleton: `settings = Settings()`
   - **Critical**: SecretStr for anthropic_api_key + voyage_api_key
 
-- [ ] 1.2: `src/core/database.py` — async engine setup
+- [ ] 1.2b: `src/core/database.py` — async engine setup
   - `create_async_engine()` with pool_pre_ping=True, pool_size=5, max_overflow=5
   - `AsyncSessionLocal` factory
   - `get_db()` dependency generator
   - Health check function
 
-- [ ] 1.3: `src/core/models.py` — all 12 ORM tables (CRITICAL)
+**Run tests**: `pytest tests/test_config.py tests/test_database.py -v` → all green
+
+**Write tests first:**
+- [ ] 1.3a: `tests/test_models.py` (schema-level assertions)
+  - `test_all_tables_have_uuid_pk` — inspect all ORM PKs, assert UUID type
+  - `test_importance_score_is_generated` — importance_score.column.computed is not None
+  - `test_entity_relations_composite_pk` — verify composite PK structure
+  - `test_memory_entity_links_composite_pk` — verify composite PK structure
+
+**Then implement:**
+- [ ] 1.3b: `src/core/models.py` — all 12 ORM tables (CRITICAL)
   - **UUID PKs everywhere** (not BigInteger)
   - `raw_memory`: id, source, raw_text, author, metadata, chunk_index/total/parent, created_at
   - `memory_items`: id, raw_id FK, type, content, summary, base_importance, dynamic_importance, importance_score GENERATED, embedding vector(1024), supersedes/is_superseded, created_at
@@ -55,11 +92,13 @@
   - `retrieval_events`: id, memory_id FK, retrieved_at
   - Comment: "Only update base/dynamic_importance, not importance_score (GENERATED column)"
 
+**Run tests**: `pytest tests/test_models.py -v` → all green
+
 **Verification**: `python -c "from src.core.models import *; print('OK')"` — no import errors
 
 ---
 
-### Checkpoint 3: Alembic & Migration (1.4) — CRITICAL
+### Checkpoint 3 (cont'd): Alembic & Migration (1.4) — CRITICAL
 - [ ] 1.4a: `alembic/env.py` — async engine, imports all models for autogenerate
   - Configure async execution
   - Import all models from src.core.models
@@ -88,20 +127,37 @@ psql postgres://openbrain:...@localhost/openbrain -c "SELECT COUNT(*) FROM pg_ta
 # Should show 12 tables
 ```
 
+**Note**: Tests are already written in Checkpoint 2 (test_models.py) to catch UUID/composite PK issues before migration
+
 ---
 
-### Checkpoint 4: LLM Clients (1.7)
-- [ ] 1.7a: `src/llm/client.py` — module-level singletons
+### Checkpoint 4: LLM Clients + Tests (1.7)
+
+**Write tests first:**
+- [ ] 1.7a-test: `tests/test_llm_clients.py`
+  - `test_anthropic_client_returns_string` — mock Anthropic, verify response is str
+  - `test_voyage_client_returns_vector` — mock Voyage, verify list[float] len 1024
+  - `test_extraction_failed_raised_on_bad_response` — bad JSON → ExtractionFailed
+  - `test_embedding_failed_after_retries` — RateLimitError 3x → EmbeddingFailed
+
+- [ ] 1.7b-test: `tests/test_prompts.py`
+  - `test_user_input_wrapped_in_delimiters` — `<user_input>` in all prompts
+  - `test_prompts_are_strings` — all constants are non-empty strings
+
+**Then implement:**
+- [ ] 1.7c: `src/llm/client.py` — module-level singletons
   - AnthropicClient (async): `complete_anthropic(system, user, model, max_tokens)` → string response
   - VoyageEmbeddingClient: `embed(text, model)` → list[float], wrapped in asyncio.to_thread()
   - Both use tenacity for retry (3 attempts, 2/4/8s backoff)
   - Error handling: raise structured exceptions (ExtractionFailed, EmbeddingFailed)
 
-- [ ] 1.7b: `src/llm/prompts.py` — typed prompt constants
+- [ ] 1.7d: `src/llm/prompts.py` — typed prompt constants
   - EXTRACTION_SYSTEM: main extraction prompt with `<user_input>{text}</user_input>` delimiters
   - EXTRACTION_RETRY_1, EXTRACTION_RETRY_2: escalating prompts
   - SYNTHESIS_SYSTEM: weekly report generation
   - All prompts use structured markers for user input (prompt injection defense)
+
+**Run tests**: `pytest tests/test_llm_clients.py tests/test_prompts.py -v` → all green
 
 **Verification**:
 ```python
@@ -111,31 +167,61 @@ from src.llm.client import anthropic_client, embedding_client
 
 ---
 
-### Checkpoint 5: Pipeline Stages (1.8–1.12) — IN ORDER
-- [ ] 1.8: `src/pipeline/normalizer.py`
+### Checkpoint 5: Pipeline Stages + Tests (1.8–1.12) — HIGH PRIORITY, IN ORDER
+
+**Write tests first (HIGH PRIORITY):**
+- [ ] 1.8a-test: `tests/test_normalizer.py`
+  - `test_normalize_strips_whitespace`
+  - `test_normalize_fixes_unicode`
+  - `test_chunk_splits_long_text` — > 2000 tokens → multiple chunks
+  - `test_chunk_returns_single_for_short_text`
+
+- [ ] 1.9a-test: `tests/test_extractor.py`
+  - `test_extract_attempt_0_uses_full_prompt` — mock LLM, valid JSON → ExtractionResult
+  - `test_extract_attempt_1_uses_retry_prompt`
+  - `test_extract_raises_on_invalid_json` → ExtractionFailed
+
+- [ ] 1.10a-test: `tests/test_validator.py`
+  - `test_validate_normalizes_entity_names` — " Claude AI " → "claude ai"
+  - `test_validate_deduplicates_entities` — duplicates become one
+  - `test_validate_raises_on_missing_content` → ValidationFailed
+
+- [ ] 1.11a-test: `tests/test_embedder.py`
+  - `test_embed_returns_1024_floats` — mock Voyage → list[float] len 1024
+  - `test_embed_retries_on_rate_limit` — fails 2x, succeeds 3rd → vector
+  - `test_embed_raises_after_3_failures` → EmbeddingFailed
+
+**Then implement (in order, one at a time):**
+- [ ] 1.8b: `src/pipeline/normalizer.py`
   - `normalize(text: str) -> str`: strip whitespace, fix unicode, dedent
   - `chunk(text: str, max_tokens=2000) -> list[str]`: split long text into chunks
   - Uses `tiktoken` to count tokens
 
-- [ ] 1.9: `src/pipeline/extractor.py`
+- [ ] 1.9b: `src/pipeline/extractor.py`
   - Pydantic schemas for ExtractionResult, EntityExtract, DecisionExtract, TaskExtract
   - `extract(normalized_text: str, attempt: int) -> ExtractionResult`
   - Attempt 0: full prompt; Attempt 1: stricter; Attempt 2: fallback minimal
   - Raises ExtractionFailed if JSON parse fails
 
-- [ ] 1.10: `src/pipeline/validator.py`
+- [ ] 1.10b: `src/pipeline/validator.py`
   - `validate(extraction: ExtractionResult) -> ExtractionResult`
   - Schema validation (already done by Pydantic)
   - Entity name normalization (lowercase, strip, fuzzy dedup)
   - Returns validated extraction or raises ValidationFailed
 
-- [ ] 1.11: `src/pipeline/embedder.py`
+- [ ] 1.11b: `src/pipeline/embedder.py`
   - EmbeddingProvider protocol: `async def embed(text: str) -> list[float]`
   - VoyageEmbeddingProvider: uses `voyageai.Client().embed()` via asyncio.to_thread()
   - Tenacity retry on rate limit / 5xx
   - Raises EmbeddingFailed after 3 attempts
 
-- [ ] 1.12: `src/pipeline/entity_resolver.py`
+- [ ] 1.12a-test: `tests/test_entity_resolver.py`
+  - `test_resolves_exact_match_via_alias` — existing entity returned
+  - `test_creates_new_entity_when_no_match`
+  - `test_fuzzy_match_at_threshold` — "Anthropic" vs "Anthropoic" → merged
+  - `test_no_merge_below_threshold` — "Anthropic" vs "Amazon" → separate
+
+- [ ] 1.12b: `src/pipeline/entity_resolver.py`
   - `async def resolve_entities(session, entities: list[EntityExtract]) -> list[Entity]`
   - For each entity:
     - Check aliases for canonical match
@@ -144,12 +230,27 @@ from src.llm.client import anthropic_client, embedding_client
     - Insert or update entity + aliases
   - Use `INSERT ... ON CONFLICT DO NOTHING`
 
+**Run tests**: `pytest tests/test_normalizer.py tests/test_extractor.py tests/test_validator.py tests/test_embedder.py tests/test_entity_resolver.py -v` → all green
+
 **Verification**: All pipeline modules import cleanly, no circular deps
 
 ---
 
-### Checkpoint 6: Worker (1.13) — CRITICAL
-- [ ] 1.13a: `src/pipeline/worker.py` — async polling loop
+### Checkpoint 6: Worker + Tests (1.13) — CRITICAL (highest risk)
+
+**Write tests first (HIGHEST PRIORITY):**
+- [ ] 1.13a-test: `tests/test_worker.py` — CRITICAL TESTS
+  - `test_claim_batch_picks_pending_job` — pending row reclaimed
+  - `test_claim_batch_reclaims_stale_processing` — locked_at < now() - 6min, status='processing' → reclaimed (FIX-2 validation)
+  - `test_claim_batch_skips_fresh_processing` — locked_at < now() - 1min → NOT reclaimed
+  - `test_process_job_creates_memory_item` — mock Anthropic + Voyage, full pipeline → memory_items created
+  - `test_process_job_creates_entities_and_links` — same → entities + memory_entity_links created
+  - `test_process_job_sets_embedding` — memory_items.embedding is not None
+  - `test_3_failure_path_moves_to_dead_letter` — attempts=2, mock fails → failed_refinements row, queue status='failed' (FIX-3 validation)
+  - `test_process_job_succeeds_after_retry` — attempts=1, fail then succeed → memory_items created
+
+**Then implement:**
+- [ ] 1.13b: `src/pipeline/worker.py` — async polling loop
   - `claim_batch()`: UPDATE ... WHERE status = 'pending' OR (status = 'processing' AND locked_at < now() - interval '5 minutes') FOR UPDATE SKIP LOCKED
   - Sets: status='processing', locked_at=now(), updated_at=now(), attempts += 1
   - `process_job()`: normalize → extract → validate → embed → store + entity resolution
@@ -158,7 +259,7 @@ from src.llm.client import anthropic_client, embedding_client
   - Embedding failures: write to failed_refinements with error_reason='embedding_failure'
   - Polling loop: `await asyncio.sleep(poll_interval + random.uniform(0, 2.0))` (jitter)
 
-- [ ] 1.13b: Memory write function
+- [ ] 1.13c: Memory write function
   - `async def store_memory_item(session, raw, extraction, embedding)`
   - Insert memory_items row with computed base_importance
   - Create entity_relations rows
@@ -166,67 +267,102 @@ from src.llm.client import anthropic_client, embedding_client
   - All in one transaction: `async with session.begin():`
   - Handle superseding: if extraction has supersedes_id, set old.is_superseded=true
 
-- [ ] 1.13c: Dead letter handling
+- [ ] 1.13d: Dead letter handling
   - `async def move_to_dead_letter(session, queue_row)`
   - Insert failed_refinements row with error_reason
   - Set refinement_queue row status='failed'
 
+**Run tests**: `pytest tests/test_worker.py -v` → all green (validates FIX-2 + FIX-3)
+
 **Verification**:
 ```bash
-# Insert a raw_memory and refinement_queue row manually
-# Run worker.process_job() in test
-# Verify memory_items, entities, retrieval_events rows created
+# All test_worker.py tests pass, confirming:
+# - Stale lock reclaim logic (FIX-2)
+# - 3-failure dead letter path (FIX-3)
+# - Full pipeline end-to-end
 ```
 
 ---
 
-### Checkpoint 7: API Ingestion (1.6)
-- [ ] 1.6a: `src/api/routes/memory.py` — POST /v1/memory endpoint
+### Checkpoint 7: API Ingestion + Tests (1.6) — HIGH PRIORITY
+
+**Write tests first (HIGH PRIORITY):**
+- [ ] 1.6a-test: `tests/test_ingestion.py`
+  - `test_post_memory_returns_202` — POST /v1/memory + auth key → 202, body has raw_id (UUID)
+  - `test_post_memory_creates_raw_memory_row` — after POST, raw_memory row in DB
+  - `test_post_memory_creates_refinement_queue_row` — after POST, refinement_queue row with status='pending'
+  - `test_post_memory_no_auth_returns_401` — no X-API-Key → 401
+  - `test_post_memory_wrong_key_returns_401` — wrong key → 401
+  - `test_post_memory_bad_json_returns_422` → 422
+  - `test_health_endpoint_returns_200` — GET /health → 200 (no auth)
+  - `test_ready_endpoint_passes_with_db` — GET /ready → 200 if DB up, else 503
+
+**Then implement:**
+- [ ] 1.6b: `src/api/routes/memory.py` — POST /v1/memory endpoint
   - Input schema: { text: str, source: str (default "api"), metadata?: dict }
   - Insert raw_memory row
   - Insert refinement_queue row with status='pending'
   - Return HTTP 202 with `{"raw_id": <uuid>, "status": "queued"}`
 
-- [ ] 1.6b: `src/api/middleware/auth.py`
+- [ ] 1.6c: `src/api/middleware/auth.py`
   - Check X-API-Key header against settings.api_key
   - Return 401 if missing or wrong
   - Skip auth for GET /health only
 
-- [ ] 1.6c: `src/api/routes/health.py`
+- [ ] 1.6d: `src/api/routes/health.py`
   - GET /health → HTTP 200 (always passes)
   - GET /ready → HTTP 200 if DB connected and queue responding, else 503
 
-- [ ] 1.6d: `src/api/main.py` — FastAPI app factory
+- [ ] 1.6e: `src/api/main.py` — FastAPI app factory
   - Create app with title, description
   - Register middleware: auth, logging
   - Include routers: memory, search, health, entities, tasks, decisions, queue
   - Define lifespan (startup/shutdown)
   - Auto-generated docs at /docs
 
+**Run tests**: `pytest tests/test_ingestion.py -v` → all green
+
 **Verification**: `POST localhost:8000/v1/memory -H "X-API-Key: test-key" -d '{"text":"test"}'` → HTTP 202
 
 ---
 
-### Checkpoint 8: Search & Ranking (1.14)
-- [ ] 1.14a: `src/retrieval/ranking.py` — pure functions
+### Checkpoint 8: Search & Ranking + Tests (1.14) — HIGH PRIORITY
+
+**Write tests first (HIGH PRIORITY):**
+- [ ] 1.14a-test: `tests/test_ranking.py` (pure functions, easy wins)
+  - `test_combined_score_weights_sum` — 0.5 + 0.2 + 0.2 + 0.1 = 1.0
+  - `test_recency_score_decreases_over_time` — 1-day-old > 30-day-old
+  - `test_recency_score_is_between_0_and_1`
+  - `test_combined_score_with_zero_inputs` → 0.0
+
+- [ ] 1.14b-test: `tests/test_search.py`
+  - `test_hybrid_search_returns_ranked_results` — insert 5 memories, query → correct order
+  - `test_hybrid_search_respects_type_filter` — filter by type → only that type returned
+  - `test_hybrid_search_logs_retrieval_events` — after search, retrieval_events rows created (FIX-3 validation)
+  - `test_search_endpoint_returns_200` — GET /v1/search?q=test → 200 with results
+
+**Then implement:**
+- [ ] 1.14c: `src/retrieval/ranking.py` — pure functions
   - Constants: WEIGHT_VECTOR (0.50), WEIGHT_KEYWORD (0.20), WEIGHT_IMPORTANCE (0.20), WEIGHT_RECENCY (0.10)
   - `recency_score(created_at) -> float`: exponential decay with half-life from settings
   - `combined_score(vscore, kscore, importance, created_at) -> float`: weighted sum
 
-- [ ] 1.14b: `src/retrieval/search.py` — hybrid search SQL + execution
+- [ ] 1.14d: `src/retrieval/search.py` — hybrid search SQL + execution
   - `async def hybrid_search(session, query_text, query_embedding, limit=10, type_filter=None)`
   - Vector search CTE: cosine distance, LIMIT 100
   - Keyword search CTE: FTS with GIN index, LIMIT 100
   - FULL OUTER JOIN, rescores
   - Returns list[SearchResult] sorted by combined_score
-  - **Verify**: GIN index query uses identical `to_tsvector('english', content)` expression
+  - **Verify**: GIN index query uses identical `to_tsvector('english', content)` expression (FIX-4 validation)
 
-- [ ] 1.14c: `src/api/routes/search.py` — GET /v1/search
+- [ ] 1.14e: `src/api/routes/search.py` — GET /v1/search
   - Input: q: str, limit: int = 10, type_filter: str = None
   - Compute query embedding via VoyageEmbeddingClient
   - Call hybrid_search
   - Log each result to retrieval_events table
   - Return ranked list with scores
+
+**Run tests**: `pytest tests/test_ranking.py tests/test_search.py -v` → all green (validates FIX-3 + FIX-4)
 
 **Verification**:
 ```bash
@@ -238,33 +374,30 @@ GET localhost:8000/v1/search?q=test
 
 ---
 
-### Checkpoint 9: Tests (1.15)
-- [ ] 1.15a: `tests/conftest.py`
-  - Async test DB (in-memory SQLite or test Postgres)
-  - Fixtures: session factory, mocked Anthropic client, mocked Voyage client
-  - Override get_db dependency
+### Checkpoint 9: Full Test Suite Pass (1.15) — CONFIRMATION PHASE
 
-- [ ] 1.15b: `tests/test_ingestion.py`
-  - POST /v1/memory → 202, returns raw_id
-  - Verify raw_memory + refinement_queue rows created
-  - POST with no auth → 401
-  - POST with bad JSON → 422
+All test files from Checkpoints 0-8 are complete. This checkpoint runs the full suite and confirms the self-confirm loop is working.
 
-- [ ] 1.15c: `tests/test_pipeline.py`
-  - Insert raw_memory + refinement_queue manually
-  - Call process_job() (mocked Anthropic + Voyage)
-  - Verify memory_items + entities + links created
-  - Verify embedding is non-null
-  - Test 3-failure path → failed_refinements row
+- [ ] 1.15a: Run full test suite
+  - `pytest tests/ -v --tb=short` → all tests green
+  - Confirms all modules integrate cleanly
 
-- [ ] 1.15d: `tests/test_search.py`
-  - Insert 5 memory_items with embeddings + content
-  - Query hybrid_search
-  - Verify order matches expected ranking
+- [ ] 1.15b: Check test coverage
+  - `pytest tests/ --cov=src --cov-report=term-missing`
+  - Target: >80% coverage on critical modules:
+    - `src/pipeline/worker.py` (stale lock reclaim, 3-failure path)
+    - `src/retrieval/search.py` (hybrid ranking)
+    - `src/api/routes/memory.py` (ingestion contract)
 
-- [ ] 1.15e: `tests/test_ranking.py`
-  - Unit test combined_score() with known inputs
-  - Test recency decay formula
+- [ ] 1.15c: Fix any remaining edge cases or slow tests
+  - Each test should run in <1s (except integration tests with real async DB)
+  - All mocked tests run in <100ms
+
+**Verification**:
+```bash
+pytest tests/ -v --tb=short
+# Expected: 50+ tests, all green, 0 warnings, 0 skipped
+```
 
 ---
 
