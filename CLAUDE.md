@@ -47,11 +47,17 @@
 - GENERATED columns: defined in ORM, enforced at DDL in Alembic
 
 ### Testing
-- Framework: pytest + pytest-asyncio
-- Mock all external APIs (Anthropic, Voyage) — **never hit production in tests**
-- Fixtures in conftest.py, not inline
-- Test names: `test_<function>_<scenario>`
-- Use plain `assert`, not custom matchers
+- **Framework**: pytest + pytest-asyncio
+- **Mandatory Coverage**: Generate tests for every feature or logic change.
+- **Rigor**: Do not limit tests to the "happy path." Explicitly cover:
+  - **Edge Cases**: Empty states (0-item lists), boundary values, and `None` handling.
+  - **Negative Scenarios**: Validation errors, 4xx/5xx triggers, and unauthorized attempts.
+  - **Logic Restrictions**: Critical UX/Business rules (e.g., "cannot delete last remaining service").
+  - **Data Integrity**: Verify that public-facing API views correctly reflect backend database changes.
+- **Mocks**: Mock all external APIs (Anthropic, Voyage) — **never hit production in tests**
+- **Organization**: Fixtures in conftest.py, not inline
+- **Naming**: `test_<function>_<scenario>` (e.g., `test_delete_service_fails_if_last_remaining`)
+- **Assertions**: Use plain `assert`, not custom matchers
 
 ### Naming Conventions
 - Tables: `snake_case` | Modules: `snake_case` | Classes: `PascalCase` | Constants: `UPPER_SNAKE_CASE`
@@ -289,6 +295,23 @@ else:
 ```
 
 **Why**: `attempts` is incremented on every claim (claim_batch increments before returning). On 3rd claim, `attempts=3`. So check `>= 3` not `== 3` to handle edge cases.
+
+---
+
+### Settings Singleton is None in Full Test Suite
+
+❌ **Don't**: Import `settings` at module level in middleware/routes: `from src.core.config import settings`
+✅ **Do**: Use a lazy `_get_settings()` helper that creates Settings on demand if None
+
+```python
+def _get_settings():
+    from src.core import config
+    if config.settings is None:
+        config.settings = config.Settings()
+    return config.settings
+```
+
+**Why**: `config.settings` is `None` at module level when no `.env` file exists (common in CI/tests). When `test_config.py` imports `from src.core.config import settings` during pytest collection, the module is cached as `settings=None`. Later, `monkeypatch.setenv` sets env vars, but any module that imported `settings` at its own module level still holds the `None` reference. The lazy helper re-creates Settings() the first time it's called during a test, by which point the env vars are available. Applied to: `auth.py`, `ranking.py`, `search.py`.
 
 ---
 
