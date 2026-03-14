@@ -1,10 +1,15 @@
 """Database connection and session management."""
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
+# Forward declaration — populated after init_db() so callers can do:
+#   from src.core.database import get_db_context
+#   async with get_db_context() as session: ...
 
 from src.core.config import settings
 
@@ -28,6 +33,12 @@ async def init_db() -> None:
         },
     )
 
+    # Note: pgvector.asyncpg.register_vector is intentionally NOT used here.
+    # pgvector.sqlalchemy.Vector.process_bind_param returns a text-format string
+    # '[0.1,0.2,...]' which asyncpg sends as text; PostgreSQL casts it to vector.
+    # Calling register_vector registers a codec that expects list[float] — this
+    # conflicts with the string output of process_bind_param, causing DataError.
+
     AsyncSessionLocal = sessionmaker(
         async_engine,
         class_=AsyncSession,
@@ -38,12 +49,16 @@ async def init_db() -> None:
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency: get database session."""
+    """Async generator dependency for FastAPI's Depends()."""
     if AsyncSessionLocal is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
 
     async with AsyncSessionLocal() as session:
         yield session
+
+
+# Context manager variant for use outside FastAPI (e.g. worker, CLI)
+get_db_context = asynccontextmanager(get_db)
 
 
 async def health_check() -> bool:

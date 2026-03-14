@@ -20,7 +20,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.database import get_db
+from src.core.database import get_db_context as get_db
 from src.core.models import (
     Entity,
     FailedRefinement,
@@ -150,8 +150,15 @@ async def process_job(
     Raises:
         Exception: If database operations fail (will be logged and handled)
     """
+    queue_id = queue_row.id  # Capture ID before session switch
     async with get_db() as session:
         try:
+            # Re-fetch queue_row in this session so changes are tracked and committed here
+            queue_row = await session.get(RefinementQueue, queue_id)
+            if not queue_row:
+                logger.error("queue_row_not_found", queue_id=str(queue_id))
+                return
+
             # Fetch the raw memory
             raw = await session.get(RawMemory, queue_row.raw_id)
             if not raw:
@@ -188,6 +195,7 @@ async def process_job(
                     # Reset to pending for retry with escalated prompt
                     queue_row.status = "pending"
                     await session.flush()
+                    await session.commit()
                     logger.info(
                         "process_job_reset_to_pending_for_retry",
                         next_attempt=queue_row.attempts + 1,
@@ -255,6 +263,7 @@ async def process_job(
                     embedding,
                     entities,
                 )
+                await session.commit()
                 logger.info("process_job_success")
             except Exception as e:
                 logger.exception("process_job_store_failed", error=str(e))
@@ -408,6 +417,7 @@ async def move_to_dead_letter(
     queue_row.updated_at = datetime.now(UTC)
 
     await session.flush()
+    await session.commit()
 
     logger.warning(
         "move_to_dead_letter",
@@ -468,16 +478,31 @@ async def run(
                     await asyncio.sleep(poll_interval + jitter)
                     continue
 
-                # Process each job
-                for job in jobs:
-                    if _shutdown.is_set():
-                        logger.info("worker_shutdown_during_processing")
-                        break
+                # Commit "processing" status before handing off to process_job
+                await session.commit()
 
-                    await process_job(job, anthropic, voyage)
+            # Process each job outside the claim session
+            for job in jobs:
+                if _shutdown.is_set():
+                    logger.info("worker_shutdown_during_processing")
+                    break
+
+                await process_job(job, anthropic, voyage)
 
         except Exception as e:
             logger.exception("worker_loop_error", error=str(e))
             await asyncio.sleep(5)  # Back off on errors
 
     logger.info("worker_shutdown_complete")
+
+
+async def main() -> None:
+    """Initialize DB then run the worker loop."""
+    from src.core.database import init_db
+
+    await init_db()
+    await run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

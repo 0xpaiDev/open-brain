@@ -85,7 +85,6 @@ async def _execute_hybrid_sql(
         List of Row objects with id, content, summary, type,
         importance_score, created_at, vector_score, keyword_score.
     """
-    embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
     type_clause = "AND m.type = :type_filter" if type_filter else ""
 
     sql = text(f"""
@@ -123,7 +122,7 @@ async def _execute_hybrid_sql(
     """)
 
     params: dict = {
-        "embedding": embedding_str,
+        "embedding": "[" + ",".join(str(x) for x in query_embedding) + "]",
         "q": query_text,
         "fetch_limit": limit * 2,
     }

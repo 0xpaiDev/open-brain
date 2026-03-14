@@ -313,6 +313,47 @@ def _get_settings():
 
 **Why**: `config.settings` is `None` at module level when no `.env` file exists (common in CI/tests). When `test_config.py` imports `from src.core.config import settings` during pytest collection, the module is cached as `settings=None`. Later, `monkeypatch.setenv` sets env vars, but any module that imported `settings` at its own module level still holds the `None` reference. The lazy helper re-creates Settings() the first time it's called during a test, by which point the env vars are available. Applied to: `auth.py`, `ranking.py`, `search.py`.
 
+### pgvector asyncpg Codec Conflicts with SQLAlchemy Vector Type
+
+❌ **Don't**: Call `register_vector(conn)` via an asyncpg event listener alongside `pgvector.sqlalchemy.Vector`
+✅ **Do**: Use `pgvector.sqlalchemy.Vector` only — no `register_vector` needed
+
+```python
+# database.py — DO NOT add this:
+# from pgvector.asyncpg import register_vector
+# @event.listens_for(async_engine.sync_engine, "connect")
+# def on_connect(dbapi_conn, _):
+#     dbapi_conn.run_async(lambda conn: register_vector(conn))  ← CONFLICT
+```
+
+**Why**: `pgvector.sqlalchemy.Vector.process_bind_param` returns a text string like `'[0.1,0.2,...]'`. The `register_vector` asyncpg codec's `encode_vector()` function expects a `list[float]` or `np.ndarray` — it raises `TypeError` for strings. SQLAlchemy passes the string to the codec, which causes `asyncpg.exceptions.DataError: invalid input for query argument`. Without `register_vector`, asyncpg sends the string as PostgreSQL `text` type, and PostgreSQL casts it to `vector` natively. Applied fix: removed `register_vector` from `on_connect` in `database.py`.
+
+---
+
+### Worker Session Never Commits — All Changes Roll Back
+
+❌ **Don't**: Use only `await session.flush()` in the worker pipeline and rely on the context manager to persist
+✅ **Do**: Explicitly call `await session.commit()` after every terminal operation (success or dead letter)
+
+```python
+# In process_job() — after successful store:
+await store_memory_item(session, raw, queue_row, extraction, embedding, entities)
+await session.commit()  # REQUIRED — flush alone does not persist
+logger.info("process_job_success")
+
+# In move_to_dead_letter() — after flush:
+await session.flush()
+await session.commit()  # REQUIRED — or the dead letter write also rolls back
+
+# In run() — after claim_batch:
+jobs = await claim_batch(session)
+await session.commit()  # Persist "processing" status before handing off
+```
+
+**Why**: SQLAlchemy's `AsyncSession` context manager (`async with session:`) calls `session.close()` on normal exit — it does NOT auto-commit. `flush()` only writes to the in-memory transaction buffer. Without `commit()`, every change in the session is rolled back when the context exits. The worker was logging `store_memory_item_success` and `process_job_success` but the DB remained empty because `close()` triggered an implicit rollback.
+
+**Additional fix**: `process_job` opens its own inner session but received `queue_row` from the outer `claim_batch` session (a different session context). The inner session cannot track or commit changes to objects from another session. Fix: capture `queue_row.id` before entering the inner session, then re-fetch with `await session.get(RefinementQueue, queue_id)` inside the inner session so the object is tracked by the correct session.
+
 ---
 
 ## Living Document Rule
