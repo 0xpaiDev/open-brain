@@ -6,7 +6,7 @@ An AI-native organizational memory system that captures thoughts, decisions, and
 
 ### Prerequisites
 - Python 3.12+
-- PostgreSQL 16 (or Docker)
+- Supabase account (free tier: https://supabase.com)
 - Anthropic API key (Claude Haiku credits)
 - Voyage AI API key (free tier: 200M tokens/month)
 
@@ -62,7 +62,7 @@ pytest tests/ -v --cov=src
 ### Services
 - **api**: FastAPI HTTP server, routes all ingestion and search requests
 - **worker**: Background process polling queue for refinement jobs
-- **db**: PostgreSQL 16 with pgvector + pg_trgm extensions
+- **db**: Supabase (external managed PostgreSQL with pgvector + pg_trgm)
 - **jobs**: Scheduled importance + synthesis jobs (via host cron)
 
 ### Database
@@ -145,33 +145,40 @@ ob status                                         # Queue health
 Environment variables (`.env`):
 
 ```bash
-# Database
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/openbrain
-
-# API Keys
-ANTHROPIC_API_KEY=sk-ant-...
-VOYAGE_API_KEY=...
-
-# Models
-EXTRACTION_MODEL=claude-haiku-4-5
-EMBEDDING_MODEL=voyage-3
-EMBEDDING_DIMENSIONS=1024
-
-# Ranking weights (tunable without code deploy)
-RANK_WEIGHT_VECTOR=0.50
-RANK_WEIGHT_KEYWORD=0.20
-RANK_WEIGHT_IMPORTANCE=0.20
-RANK_WEIGHT_RECENCY=0.10
-RECENCY_HALF_LIFE_DAYS=30
-
-# Worker
-WORKER_POLL_INTERVAL=5.0
-WORKER_BATCH_SIZE=10
-WORKER_MAX_ATTEMPTS=3
+# Database (Supabase direct connection)
+# Find this in Supabase dashboard: Settings → Database → Connection pooler
+# Use direct connection (port 5432), NOT the pooler (port 6543)
+SQLALCHEMY_URL=postgresql+asyncpg://postgres.YOUR_REF:YOUR_PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
 
 # API
-API_KEY=your-secret-key-here
-LOG_LEVEL=INFO
+API_KEY=your-secret-api-key-here
+
+# LLM
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+
+# Embeddings
+VOYAGE_API_KEY=pa-...
+VOYAGE_MODEL=voyage-3
+EMBEDDING_DIMENSIONS=1024
+
+# Search weights (sum to 1.0)
+SEARCH_VECTOR_WEIGHT=0.5
+SEARCH_KEYWORD_WEIGHT=0.2
+SEARCH_IMPORTANCE_WEIGHT=0.2
+SEARCH_RECENCY_WEIGHT=0.1
+
+# Importance scoring
+IMPORTANCE_BASE_DEFAULT=0.5
+IMPORTANCE_RECENCY_HALF_LIFE_DAYS=30
+
+# Worker
+WORKER_POLL_INTERVAL=5
+WORKER_LOCK_TTL_SECONDS=300
+
+# Application
+LOG_LEVEL=info
+ENVIRONMENT=development
 ```
 
 ---
@@ -191,25 +198,31 @@ src/
 
 ### Running Locally (without Docker)
 
-```bash
-# 1. Start Postgres
-docker run -d -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=openbrain \
-  -p 5432:5432 pgvector/pgvector:pg16
+Open Brain uses Supabase as its database. There is no local database to start.
 
-# 2. Install dependencies
+```bash
+# 1. Create a Supabase project at https://supabase.com (free tier is sufficient)
+# 2. In Supabase SQL editor, enable required extensions:
+#    CREATE EXTENSION IF NOT EXISTS vector;
+#    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+# 3. Copy your Supabase direct connection string
+#    (Settings → Database → Connection string → Direct, use port 5432)
+#    Add it to your .env as SQLALCHEMY_URL
+
+# 4. Install dependencies
 uv sync
 
-# 3. Run migrations
+# 5. Run migrations
 alembic upgrade head
 
-# 4. Start API
+# 6. Start API (in one terminal)
 uvicorn src.api.main:app --reload
 
-# 5. Start worker (in another terminal)
+# 7. Start worker (in another terminal)
 python -m src.pipeline.worker
 
-# 6. Use CLI
+# 8. Use CLI
 ob add "Hello, Open Brain!"
 ```
 

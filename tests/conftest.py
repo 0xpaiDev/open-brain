@@ -1,19 +1,43 @@
+import os
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+
+# ── Environment setup ────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def set_test_env(monkeypatch):
+    """Auto-use fixture to set required test environment variables."""
+    monkeypatch.setenv("SQLALCHEMY_URL", "sqlite+aiosqlite:///:memory:")
+    monkeypatch.setenv("API_KEY", "test-secret-key")
 
 
 # ── Database fixtures ─────────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture
 async def async_engine():
-    """In-memory SQLite DB with full schema."""
+    """In-memory SQLite DB with full schema.
+
+    NOTE: SQLite does not enforce pgvector/UUID/JSONB types correctly.
+    This is suitable for unit tests only. For integration tests, use a real
+    Supabase test database or testcontainers PostgreSQL container.
+    """
     from src.core.models import Base  # deferred: src not required at import time
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+
+    # Enable FK enforcement in SQLite (disabled by default)
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -54,10 +78,18 @@ def mock_voyage_client() -> MagicMock:
 
 @pytest_asyncio.fixture
 async def test_client(async_session: AsyncSession):
-    """Async test client with DB dependency overridden to use test session."""
-    from httpx import AsyncClient, ASGITransport
-    from src.api.main import app          # deferred
-    from src.core.database import get_db  # deferred
+    """Async test client with DB dependency overridden to use test session.
+
+    NOTE: This fixture requires src/api/ to be implemented. Currently,
+    src/api/ does not exist (Phase 1 Checkpoint 5+). Tests using this
+    fixture will be skipped until the API module is created.
+    """
+    try:
+        from httpx import AsyncClient, ASGITransport
+        from src.api.main import app          # deferred
+        from src.core.database import get_db  # deferred
+    except ImportError as e:
+        pytest.skip(f"API module not implemented yet: {e}")
 
     async def override_get_db():
         yield async_session

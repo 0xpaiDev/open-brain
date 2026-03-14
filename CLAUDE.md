@@ -146,6 +146,9 @@
 ❌ **Don't**: Create migration with `alembic revision --autogenerate` and trust it
 ✅ **Do**: Autogenerate, then manually verify HNSW/GIN/composite PKs/UUIDs
 
+❌ **Don't**: Use `Base.metadata.create_all()` against Supabase to create schema
+✅ **Do**: Always use `alembic upgrade head`. The embedding column is created as JSONB by SQLAlchemy (placeholder type), but the actual DDL (via Alembic) converts it to `vector(1024)` at runtime. Using `create_all()` leaves embeddings as JSONB, breaking vector operations.
+
 ---
 
 ## Living Document Rule
@@ -161,7 +164,7 @@ Add a new subsection under Common Pitfalls, or edit existing sections. This file
 
 ## Continuous Learning Rule
 
-**At the end of every session**, update `/home/shu/.claude/projects/-home-shu-projects-open-brain/memory/learning.md`:
+**At the end of every session**, update `/home/shu/.claude/projects/-home-shu-projects-open-brain/learning.md`:
 
 1. **Identify**: Review features/tools touched (pgvector, OpenAI API, React hooks, etc.)
 2. **Log**: Add new concepts implemented but not deeply understood to "Current Session Topics"
@@ -177,7 +180,6 @@ This maintains a personal knowledge graph of what you've learned and what still 
 - **Architecture**: `/home/shu/projects/open-brain/ARCHITECTURE.md` (design decisions, system overview)
 - **Implementation plan**: `/home/shu/projects/open-brain/IMPLEMENTATION_PLAN.md` (tasks, phases, file structure)
 - **Progress tracking**: `/home/shu/projects/open-brain/PROGRESS.md` (checkpoint tracking, gates)
-- **Arch review**: `/home/shu/.claude/plans/atomic-puzzling-zephyr.md`
 
 ---
 

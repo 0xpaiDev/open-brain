@@ -123,12 +123,13 @@ class MemoryItem(Base):
     #   GENERATED ALWAYS AS (0.6 * base_importance + 0.4 * dynamic_importance) STORED;
     importance_score: Mapped[Optional[float]] = mapped_column(Numeric(precision=4, scale=2), nullable=True)
 
-    # embedding: vector column created in Alembic migration
-    # SQLAlchemy doesn't have native vector type support, so we use JSONB for now
-    # and the actual DDL will use pgvector's vector type
+    # embedding: vector column (1024 dimensions) created in Alembic migration
+    # NOTE: DDL type is vector(1024) via Alembic ALTER — set in migration at runtime.
+    # ORM type is JSONB as a placeholder because SQLAlchemy doesn't have native vector
+    # type support. Always use `alembic upgrade head` for migrations, never `create_all()`.
     embedding: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True
-    )  # Vector column, created by Alembic
+    )
 
     supersedes_id: Mapped[Optional[str]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE"), nullable=True

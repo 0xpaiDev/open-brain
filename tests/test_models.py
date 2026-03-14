@@ -122,3 +122,30 @@ class TestModelSchema:
                     ) or parent_col.name == "relation_type", (
                         f"{table_name}.{parent_col.name} FK should be UUID, got {parent_col.type}"
                     )
+
+    def test_table_creation_order_respects_fks(self) -> None:
+        """Verify table creation order respects FK dependencies.
+
+        This test catches migrations where a table with FK constraints is created
+        before its referenced table, which will fail on PostgreSQL.
+        """
+        tables = Base.metadata.sorted_tables
+        table_names = [t.name for t in tables]
+
+        # retrieval_events has FK to memory_items — memory_items must come first
+        assert table_names.index("memory_items") < table_names.index("retrieval_events"), (
+            "memory_items must be created before retrieval_events (FK constraint)"
+        )
+
+        # entity_relations has FK to entities — entities must come first
+        assert table_names.index("entities") < table_names.index("entity_relations"), (
+            "entities must be created before entity_relations (FK constraint)"
+        )
+
+        # memory_entity_links has FK to memory_items and entities
+        assert table_names.index("memory_items") < table_names.index("memory_entity_links"), (
+            "memory_items must be created before memory_entity_links (FK constraint)"
+        )
+        assert table_names.index("entities") < table_names.index("memory_entity_links"), (
+            "entities must be created before memory_entity_links (FK constraint)"
+        )

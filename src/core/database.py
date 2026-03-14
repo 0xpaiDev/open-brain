@@ -25,7 +25,7 @@ async def init_db() -> None:
         max_overflow=2,
         connect_args={
             "ssl": "require",  # Supabase requires SSL
-            "statement_cache_size": 0,  # Required for PgBouncer compatibility
+            "statement_cache_size": 0,  # Required for Supabase Supavisor compatibility (prevents prepared statement conflicts)
         },
     )
 

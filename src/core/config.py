@@ -1,6 +1,6 @@
 """Configuration management for Open Brain."""
 
-from pydantic import ConfigDict, SecretStr, field_validator
+from pydantic import ConfigDict, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,11 +9,12 @@ class Settings(BaseSettings):
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
-    # Database (Supabase direct connection, port 5432)
-    sqlalchemy_url: str = "postgresql+asyncpg://postgres:changeme@localhost:5432/postgres"
+    # Database — Supabase direct connection, port 5432. Required.
+    # Set SQLALCHEMY_URL in .env (copy from .env.example)
+    sqlalchemy_url: str
 
     # API
-    api_key: str = "test-secret-key"
+    api_key: str
     api_host: str = "localhost"
     api_port: int = 8000
 
@@ -51,6 +52,22 @@ class Settings(BaseSettings):
     # Synthesis
     synthesis_max_memories_per_report: int = 50
 
+    @field_validator("sqlalchemy_url")
+    @classmethod
+    def validate_sqlalchemy_url(cls, v: str) -> str:
+        """Ensure database URL is set."""
+        if not v or not v.strip():
+            raise ValueError("SQLALCHEMY_URL is required. Set it in .env or as an environment variable.")
+        return v
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        """Ensure API key is set."""
+        if not v or not v.strip():
+            raise ValueError("API_KEY is required. Set it in .env or as an environment variable.")
+        return v
+
     @field_validator("embedding_dimensions")
     @classmethod
     def validate_embedding_dimensions(cls, v: int) -> int:
@@ -69,11 +86,27 @@ class Settings(BaseSettings):
             raise ValueError(f"Search weights must be between 0 and 1, got {v}")
         return v
 
+    @model_validator(mode="after")
+    def validate_search_weights_sum(self) -> "Settings":
+        """Ensure search weights sum to 1.0 (within ±0.001 tolerance)."""
+        total = (
+            self.search_vector_weight
+            + self.search_keyword_weight
+            + self.search_importance_weight
+            + self.search_recency_weight
+        )
+        if abs(total - 1.0) > 0.001:
+            raise ValueError(
+                f"Search weights must sum to 1.0, got {total:.4f}. "
+                f"Current: vector={self.search_vector_weight}, keyword={self.search_keyword_weight}, "
+                f"importance={self.search_importance_weight}, recency={self.search_recency_weight}"
+            )
+        return self
+
 
 # Module-level singleton instance (lazy initialization)
+# Try to instantiate at import time, but gracefully handle missing env vars (useful for testing).
 try:
     settings = Settings()
 except Exception:
-    # Allow module import to succeed even if required vars are missing
-    # (useful for testing and initial setup)
     settings = None  # type: ignore[assignment]

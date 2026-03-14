@@ -50,17 +50,6 @@ def upgrade() -> None:
         sa.Index("ix_raw_memory_created_at", "created_at"),
     )
 
-    # retrieval_events: search access log for dynamic importance
-    op.create_table(
-        "retrieval_events",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("memory_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("retrieved_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["memory_id"], ["memory_items.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.Index("ix_retrieval_events_memory_id", "memory_id"),
-    )
-
     # ─────────────────────────────────────────────────────────────────
     # Refined knowledge
     # ─────────────────────────────────────────────────────────────────
@@ -86,6 +75,18 @@ def upgrade() -> None:
         sa.Index("ix_memory_items_type", "type"),
         sa.Index("ix_memory_items_created_at", "created_at"),
         sa.Index("ix_memory_items_is_superseded", "is_superseded"),
+    )
+
+    # retrieval_events: search access log for dynamic importance
+    # NOTE: Must be created AFTER memory_items due to FK constraint
+    op.create_table(
+        "retrieval_events",
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("memory_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("retrieved_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(["memory_id"], ["memory_items.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.Index("ix_retrieval_events_memory_id", "memory_id"),
     )
 
     # decisions: structured decision records
@@ -282,8 +283,8 @@ def downgrade() -> None:
     op.drop_table("entities")
     op.drop_table("tasks")
     op.drop_table("decisions")
+    op.drop_table("retrieval_events")  # Must drop before memory_items (FK depends on it)
     op.drop_table("memory_items")
-    op.drop_table("retrieval_events")
     op.drop_table("raw_memory")
 
     # Disable extensions (usually leave them, but clean for downgrade)
