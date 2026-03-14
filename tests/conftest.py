@@ -1,12 +1,11 @@
-import os
+from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytest_asyncio
-from typing import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
 
 # ── Environment setup ────────────────────────────────────────────────────────
 
@@ -85,8 +84,9 @@ async def test_client(async_session: AsyncSession):
     fixture will be skipped until the API module is created.
     """
     try:
-        from httpx import AsyncClient, ASGITransport
-        from src.api.main import app          # deferred
+        from httpx import ASGITransport, AsyncClient
+        from src.api.main import app  # deferred
+
         from src.core.database import get_db  # deferred
     except ImportError as e:
         pytest.skip(f"API module not implemented yet: {e}")

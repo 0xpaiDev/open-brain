@@ -151,6 +151,147 @@
 
 ---
 
+## CP4-6 Implementation Gotchas
+
+**Session 2 (2026-03-14)**: Checkpoints 4–6 implementation revealed critical issues with database compatibility, async patterns, and mocking.
+
+### JSONB Incompatibility with SQLite
+
+❌ **Don't**: Use `JSONB` type directly in SQLAlchemy ORM
+✅ **Do**: Use `.with_variant()` pattern for cross-database compatibility
+
+```python
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+metadata_: Mapped[Optional[dict]] = mapped_column(JSON_TYPE, nullable=True, name="metadata")
+```
+
+**Why**: Tests run on SQLite (no JSONB), production on PostgreSQL. SQLite compilation error: "can't render element of type JSONB". Applied to `metadata_`, `embedding`, `alternatives` in all models.
+
+### UUID Generation Pattern
+
+❌ **Don't**: Use `default=lambda: str(__import__("uuid").uuid4())` (string type)
+✅ **Do**: Use `default=uuid4` (UUID object, SQLAlchemy handles conversion)
+
+```python
+id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+```
+
+**Why**: Type mismatch between `str()` and `UUID(as_uuid=True)` which expects a UUID object. SQLAlchemy's `UUID(as_uuid=True)` automatically calls `uuid4()` and stores as string in DB.
+
+### Tenacity + Structlog Incompatibility
+
+❌ **Don't**: Use `after=after_log(logger, "warning")` in `@retry` decorator with structlog
+✅ **Do**: Omit the `after` parameter; use structlog inside the function
+
+```python
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=8),
+)
+async def embed(self, text: str) -> list[float]:
+    # ... tenacity will retry on exception
+    # log inside function if needed
+```
+
+**Why**: Tenacity's `after_log()` expects stdlib logging; structlog uses a different logger interface. TypeError on level comparison. Solution: let tenacity handle retries, log at function level if needed.
+
+### AsyncContextManager Mocking Pattern
+
+❌ **Don't**: Mock `get_db` as `AsyncMock()` returning session directly
+✅ **Do**: Use `@asynccontextmanager` decorator and patch with the manager instance
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def mock_get_db():
+    yield async_session
+
+with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+    await process_job(queue, mock_anthropic, mock_voyage)
+```
+
+**Why**: `get_db()` is an async context manager (`async with get_db() as session`), not a simple coroutine. The mock must return a context manager instance, not a coroutine. Without `@asynccontextmanager`, the mock is incompatible with the actual function signature.
+
+### Transaction Boundaries in Async Tests
+
+❌ **Don't**: Use `async with session.begin():` when test session already in transaction
+✅ **Do**: Use `await session.flush()` for atomic operations; rely on fixture transaction
+
+```python
+# In worker.py:
+async def store_memory_item(...) -> MemoryItem:
+    memory_item = MemoryItem(...)
+    session.add(memory_item)
+    await session.flush()  # NOT session.begin()
+```
+
+**Why**: Test fixture creates async_session with active transaction (`await async_session.begin()`). Nested `session.begin()` in production code conflicts with test transaction. `flush()` persists changes within the outer transaction; rollback on test cleanup leaves queue in 'processing' for stale lock reclaim tests.
+
+### Entity Resolver Field Naming
+
+❌ **Don't**: Use inconsistent names like `entity_type` vs `type`, `alias_name` vs `alias`
+✅ **Do**: Use ORM field names directly in code
+
+```python
+# In models.py: Entity has 'type' field
+class Entity(Base):
+    type: Mapped[str] = mapped_column(String(50))
+
+# In entity_resolver.py: use 'type' not 'entity_type'
+entity = Entity(name=name, type=entity_type)
+
+# In models.py: EntityAlias has 'alias' field
+class EntityAlias(Base):
+    alias: Mapped[str] = mapped_column(String(255), unique=True)
+
+# In entity_resolver.py: use 'alias' not 'alias_name'
+alias_obj = EntityAlias(entity_id=entity.id, alias=name)
+```
+
+**Why**: Type hints on ORM models enforce the actual column names. Using different names in code causes AttributeError at runtime. Applied fixes: Entity.type (not entity_type), EntityAlias.alias (not alias_name).
+
+### Idempotency via Unique Alias Creation
+
+❌ **Don't**: Call `resolve_entities()` twice with same input — violates unique constraint
+✅ **Do**: Create alias on first resolution so second call finds via exact match
+
+```python
+# Test approach:
+result1 = await resolve_entities(async_session, [EntityExtract(name="Test", type="org")])
+await async_session.commit()
+
+# Manually create alias so second call uses exact match path
+alias = EntityAlias(entity_id=result1[0].id, alias="Test")
+async_session.add(alias)
+await async_session.commit()
+
+# Second call finds via alias match, not fuzzy match
+result2 = await resolve_entities(async_session, [EntityExtract(name="Test", type="org")])
+```
+
+**Why**: `resolve_entities()` creates new Entity if fuzzy match fails. On second call with same name, the new create fails on unique constraint for Entity.name. Creating an explicit alias makes subsequent calls idempotent via the 3-step exact→fuzzy→insert logic (exact match short-circuits).
+
+### Three-Failure Dead Letter Implementation
+
+❌ **Don't**: Check `attempts >= 3` for dead letter; use `attempts == 3`
+✅ **Do**: Increment first, then check: if `attempts >= 3`, move to dead letter
+
+```python
+# In claim_batch():
+job.attempts += 1  # Now 1 on first claim
+
+# In process_job():
+if queue_row.attempts >= 3:  # True only on 3rd attempt (after 3 increments)
+    await move_to_dead_letter(...)
+else:
+    queue_row.status = "pending"  # Reset for retry
+```
+
+**Why**: `attempts` is incremented on every claim (claim_batch increments before returning). On 3rd claim, `attempts=3`. So check `>= 3` not `== 3` to handle edge cases.
+
+---
+
 ## Living Document Rule
 
 **Update CLAUDE.md during implementation when you**:

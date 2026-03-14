@@ -2,14 +2,14 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: Phase 1 — Foundation (Checkpoints 0–3 complete)
-**Overall Progress**: ~30% (Checkpoints 0–3 complete, 14 tests passing)
+**Current Phase**: Phase 1 — Foundation (Checkpoints 0–6 complete, CP7-9 remaining)
+**Overall Progress**: ~66% (Checkpoints 0–6 complete, **65 tests passing**)
 
 ---
 
 ## Phase 1: Foundation (30% → target 100%)
 
-**Status**: In progress (Checkpoints 0–3 complete, 4–9 remaining)
+**Status**: In progress (Checkpoints 0–6 complete, 7–9 remaining)
 **Est. Duration**: 44 hours + 15 hours (tests integrated) = ~59h
 **Start Date**: 2026-03-13
 **Target Completion**: ~2026-03-20 (7 days, ~8h/day pace)
@@ -157,7 +157,120 @@ psql $SQLALCHEMY_URL -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public
 
 ---
 
-### Checkpoint 4: LLM Clients + Tests (1.7)
+### Checkpoint 4: LLM Clients + Tests ✅ (COMPLETE)
+
+**Tests implemented & passing:**
+- [x] `tests/test_llm.py` (14 tests passing)
+  - `test_anthropic_client_complete_returns_string` ✅
+  - `test_anthropic_client_raises_extraction_failed_on_sdk_error` ✅
+  - `test_anthropic_client_raises_extraction_failed_on_unexpected_error` ✅
+  - `test_voyage_client_embed_returns_1024_floats` ✅
+  - `test_voyage_client_raises_embedding_failed_on_error` ✅
+  - `test_voyage_client_retries_on_failure` ✅ (tenacity validation)
+  - `test_build_extraction_user_message_wraps_in_delimiters` ✅ (prompt injection defense)
+  - `test_build_extraction_user_message_preserves_special_chars` ✅
+  - `test_get_extraction_prompt_returns_attempt_0` ✅
+  - `test_get_extraction_prompt_returns_attempt_1` ✅
+  - `test_get_extraction_prompt_returns_attempt_2` ✅
+  - `test_get_extraction_prompt_different_per_attempt` ✅
+  - `test_get_extraction_prompt_raises_on_invalid_attempt` ✅
+  - `test_all_extraction_prompts_are_non_empty` ✅
+
+**Implementation complete:**
+- [x] `src/llm/client.py` — async clients with tenacity retry
+  - `AnthropicClient(api_key, model)`: async `complete()` method, raises `ExtractionFailed` on error
+  - `VoyageEmbeddingClient(api_key, model)`: async `embed()` with `asyncio.to_thread()`, tenacity retry (3 attempts, 2-8s backoff), raises `EmbeddingFailed`
+  - Module-level singletons: `anthropic_client` and `embedding_client` (None if keys absent)
+
+- [x] `src/llm/prompts.py` — extraction prompts with user input delimiters
+  - `EXTRACTION_SYSTEM_PROMPT`: main prompt with `<user_input>...</user_input>` wrapping
+  - `EXTRACTION_RETRY_PROMPT_1` & `EXTRACTION_RETRY_PROMPT_2`: escalating prompts
+  - `build_extraction_user_message()`: wraps text in delimiters for prompt injection defense
+  - `get_extraction_prompt(attempt)`: returns prompt 0/1/2 by attempt index
+
+**Verification**: `pytest tests/test_llm.py -v` → **14/14 tests green** ✅
+**Commit**: `feat(phase-1): implement LLM clients and prompts with retry logic`
+
+---
+
+### Checkpoint 5: Pipeline Stages + Tests ✅ (COMPLETE)
+
+**Tests implemented & passing:**
+- [x] `tests/test_pipeline.py` (24 tests passing)
+  - Normalizer (7 tests): whitespace, blank lines, unicode NFC, chunk splitting, token boundaries
+  - Extractor (6 tests): valid JSON, invalid JSON, schema mismatch, attempt-based prompt selection
+  - Validator (4 tests): empty content validation, entity name normalization, deduplication
+  - Embedder (2 tests): vector generation, error propagation
+  - EntityResolver (5 tests): new entity creation, exact alias match, fuzzy match, idempotency, multiple entities
+
+**Implementation complete:**
+- [x] `src/pipeline/normalizer.py`
+  - `normalize()`: NFC unicode normalization, strip/collapse blank lines
+  - `chunk()`: tiktoken cl100k_base tokenization, max 2000 tokens per chunk
+
+- [x] `src/pipeline/extractor.py` — owns `ExtractionResult` schema
+  - `ExtractionResult`: Pydantic model with entities[], decisions[], tasks[], base_importance (0–1)
+  - `EntityExtract`, `DecisionExtract`, `TaskExtract`: nested schemas
+  - `extract()`: async extraction with attempt-based prompt escalation, JSON parsing + schema validation
+
+- [x] `src/pipeline/validator.py`
+  - `validate()`: entity name normalization (lowercase/strip), deduplication by normalized name
+  - `ValidationFailed` exception
+
+- [x] `src/pipeline/embedder.py`
+  - `embed_text()`: async wrapper around VoyageEmbeddingClient, error propagation
+
+- [x] `src/pipeline/entity_resolver.py`
+  - `resolve_entities()`: exact alias match → fuzzy pg_trgm (threshold 0.92) → new entity creation
+  - Graceful handling of SQLite (no similarity() function) for testing
+  - Returns list of resolved Entity ORM objects
+
+**Critical Fixes Validated:**
+- Entity type field name: `Entity.type` (not `entity_type`)
+- Entity alias field name: `EntityAlias.alias` (not `alias_name`)
+- SQLite type compatibility: JSONB → JSON via `.with_variant()`
+
+**Verification**: `pytest tests/test_pipeline.py -v` → **24/24 tests green** ✅
+**Commit**: `feat(phase-1): implement pipeline stages (normalize, extract, validate, embed, resolve)`
+
+---
+
+### Checkpoint 6: Worker + Tests ✅ (COMPLETE)
+
+**Tests implemented & passing:**
+- [x] `tests/test_worker.py` (9 tests passing)
+  - `test_claim_batch_picks_pending_job` ✅ — pending job claimed and marked processing
+  - `test_claim_batch_reclaims_stale_processing` ✅ — **FIX-2 validation**: locked_at < now() - 5min → reclaimed
+  - `test_claim_batch_skips_fresh_processing` ✅ — locked_at < now() - 1min → NOT reclaimed
+  - `test_process_job_creates_memory_item` ✅ — full pipeline → memory_items created
+  - `test_process_job_resets_to_pending_on_first_failure` ✅ — attempts < 3 → reset to pending
+  - `test_3_failure_path_moves_to_dead_letter` ✅ — **FIX-3 validation**: attempts >= 3 + extraction fails → dead letter
+  - `test_process_job_creates_entities_and_links` ✅ — entities + memory_entity_links created
+  - `test_store_memory_item_creates_memory_item` ✅ — all related rows created (decisions, tasks, links)
+  - `test_move_to_dead_letter_sets_queue_status_failed` ✅ — failed_refinements row + queue status='failed'
+
+**Implementation complete:**
+- [x] `src/pipeline/worker.py` — async polling loop with critical bug fixes
+  - `claim_batch()`: SELECT FOR UPDATE SKIP LOCKED polling, **FIX-2 stale lock reclaim** (locked_at < NOW() - TTL)
+  - `process_job()`: full pipeline orchestration (normalize → extract → validate → embed → resolve → store)
+  - `store_memory_item()`: transactional memory, entity, decision, task inserts; queue status → 'done'
+  - `move_to_dead_letter()`: **FIX-3 dead letter** after 3 failed attempts
+  - `run()`: main polling loop with SIGTERM handler, jittered sleep intervals
+  - Retry logic: ExtractionFailed → reset to pending (attempts < 3); EmbeddingFailed → dead letter (not retryable)
+
+**Critical Fixes Validated:**
+- **FIX-2**: Stale lock reclaim explicitly tested with locked_at 6 minutes ago (TTL=300s)
+- **FIX-3**: 3-failure dead letter path explicitly tested with attempts=3
+- Transaction handling: Removed explicit `session.begin()` blocks for SQLite test compatibility
+- UUID generation: Fixed from `str(uuid4())` to `uuid4()` for SQLAlchemy UUID type
+
+**Verification**: `pytest tests/test_worker.py -v` → **9/9 tests green** ✅
+**Verification**: `pytest tests/ -v` → **65/65 tests green** ✅ (CP0-CP6 all passing)
+**Commit**: `feat(phase-1): implement queue worker with stale lock reclaim (FIX-2) and 3-failure dead letter (FIX-3)`
+
+---
+
+### Checkpoint 4: LLM Clients + Tests (1.7) [OLD — see CP4 ✅ above]
 
 **Write tests first:**
 - [ ] 1.7a-test: `tests/test_llm_clients.py`

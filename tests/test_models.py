@@ -1,6 +1,5 @@
 """Tests for database models."""
 
-import pytest
 from sqlalchemy.dialects.postgresql import UUID
 
 from src.core.models import Base
@@ -111,11 +110,10 @@ class TestModelSchema:
         """All foreign keys should reference UUID columns with UUID type."""
         for table_name, table in Base.metadata.tables.items():
             for fk in table.foreign_keys:
-                # Get the parent column (the FK) and the referenced column
+                # Get the parent column (the FK)
                 parent_col = fk.parent
-                referenced_col = fk.column
 
-                # Both should be UUID
+                # Should be UUID
                 if parent_col.name not in ["relation_type"]:  # relation_type is not a FK
                     assert isinstance(
                         parent_col.type, UUID

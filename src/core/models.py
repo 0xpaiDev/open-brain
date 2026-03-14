@@ -16,11 +16,11 @@ This is documented in IMPLEMENTATION_PLAN.md.
 """
 
 from datetime import datetime
-from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     UUID,
-    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -29,8 +29,11 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, VARCHAR
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# Use JSONB for PostgreSQL, JSON for other databases (e.g., SQLite in tests)
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -53,15 +56,15 @@ class RawMemory(Base):
 
     __tablename__ = "raw_memory"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     source: Mapped[str] = mapped_column(String(50))
     raw_text: Mapped[str] = mapped_column(Text)
     author: Mapped[str] = mapped_column(String(255), default="user")
-    metadata_: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, name="metadata")
+    metadata_: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True, name="metadata")
 
-    chunk_index: Mapped[Optional[int]] = mapped_column(nullable=True)
-    chunk_total: Mapped[Optional[int]] = mapped_column(nullable=True)
-    parent_id: Mapped[Optional[str]] = mapped_column(
+    chunk_index: Mapped[int | None] = mapped_column(nullable=True)
+    chunk_total: Mapped[int | None] = mapped_column(nullable=True)
+    parent_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("raw_memory.id", ondelete="CASCADE"), nullable=True
     )
 
@@ -82,7 +85,7 @@ class RetrievalEvent(Base):
 
     __tablename__ = "retrieval_events"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     memory_id: Mapped[str] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE")
     )
@@ -107,11 +110,11 @@ class MemoryItem(Base):
 
     __tablename__ = "memory_items"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     raw_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("raw_memory.id"))
     type: Mapped[str] = mapped_column(String(50), default="memory")  # memory, decision, task
     content: Mapped[str] = mapped_column(Text)
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     base_importance: Mapped[float] = mapped_column(Numeric(precision=4, scale=2), default=0.5)
     dynamic_importance: Mapped[float] = mapped_column(Numeric(precision=4, scale=2), default=0.0)
@@ -121,17 +124,17 @@ class MemoryItem(Base):
     # In Alembic migration, defined as:
     # ALTER TABLE memory_items ADD importance_score NUMERIC(4,2)
     #   GENERATED ALWAYS AS (0.6 * base_importance + 0.4 * dynamic_importance) STORED;
-    importance_score: Mapped[Optional[float]] = mapped_column(Numeric(precision=4, scale=2), nullable=True)
+    importance_score: Mapped[float | None] = mapped_column(Numeric(precision=4, scale=2), nullable=True)
 
     # embedding: vector column (1024 dimensions) created in Alembic migration
     # NOTE: DDL type is vector(1024) via Alembic ALTER — set in migration at runtime.
     # ORM type is JSONB as a placeholder because SQLAlchemy doesn't have native vector
     # type support. Always use `alembic upgrade head` for migrations, never `create_all()`.
-    embedding: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+    embedding: Mapped[dict | None] = mapped_column(
+        JSON_TYPE, nullable=True
     )
 
-    supersedes_id: Mapped[Optional[str]] = mapped_column(
+    supersedes_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE"), nullable=True
     )
     is_superseded: Mapped[bool] = mapped_column(default=False)
@@ -151,11 +154,11 @@ class Decision(Base):
 
     __tablename__ = "decisions"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     memory_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("memory_items.id"))
     decision: Mapped[str] = mapped_column(Text)
     reasoning: Mapped[str] = mapped_column(Text)
-    alternatives: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    alternatives: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -167,11 +170,11 @@ class Task(Base):
 
     __tablename__ = "tasks"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     memory_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("memory_items.id"))
     description: Mapped[str] = mapped_column(Text)
-    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="open")  # open, done, cancelled
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -187,7 +190,7 @@ class Entity(Base):
 
     __tablename__ = "entities"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     type: Mapped[str] = mapped_column(String(50))  # person, org, project, concept, tool, place
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -212,10 +215,10 @@ class EntityAlias(Base):
 
     __tablename__ = "entity_aliases"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     alias: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     entity_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"))
-    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -305,11 +308,11 @@ class RefinementQueue(Base):
 
     __tablename__ = "refinement_queue"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     raw_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("raw_memory.id"))
     status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(default=0)
-    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -332,15 +335,15 @@ class FailedRefinement(Base):
 
     __tablename__ = "failed_refinements"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=lambda: str(__import__("uuid").uuid4()))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     raw_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("raw_memory.id"))
     queue_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("refinement_queue.id"))
     error_reason: Mapped[str] = mapped_column(Text)
     attempt_count: Mapped[int] = mapped_column(default=3)
-    last_output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     raw_memory = relationship("RawMemory", back_populates="failed_refinements")
