@@ -110,8 +110,9 @@ class TestSettingsLoading:
             if "SQLALCHEMY_URL" in os.environ:
                 del os.environ["SQLALCHEMY_URL"]
 
+            # _env_file=None prevents fallback to .env on disk (which may contain SQLALCHEMY_URL)
             with pytest.raises(ValidationError) as exc_info:
-                Settings()  # type: ignore[call-arg]
+                Settings(_env_file=None)  # type: ignore[call-arg]
             assert "sqlalchemy_url" in str(exc_info.value).lower()
 
     def test_api_key_is_required(self) -> None:
@@ -129,8 +130,9 @@ class TestSettingsLoading:
             if "API_KEY" in os.environ:
                 del os.environ["API_KEY"]
 
+            # _env_file=None prevents fallback to .env on disk (which may contain API_KEY)
             with pytest.raises(ValidationError) as exc_info:
-                Settings()  # type: ignore[call-arg]
+                Settings(_env_file=None)  # type: ignore[call-arg]
             assert "api_key" in str(exc_info.value).lower()
 
     def test_search_weights_sum_to_one(self) -> None:

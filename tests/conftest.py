@@ -11,9 +11,16 @@ from sqlalchemy.orm import sessionmaker
 
 @pytest.fixture(autouse=True)
 def set_test_env(monkeypatch):
-    """Auto-use fixture to set required test environment variables."""
+    """Auto-use fixture to set required test environment variables.
+
+    Re-initializes the config.settings singleton from the test env vars so
+    that all tests see API_KEY='test-secret-key', not the value from .env.
+    monkeypatch restores the original singleton after each test.
+    """
     monkeypatch.setenv("SQLALCHEMY_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.setenv("API_KEY", "test-secret-key")
+    from src.core import config as _config
+    monkeypatch.setattr(_config, "settings", _config.Settings())
 
 
 # ── Database fixtures ─────────────────────────────────────────────────────────
