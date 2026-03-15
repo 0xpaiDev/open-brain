@@ -1,15 +1,18 @@
-"""Dead-letter queue management endpoints.
+"""Dead-letter queue management and job trigger endpoints.
 
+GET  /v1/queue/status              — aggregate queue counts + worker health signal
 GET  /v1/dead-letters              — list failed refinement jobs
 POST /v1/dead-letters/{id}/retry   — re-enqueue a dead-letter job (retry_count < limit guard)
+POST /v1/synthesis/run             — manually trigger weekly synthesis job
 """
 
 import uuid as _uuid
 from datetime import datetime
+from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +51,15 @@ class RetryResponse(BaseModel):
     message: str
 
 
+class QueueStatusResponse(BaseModel):
+    pending: int
+    processing: int
+    done: int
+    failed: int
+    total: int
+    oldest_locked_at: datetime | None
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -78,6 +90,50 @@ def _get_settings():
     if config.settings is None:
         config.settings = config.Settings()
     return config.settings
+
+
+# ── GET /v1/queue/status ──────────────────────────────────────────────────────
+
+
+@router.get("/v1/queue/status", response_model=QueueStatusResponse)
+async def get_queue_status(
+    session: AsyncSession = Depends(get_db),
+) -> QueueStatusResponse:
+    """Return aggregate counts for the refinement queue by status.
+
+    Also exposes oldest_locked_at (MIN of locked_at for processing rows) as a
+    worker health signal — a stale value here means the worker may be stuck.
+
+    Returns:
+        QueueStatusResponse with per-status counts and oldest processing lock.
+
+    Raises:
+        401: Missing or invalid X-API-Key (handled by middleware).
+    """
+    counts_result = await session.execute(
+        select(RefinementQueue.status, func.count().label("n")).group_by(RefinementQueue.status)
+    )
+    counts: dict[str, int] = {row.status: row.n for row in counts_result.all()}
+
+    locked_result = await session.execute(
+        select(func.min(RefinementQueue.locked_at)).where(RefinementQueue.status == "processing")
+    )
+    oldest_locked_at: datetime | None = locked_result.scalar_one_or_none()
+
+    pending = counts.get("pending", 0)
+    processing = counts.get("processing", 0)
+    done = counts.get("done", 0)
+    failed = counts.get("failed", 0)
+
+    logger.info("queue_status_fetched", pending=pending, processing=processing)
+    return QueueStatusResponse(
+        pending=pending,
+        processing=processing,
+        done=done,
+        failed=failed,
+        total=pending + processing + done + failed,
+        oldest_locked_at=oldest_locked_at,
+    )
 
 
 # ── GET /v1/dead-letters ───────────────────────────────────────────────────────
@@ -188,4 +244,74 @@ async def retry_dead_letter(
         queue_id=str(failed.queue_id),
         retry_count=failed.retry_count,
         message="Re-enqueued for processing",
+    )
+
+
+# ── POST /v1/synthesis/run ─────────────────────────────────────────────────────
+
+
+class SynthesisRunRequest(BaseModel):
+    days: int = Field(default=7, ge=1, le=90, description="Days to look back for memories")
+
+
+class SynthesisRunResponse(BaseModel):
+    synthesis_id: str | None
+    memory_count: int
+    date_from: str
+    date_to: str
+    skipped: bool
+    message: str
+
+
+@router.post("/v1/synthesis/run", response_model=SynthesisRunResponse)
+async def run_synthesis(
+    request: SynthesisRunRequest = Body(default=SynthesisRunRequest()),
+    session: AsyncSession = Depends(get_db),
+) -> SynthesisRunResponse:
+    """Trigger a weekly synthesis job for recent memories.
+
+    Fetches memory_items from the last N days, clusters by entities, calls
+    Claude to produce a structured digest, and stores the result as a MemoryItem
+    with source='synthesis' in the linked RawMemory row.
+
+    Args:
+        request: days to look back (1–90, default 7)
+
+    Returns:
+        SynthesisRunResponse with synthesis_id, memory_count, date range.
+
+    Raises:
+        400: ANTHROPIC_API_KEY is not configured.
+        401: Missing or invalid X-API-Key (middleware).
+        500: LLM call or storage failure.
+    """
+    settings = _get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="ANTHROPIC_API_KEY is not configured. Cannot run synthesis.",
+        )
+
+    from src.jobs.synthesis import run_synthesis_job
+    from src.llm.client import AnthropicClient
+
+    client = AnthropicClient(
+        api_key=settings.anthropic_api_key.get_secret_value(),
+        model=settings.synthesis_model,
+    )
+
+    try:
+        result: dict[str, Any] = await run_synthesis_job(session, client, days=request.days)
+    except Exception as exc:
+        logger.exception("synthesis_run_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Synthesis failed: {exc}") from exc
+
+    logger.info("synthesis_run_complete", **result)
+    return SynthesisRunResponse(
+        synthesis_id=result.get("synthesis_id"),
+        memory_count=result["memory_count"],
+        date_from=result["date_from"],
+        date_to=result["date_to"],
+        skipped=result.get("skipped", False),
+        message="Skipped — no memories found in window" if result.get("skipped") else "Synthesis complete",
     )

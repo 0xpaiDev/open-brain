@@ -13,11 +13,12 @@ The worker is typically run as a separate process, not in the API loop.
 import asyncio
 import random
 import signal
+import time
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -56,12 +57,22 @@ def _shutdown_handler(signum, frame):
     _shutdown.set()
 
 
+# ── Observability helpers ──────────────────────────────────────────────────
+
+
+async def _get_queue_depth(session: AsyncSession) -> dict[str, int]:
+    """Return pending and processing job counts for observability logging."""
+    pending = await session.scalar(select(func.count()).where(RefinementQueue.status == "pending"))
+    processing = await session.scalar(
+        select(func.count()).where(RefinementQueue.status == "processing")
+    )
+    return {"pending": pending or 0, "processing": processing or 0}
+
+
 # ── Queue polling and processing ──────────────────────────────────────────
 
 
-async def claim_batch(
-    session: AsyncSession, batch_size: int = 1
-) -> list[RefinementQueue]:
+async def claim_batch(session: AsyncSession, batch_size: int = 1) -> list[RefinementQueue]:
     """Claim a batch of jobs from the queue using SELECT FOR UPDATE SKIP LOCKED.
 
     FIX-2: Reclaims stale items WHERE locked_at < NOW() - INTERVAL '{ttl} seconds'.
@@ -88,9 +99,7 @@ async def claim_batch(
                 RefinementQueue.status == "pending",
                 and_(
                     RefinementQueue.status == "processing",
-                    RefinementQueue.locked_at
-                    < datetime.now(UTC)
-                    - timedelta(seconds=ttl_seconds),
+                    RefinementQueue.locked_at < datetime.now(UTC) - timedelta(seconds=ttl_seconds),
                 ),
             )
         )
@@ -98,9 +107,7 @@ async def claim_batch(
 
     # Execute with row locking (SQLite doesn't support this, but PostgreSQL does)
     try:
-        result = await session.execute(
-            query.with_for_update(skip_locked=True).limit(batch_size)
-        )
+        result = await session.execute(query.with_for_update(skip_locked=True).limit(batch_size))
         jobs = result.scalars().all()
     except Exception as e:
         # SQLite doesn't support FOR UPDATE — fallback without locking
@@ -134,6 +141,7 @@ async def process_job(
     queue_row: RefinementQueue,
     anthropic: AnthropicClient,
     voyage: VoyageEmbeddingClient,
+    queue_depth: dict[str, int] | None = None,
 ) -> None:
     """Process a single job: normalize → extract → validate → embed → resolve → store.
 
@@ -147,10 +155,12 @@ async def process_job(
         queue_row: RefinementQueue row to process
         anthropic: Anthropic LLM client
         voyage: Voyage AI embedding client
+        queue_depth: Pending/processing counts from the heartbeat query (for log enrichment)
 
     Raises:
         Exception: If database operations fail (will be logged and handled)
     """
+    queue_depth = queue_depth or {"pending": 0, "processing": 0}
     queue_id = queue_row.id  # Capture ID before session switch
     async with get_db() as session:
         try:
@@ -191,6 +201,7 @@ async def process_job(
                     "process_job_extraction_failed",
                     attempt=queue_row.attempts,
                     error=str(e),
+                    queue_depth=queue_depth,
                 )
                 if queue_row.attempts < 3:
                     # Reset to pending for retry with escalated prompt
@@ -217,7 +228,7 @@ async def process_job(
                 extraction = validate(extraction)
                 logger.debug("process_job_validate_success")
             except ValidationFailed as e:
-                logger.error("process_job_validation_failed", error=str(e))
+                logger.error("process_job_validation_failed", error=str(e), queue_depth=queue_depth)
                 await move_to_dead_letter(
                     session,
                     queue_row,
@@ -230,7 +241,7 @@ async def process_job(
                 embedding = await embed_text(normalized_text, client=voyage)
                 logger.debug("process_job_embed_success")
             except EmbeddingFailed as e:
-                logger.error("process_job_embedding_failed", error=str(e))
+                logger.error("process_job_embedding_failed", error=str(e), queue_depth=queue_depth)
                 await move_to_dead_letter(
                     session,
                     queue_row,
@@ -246,7 +257,9 @@ async def process_job(
                     entity_count=len(entities),
                 )
             except Exception as e:
-                logger.exception("process_job_resolve_entities_failed", error=str(e))
+                logger.exception(
+                    "process_job_resolve_entities_failed", error=str(e), queue_depth=queue_depth
+                )
                 await move_to_dead_letter(
                     session,
                     queue_row,
@@ -256,6 +269,7 @@ async def process_job(
 
             # Step 6: Store memory item
             try:
+                t0 = time.monotonic()
                 await store_memory_item(
                     session,
                     raw,
@@ -265,9 +279,16 @@ async def process_job(
                     entities,
                 )
                 await session.commit()
+                duration_ms = int((time.monotonic() - t0) * 1000)
                 logger.info("process_job_success")
+                logger.info(
+                    "ingestion_complete",
+                    raw_id=str(queue_row.raw_id),
+                    attempts=queue_row.attempts,
+                    duration_ms=duration_ms,
+                )
             except Exception as e:
-                logger.exception("process_job_store_failed", error=str(e))
+                logger.exception("process_job_store_failed", error=str(e), queue_depth=queue_depth)
                 await move_to_dead_letter(
                     session,
                     queue_row,
@@ -276,7 +297,7 @@ async def process_job(
                 return
 
         except Exception as e:
-            logger.exception("process_job_unexpected_error", error=str(e))
+            logger.exception("process_job_unexpected_error", error=str(e), queue_depth=queue_depth)
             await move_to_dead_letter(
                 session,
                 queue_row,
@@ -368,9 +389,7 @@ async def store_memory_item(
         )
         if task_extract.due_date:
             try:
-                task.due_date = datetime.fromisoformat(
-                    task_extract.due_date
-                ).replace(tzinfo=UTC)
+                task.due_date = datetime.fromisoformat(task_extract.due_date).replace(tzinfo=UTC)
             except ValueError:
                 logger.warning(
                     "invalid_due_date_format",
@@ -433,6 +452,13 @@ async def move_to_dead_letter(
         attempts=queue_row.attempts,
         error=error_reason,
     )
+    logger.info(
+        "ingestion_dead_letter",
+        raw_id=str(queue_row.raw_id),
+        attempts=queue_row.attempts,
+        error_reason=error_reason,
+        max_attempts=settings.dead_letter_retry_limit if settings else 3,
+    )
 
 
 # ── Main polling loop ─────────────────────────────────────────────────────
@@ -464,9 +490,7 @@ async def run(
             anthropic_client=anthropic is not None,
             voyage_client=voyage is not None,
         )
-        raise RuntimeError(
-            "Cannot start worker: Anthropic or Voyage API key not configured"
-        )
+        raise RuntimeError("Cannot start worker: Anthropic or Voyage API key not configured")
 
     # Install SIGTERM handler
     signal.signal(signal.SIGTERM, _shutdown_handler)
@@ -475,13 +499,23 @@ async def run(
     # Polling loop
     while not _shutdown.is_set():
         try:
+            poll_interval = settings.worker_poll_interval if settings else 5
+            depth: dict[str, int] = {"pending": 0, "processing": 0}
             async with get_db() as session:
+                # Emit heartbeat with current queue depth before claiming
+                depth = await _get_queue_depth(session)
+                logger.info(
+                    "worker_heartbeat",
+                    pending=depth["pending"],
+                    processing=depth["processing"],
+                    poll_interval=poll_interval,
+                )
+
                 # Claim a batch
                 jobs = await claim_batch(session, batch_size=1)
 
                 if not jobs:
                     # No jobs available, sleep before next poll
-                    poll_interval = settings.worker_poll_interval if settings else 5
                     jitter = random.uniform(0, 2.0)
                     await asyncio.sleep(poll_interval + jitter)
                     continue
@@ -495,7 +529,7 @@ async def run(
                     logger.info("worker_shutdown_during_processing")
                     break
 
-                await process_job(job, anthropic, voyage)
+                await process_job(job, anthropic, voyage, queue_depth=depth)
 
         except Exception as e:
             logger.exception("worker_loop_error", error=str(e))

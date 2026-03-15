@@ -54,6 +54,22 @@ class MemoryResponse(BaseModel):
     supersedes_id: str | None = None
 
 
+class MemoryItemResponse(BaseModel):
+    """Response body for GET /v1/memory/{memory_id}."""
+
+    id: str
+    raw_id: str
+    type: str
+    content: str
+    summary: str | None
+    base_importance: float
+    dynamic_importance: float
+    importance_score: float | None
+    is_superseded: bool
+    supersedes_id: str | None
+    created_at: datetime
+
+
 @router.post("/v1/memory", status_code=status.HTTP_202_ACCEPTED, response_model=MemoryResponse)
 async def ingest_memory(
     body: MemoryCreate,
@@ -128,3 +144,46 @@ async def ingest_memory(
         supersedes_id=body.supersedes_id,
     )
     return MemoryResponse(raw_id=str(raw.id), status="queued", supersedes_id=body.supersedes_id)
+
+
+@router.get("/v1/memory/{memory_id}", response_model=MemoryItemResponse)
+async def get_memory_item(
+    memory_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> MemoryItemResponse:
+    """Fetch a single processed MemoryItem by its UUID.
+
+    Args:
+        memory_id: UUID of the MemoryItem to retrieve.
+
+    Returns:
+        MemoryItemResponse with all fields.
+
+    Raises:
+        404: If memory_id does not match any MemoryItem.
+        422: If memory_id is not a valid UUID.
+        401: Missing or invalid X-API-Key (handled by middleware).
+    """
+    try:
+        target_uuid = _uuid.UUID(memory_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="memory_id is not a valid UUID") from None
+
+    item = await session.get(MemoryItem, target_uuid)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"MemoryItem {memory_id} not found")
+
+    logger.info("memory_item_fetched", memory_id=memory_id)
+    return MemoryItemResponse(
+        id=str(item.id),
+        raw_id=str(item.raw_id),
+        type=item.type,
+        content=item.content,
+        summary=item.summary,
+        base_importance=float(item.base_importance),
+        dynamic_importance=float(item.dynamic_importance),
+        importance_score=float(item.importance_score) if item.importance_score is not None else None,
+        is_superseded=item.is_superseded,
+        supersedes_id=str(item.supersedes_id) if item.supersedes_id is not None else None,
+        created_at=item.created_at,
+    )

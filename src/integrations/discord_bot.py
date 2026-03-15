@@ -88,6 +88,35 @@ async def search_memories(
     return list(data)  # type: ignore[no-any-return]
 
 
+async def trigger_digest(
+    http: httpx.AsyncClient,
+    days: int,
+    api_key: str,
+    api_base_url: str,
+) -> dict[str, Any]:
+    """POST /v1/synthesis/run and return the response dict.
+
+    Args:
+        http: httpx async client
+        days: Number of days to synthesize (1–90)
+        api_key: Open Brain API key
+        api_base_url: Base URL of the Open Brain API
+
+    Returns:
+        Response dict with synthesis_id, memory_count, date_from, date_to, skipped, message
+
+    Raises:
+        httpx.HTTPStatusError: if the API returns a non-2xx status.
+    """
+    response = await http.post(
+        f"{api_base_url}/v1/synthesis/run",
+        json={"days": days},
+        headers={"X-API-Key": api_key},
+    )
+    response.raise_for_status()
+    return dict(response.json())
+
+
 async def get_api_health(
     http: httpx.AsyncClient,
     api_base_url: str,
@@ -114,7 +143,7 @@ class OpenBrainBot(discord.Client):
         self._http = http_client
         self._register_commands()
 
-    def _register_commands(self) -> None:
+    def _register_commands(self) -> None:  # noqa: C901
         """Register slash commands on the command tree."""
 
         @self.tree.command(name="search", description="Search your Open Brain memories")
@@ -162,6 +191,60 @@ class OpenBrainBot(discord.Client):
             except Exception as exc:
                 logger.error("discord_search_reply_error", error=str(exc))
                 await interaction.followup.send("Search succeeded but failed to format results.", ephemeral=True)
+
+        @self.tree.command(name="digest", description="Run weekly synthesis digest")
+        @app_commands.describe(days="Number of days to synthesize (default: 7, max: 90)")
+        async def digest_cmd(interaction: discord.Interaction, days: int = 7) -> None:
+            settings = _get_settings()
+            if interaction.user.id not in settings.discord_allowed_user_ids:
+                await interaction.response.send_message("Not authorised.", ephemeral=True)
+                return
+
+            if not 1 <= days <= 90:
+                await interaction.response.send_message(
+                    "days must be between 1 and 90.", ephemeral=True
+                )
+                return
+
+            await interaction.response.defer()
+
+            try:
+                result = await trigger_digest(
+                    self._http,
+                    days=days,
+                    api_key=settings.api_key,
+                    api_base_url=settings.open_brain_api_url,
+                )
+            except httpx.HTTPStatusError as exc:
+                logger.error("discord_digest_error", status=exc.response.status_code)
+                await interaction.followup.send("Digest failed — API error.", ephemeral=True)
+                return
+            except httpx.RequestError as exc:
+                logger.error("discord_digest_request_error", error=str(exc))
+                await interaction.followup.send("Digest failed — could not reach API.", ephemeral=True)
+                return
+
+            if result.get("skipped"):
+                await interaction.followup.send(
+                    f"No memories found in the last {days} day(s). Nothing to synthesize."
+                )
+                return
+
+            try:
+                embed = discord.Embed(
+                    title=f"Weekly Digest ({result['date_from']} → {result['date_to']})",
+                    color=discord.Color.green(),
+                )
+                embed.add_field(name="Memories processed", value=str(result["memory_count"]), inline=True)
+                sid = result.get("synthesis_id") or "N/A"
+                embed.add_field(name="Report ID", value=sid[:8] + "…" if len(sid) > 8 else sid, inline=True)
+                embed.set_footer(text=result.get("message", "Synthesis complete"))
+                await interaction.followup.send(embed=embed)
+            except Exception as exc:
+                logger.error("discord_digest_reply_error", error=str(exc))
+                await interaction.followup.send(
+                    "Digest succeeded but failed to format response.", ephemeral=True
+                )
 
         @self.tree.command(name="status", description="Show Open Brain pipeline status")
         async def status_cmd(interaction: discord.Interaction) -> None:

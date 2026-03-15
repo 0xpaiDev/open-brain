@@ -55,6 +55,9 @@ class Settings(BaseSettings):
 
     # Synthesis
     synthesis_max_memories_per_report: int = 50
+    # NOTE: Haiku is used for MVP/demo cost savings.
+    # Set SYNTHESIS_MODEL=claude-opus-4-6 in .env before going to production.
+    synthesis_model: str = "claude-haiku-4-5-20251001"
 
     # Discord integration (optional — leave blank to disable)
     discord_bot_token: SecretStr = SecretStr("")

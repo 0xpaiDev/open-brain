@@ -251,3 +251,67 @@ async def test_retry_dead_letter_one_below_limit_succeeds(client, auth_headers, 
 async def test_retry_dead_letter_requires_auth(client, dead_letter):
     resp = await client.post(f"/v1/dead-letters/{dead_letter.id}/retry")
     assert resp.status_code == 401
+
+
+# ── GET /v1/queue/status ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_queue_status_empty_db(client, auth_headers):
+    """GET /v1/queue/status on empty DB returns all-zero counts."""
+    resp = await client.get("/v1/queue/status", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pending"] == 0
+    assert body["processing"] == 0
+    assert body["done"] == 0
+    assert body["failed"] == 0
+    assert body["total"] == 0
+    assert body["oldest_locked_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_queue_status_counts_by_status(client, auth_headers, async_session):
+    """GET /v1/queue/status returns correct per-status counts."""
+    raw = RawMemory(source="test", raw_text="test")
+    async_session.add(raw)
+    await async_session.flush()
+
+    pending_row = RefinementQueue(raw_id=raw.id, status="pending")
+    async_session.add(pending_row)
+
+    raw2 = RawMemory(source="test", raw_text="test2")
+    async_session.add(raw2)
+    await async_session.flush()
+    done_row = RefinementQueue(raw_id=raw2.id, status="done")
+    async_session.add(done_row)
+
+    await async_session.commit()
+
+    resp = await client.get("/v1/queue/status", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pending"] == 1
+    assert body["done"] == 1
+    assert body["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_queue_status_response_shape(client, auth_headers):
+    """GET /v1/queue/status response contains all expected fields."""
+    resp = await client.get("/v1/queue/status", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "pending" in body
+    assert "processing" in body
+    assert "done" in body
+    assert "failed" in body
+    assert "total" in body
+    assert "oldest_locked_at" in body
+
+
+@pytest.mark.asyncio
+async def test_queue_status_requires_auth(client):
+    """GET /v1/queue/status without X-API-Key returns 401."""
+    resp = await client.get("/v1/queue/status")
+    assert resp.status_code == 401

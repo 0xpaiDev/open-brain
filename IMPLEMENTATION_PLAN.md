@@ -1,8 +1,8 @@
 # Open Brain Implementation Plan
 
-**Version**: 1.0
-**Date**: 2026-03-13
-**Status**: Planning phase complete, ready for Phase 1 execution
+**Version**: 2.0 (As-Built)
+**Date**: 2026-03-15
+**Status**: Phase 1 + 2 complete | 270 tests passing | Phase 3 starting
 
 ---
 
@@ -43,23 +43,40 @@ This implementation plan incorporates:
 
 ### Ingestion Pipeline (async, durable queue-based)
 ```
-POST /v1/memory
-  → raw_memory table (immutable)
+POST /v1/memory  [source: "api" | "discord" | "cli"]
+  → SHA-256 content-hash dedup (24h window) → 200 duplicate if match
+  → raw_memory table (immutable, content_hash stored)
   → refinement_queue entry (pending)
   → HTTP 202 response (async processing)
 
 background worker process:
   SELECT FOR UPDATE SKIP LOCKED (poll every 5s + jitter)
-  → Normalize (rule-based text cleaning)
+  → Normalize (rule-based text cleaning + tiktoken chunking)
   → Extract (Claude Haiku + 3 escalating prompts)
   → Validate (Pydantic schema + entity name normalization)
   → Embed (Voyage AI voyage-3 with tenacity retry)
-  → Store (memory_items + entities + links)
+  → Store (memory_items + entities + links + decisions + tasks)
   → Update queue status = 'done'
 
 On failures:
   → 3-attempt retry with escalating prompts
   → move to failed_refinements after 3 failures
+```
+
+### Discord Integration (live, pre-Phase 3)
+```
+Discord message from allowlisted user
+  → on_message() captures text
+  → POST /v1/memory [source="discord", metadata={channel_id, author_id}]
+  → 🧠 reaction on success, ❌ on error
+
+/search <query> slash command
+  → GET /v1/search [limit=5]
+  → Results formatted as Discord Embed (score + 200-char preview)
+
+/status slash command
+  → GET /ready health probe
+  → ✅ online or ❌ unreachable
 ```
 
 ### Retrieval (hybrid ranking)
@@ -91,22 +108,24 @@ Weekly Sunday (2 AM):
 
 ---
 
-## Database Schema (12 tables)
+## Database Schema (11 tables built; jobs table deferred to Phase 3)
 
 All PKs are **UUID** (not BigInteger). All FKs must be checked at migration time.
 
+> **As-Built note**: The original plan specified 12 tables. `jobs` (for scheduled job tracking) was deferred to Phase 3 — it is not needed until the intelligence layer is implemented. All other 11 tables are live in production.
+
 ### Immutable logs
-- `raw_memory`: Original input text, source, chunking metadata
+- `raw_memory`: Original input text, source, chunking metadata, **`content_hash` VARCHAR(64)** (added via migration 0002)
 - `retrieval_events`: Search access log (feeds importance)
 
 ### Refined knowledge
-- `memory_items`: Extracted, normalized, ranked knowledge with importance score
+- `memory_items`: Extracted, normalized, ranked knowledge with importance score; embedding stored as `vector(1024)`
 - `decisions`: Structured decision records with alternatives
 - `tasks`: Task items with owner, due date, status
 
 ### Entity knowledge graph
 - `entities`: Canonical entity names with types (person, org, project, concept, tool, place)
-- `entity_aliases`: Variant names → canonical entity
+- `entity_aliases`: Variant names → canonical entity (globally unique constraint)
 - `entity_relations`: Graph edges (works_on, owns, related_to, decided_by)
 - `memory_entity_links`: M2M junction (PK: memory_id + entity_id)
 
@@ -172,35 +191,42 @@ WHERE status = 'pending' OR (status = 'processing' AND locked_at < now() - inter
 
 ## Implementation Phases
 
-### Phase 1: Foundation (44h + 15h for test-first = 59h estimated)
-**Goal**: Working ingestion → refinement → storage pipeline with basic search, **with self-confirm test loop**
+### Phase 1: Foundation ✅ AS BUILT — COMPLETE
+**Goal**: Working ingestion → refinement → storage pipeline with basic search
+**Actual duration**: ~59 hours | **Tests**: 89 passing | **Commits**: `db796de` → `a297aec` + 3 bug-fix commits
 
-**Critical path**:
-0. **Test Infrastructure First** (Checkpoint 0) — conftest.py with all fixtures before any source code
-1. Project scaffold (pyproject.toml, Docker, .env)
-2. Config + database setup (with test_config.py, test_database.py)
-3. Models (with test_models.py to catch UUID/composite PK bugs)
-4. Alembic migration (HNSW, GIN, retrieval_events, manual DDL)
-5. LLM clients (with test_llm_clients.py, test_prompts.py)
-6. Pipeline stages (with test_normalizer.py, test_extractor.py, test_validator.py, test_embedder.py, test_entity_resolver.py) — HIGH PRIORITY tests
-7. Worker (with test_worker.py testing stale lock reclaim + 3-failure dead letter) — CRITICAL TESTS
-8. Ingestion endpoint (with test_ingestion.py testing 202 response + auth) — HIGH PRIORITY tests
-9. Basic search (with test_ranking.py, test_search.py testing hybrid ranking) — HIGH PRIORITY tests
-10. Full test suite pass (pytest all tests green, >80% coverage on critical modules)
+**Delivered (checkpoints 0–9):**
+- CP0: `tests/conftest.py` — async SQLite fixtures, mock clients, test API client
+- CP1: Full project scaffold (pyproject.toml, Dockerfile, docker-compose.yml, .env.example, Makefile)
+- CP2: `src/core/config.py` (25 env vars, SecretStr, lazy singleton) + `src/core/database.py` (async engine, pool, health check)
+- CP3: `src/core/models.py` (11 tables, UUID PKs, composite PKs, GENERATED importance_score, Vector/JSON variant) + `alembic/versions/0001_initial_schema.py` (HNSW + GIN manual DDL)
+- CP4: `src/llm/client.py` + `src/llm/prompts.py` (3 escalating prompts, `<user_input>` injection defense)
+- CP5: Full pipeline — normalizer, extractor (+ markdown fence fix), validator, embedder, entity_resolver
+- CP6: `src/pipeline/worker.py` (SELECT FOR UPDATE SKIP LOCKED, FIX-2 stale lock reclaim, FIX-3 3-failure dead letter, SIGTERM handler)
+- CP7: `src/api/routes/memory.py` (POST /v1/memory → 202) + auth middleware + health/ready endpoints
+- CP8: `src/retrieval/search.py` + `src/retrieval/ranking.py` (hybrid 0.50×vector + 0.20×keyword + 0.20×importance + 0.10×recency, FIX-4 GIN expression, FIX-3 retrieval events)
+- CP9: 89/89 tests green; `alembic/versions/0002_add_content_hash.py` (SHA-256 dedup on POST /v1/memory moved here from Phase 2); all 8 Phase 1 verification gates passed
 
-**Verification gate**: All 8 items in Verification Plan must pass before Phase 2
+**Verification gate**: All 8 gates passed ✅ (2026-03-15 smoke test)
 
-### Phase 2: Retrieval + CLI (31h)
+### Phase 2: Retrieval + CLI ✅ AS BUILT — COMPLETE
 **Goal**: Production-quality retrieval with context builder and CLI tool
+**Actual duration**: ~17 hours | **Tests**: 270 passing (Phase 1 + 2) | **Commits**: `69b3963`, `bf3bc73`, `c451c50`
 
-- Context builder with token budget
-- Structured filter endpoints (type, entity, date range)
-- Superseding chain (corrections with is_superseded flag)
-- Entity resolution (pg_trgm fuzzy match + auto-merge)
-- Entity alias + merge endpoints
-- CLI (typer) with --sync flag
-- Task + decision endpoints
-- Dead-letter review + retry with retry_count guard
+**Delivered (checkpoints 2.0–2.8):**
+- CP2.0: `src/retrieval/context_builder.py` + GET /v1/search/context (token-budgeted LLM context, 8192-token default)
+- CP2.1: Structured filter endpoints — `type_filter`, `entity_filter`, `date_from`, `date_to` on GET /v1/search
+- CP2.2: Superseding chain — transactional `supersedes_memory_id` write + `is_superseded=true` on original
+- CP2.3: Entity resolution — pg_trgm fuzzy match (0.92 threshold), exact alias match → fuzzy → new
+- CP2.4: Entity endpoints — GET /v1/entities, GET /v1/entities/{id}, POST /v1/entities/merge (atomic with FK migration, expunge pattern), POST /v1/entities/{id}/aliases
+- CP2.5: CLI — `cli/ob.py` with `ob ingest`, `ob search`, `ob worker --sync`, `ob context`, `ob health`
+- CP2.6: Task + decision endpoints — GET/POST /v1/tasks, PATCH /v1/tasks/{id}, GET/POST /v1/decisions
+- CP2.7: Dead-letter endpoints — GET /v1/dead-letters, POST /v1/dead-letters/{id}/retry (retry_count guard)
+- CP2.8 *(bonus — moved from Phase 4)*: `src/integrations/discord_bot.py` — on_message ingestion, /search + /status slash commands, 🧠/❌ reactions, user-ID allowlist, httpx async HTTP client
+
+**Not delivered (tracked as debt):**
+- GET /v1/queue/status — listed in original plan but not implemented; dead-letters endpoint covers the primary use case
+- GET /v1/memory/{id} — listed in Phase 1 plan but not implemented; search is the primary retrieval path
 
 ### Phase 3: Intelligence Layer (21h)
 **Goal**: Dynamic importance, weekly synthesis, observability
@@ -278,7 +304,7 @@ WHERE status = 'pending' OR (status = 'processing' AND locked_at < now() - inter
 
 ---
 
-## File Structure (pre-Phase 1)
+## File Structure (as-built, post-Phase 2)
 
 ```
 open-brain/
@@ -286,11 +312,11 @@ open-brain/
 ├── .gitignore
 ├── .dockerignore
 ├── README.md                       # User-facing documentation
-├── IMPLEMENTATION_PLAN.md          # This file
+├── IMPLEMENTATION_PLAN.md          # This file (as-built)
 ├── PROGRESS.md                     # Task tracking and milestones
 ├── CLAUDE.md                       # Claude Code collaboration guidelines
 ├── Makefile                        # Development shortcuts
-├── docker-compose.yml              # Services: db, api, worker, migrate
+├── docker-compose.yml              # Services: api, worker, migrate + discord-bot profile
 ├── Dockerfile                      # Multi-stage build
 ├── pyproject.toml                  # Python project config + dependencies
 ├── uv.lock                         # Locked dependencies
@@ -299,7 +325,8 @@ open-brain/
 │   ├── env.py
 │   ├── script.py.mako
 │   └── versions/
-│       └── 0001_initial_schema.py  # MANUAL DDL for indexes
+│       ├── 0001_initial_schema.py  # MANUAL DDL: 11 tables, HNSW+GIN indexes
+│       └── 0002_add_content_hash.py # content_hash VARCHAR(64) + B-tree index
 ├── src/
 │   ├── __init__.py
 │   ├── api/
@@ -307,55 +334,65 @@ open-brain/
 │   │   ├── main.py                 # FastAPI app factory
 │   │   ├── routes/
 │   │   │   ├── __init__.py
-│   │   │   ├── memory.py           # POST /v1/memory, GET /v1/memory/{id}
+│   │   │   ├── memory.py           # POST /v1/memory (202, SHA-256 dedup, supersedes)
 │   │   │   ├── search.py           # GET /v1/search, GET /v1/search/context
-│   │   │   ├── entities.py
-│   │   │   ├── tasks.py
-│   │   │   ├── decisions.py
-│   │   │   ├── queue.py            # GET /v1/queue/status, /v1/dead-letters
-│   │   │   └── health.py           # GET /health, GET /ready
+│   │   │   ├── entities.py         # GET list/id, POST merge, POST aliases
+│   │   │   ├── tasks.py            # GET list, POST create, PATCH status
+│   │   │   ├── decisions.py        # GET list, POST create
+│   │   │   ├── queue.py            # GET /v1/dead-letters, POST /v1/dead-letters/{id}/retry
+│   │   │   └── health.py           # GET /health (liveness), GET /ready (readiness)
 │   │   └── middleware/
 │   │       ├── __init__.py
-│   │       ├── auth.py             # X-API-Key header check
+│   │       ├── auth.py             # X-API-Key header check (lazy singleton)
 │   │       └── logging.py          # structlog middleware
 │   ├── core/
 │   │   ├── __init__.py
-│   │   ├── config.py               # pydantic-settings + validation
-│   │   ├── database.py             # async engine + session factory
-│   │   └── models.py               # all 12 SQLAlchemy ORM models
+│   │   ├── config.py               # pydantic-settings + validation (lazy singleton)
+│   │   ├── database.py             # async engine + session factory (pool_size=3)
+│   │   └── models.py               # 11 SQLAlchemy ORM models (Vector/JSON variant)
 │   ├── pipeline/
 │   │   ├── __init__.py
-│   │   ├── worker.py               # Main polling loop
-│   │   ├── normalizer.py           # Text cleaning + chunking
-│   │   ├── extractor.py            # Claude Haiku extraction
-│   │   ├── validator.py            # Pydantic validation
-│   │   ├── embedder.py             # Voyage AI embedding
-│   │   └── entity_resolver.py      # pg_trgm fuzzy match + merge
+│   │   ├── worker.py               # Polling loop: claim → normalize → extract → embed → store
+│   │   ├── normalizer.py           # Unicode NFC + tiktoken chunking (2000 tok max)
+│   │   ├── extractor.py            # Claude Haiku extraction (markdown fence fix)
+│   │   ├── validator.py            # Pydantic validation + entity name normalization
+│   │   ├── embedder.py             # Voyage AI voyage-3 (tenacity retry)
+│   │   └── entity_resolver.py      # exact alias → pg_trgm fuzzy (0.92) → new entity
 │   ├── retrieval/
 │   │   ├── __init__.py
-│   │   ├── search.py               # Hybrid search SQL + execution
-│   │   ├── ranking.py              # Score formula constants
-│   │   └── context_builder.py      # Format results for LLM
-│   ├── jobs/
+│   │   ├── search.py               # Hybrid SQL (HNSW+GIN FULL OUTER JOIN), dedup, event log
+│   │   ├── ranking.py              # recency_score + combined_score (settings-based weights)
+│   │   └── context_builder.py      # Token-budgeted LLM context (8192 default)
+│   ├── jobs/                       # Phase 3 — DIRECTORY NOT YET CREATED
+│   ├── integrations/
 │   │   ├── __init__.py
-│   │   ├── importance.py           # Daily importance aggregation
-│   │   └── synthesis.py            # Weekly synthesis job
+│   │   └── discord_bot.py          # Discord client: on_message, /search, /status
 │   └── llm/
 │       ├── __init__.py
-│       ├── client.py               # Anthropic + Voyage singletons
-│       └── prompts.py              # All prompts + typed constants
+│       ├── client.py               # AnthropicClient + VoyageEmbeddingClient singletons
+│       └── prompts.py              # 3 escalating prompts + <user_input> injection defense
 ├── cli/
 │   ├── __init__.py
-│   └── ob.py                       # Main CLI entry point (typer)
+│   └── ob.py                       # ob ingest | search | context | worker --sync | health
 └── tests/
     ├── __init__.py
-    ├── conftest.py                 # Async fixtures, mocked clients
-    ├── test_ingestion.py
-    ├── test_pipeline.py
-    ├── test_search.py
-    ├── test_ranking.py
-    ├── test_entity_resolver.py
-    └── test_context_builder.py
+    ├── conftest.py                 # Async SQLite fixtures, mock clients, test_client
+    ├── test_config.py              # Settings validation, SecretStr
+    ├── test_database.py            # Health check, session management
+    ├── test_models.py              # UUID PKs, composite PKs, FKs
+    ├── test_llm.py                 # AnthropicClient, VoyageClient, prompt injection
+    ├── test_pipeline.py            # normalizer, extractor, validator, embedder, entity_resolver
+    ├── test_worker.py              # Stale lock reclaim (FIX-2), 3-failure dead letter (FIX-3)
+    ├── test_ingestion.py           # POST /v1/memory: auth, 202, dedup
+    ├── test_ranking.py             # recency_score, combined_score, weight validation
+    ├── test_search.py              # Hybrid search, filters, retrieval event logging
+    ├── test_context_builder.py     # Token budget, truncation, item inclusion
+    ├── test_entities.py            # Merge (conflict resolution), aliases, listing
+    ├── test_tasks.py               # CRUD, status validation
+    ├── test_decisions.py           # CRUD, memory_id filtering
+    ├── test_queue.py               # Dead-letter listing, retry guard
+    ├── test_cli.py                 # ingest, search, worker --sync, context
+    └── test_discord_bot.py         # Message ingestion, search command, status command
 ```
 
 ---
@@ -387,13 +424,20 @@ Checkpoint 9 (full suite pass) ✅
 
 ---
 
-## Next Steps
+## Next Steps (as of 2026-03-15)
 
-1. **Checkpoint 0**: Create `tests/conftest.py` with all fixtures
-2. **Checkpoint 1**: All project files created, no code yet
-3. **Phase 1 execution**: Follow task order, write tests first, then code
-4. **Phase 1 verification**: All test suites pass + all 8 gates before Phase 2
-5. **Iterate Phases 2–4**
+Phase 1 and Phase 2 are complete. Phase 3 begins now.
+
+1. **Phase 3.1**: Implement `src/jobs/importance.py` — aggregate `retrieval_events`, update `dynamic_importance` on `memory_items` (daily at 3 AM)
+2. **Phase 3.2**: Implement `src/jobs/synthesis.py` — cluster memories by entities, call Claude for weekly report, store as `memory_item` with `source="synthesis"`
+3. **Phase 3.3**: Synthesis prompt engineering in `src/llm/prompts.py`
+4. **Phase 3.4**: Observability — structlog events for ingestion rate, error rate, queue depth
+5. **Phase 4**: Docker Compose production config, Caddy reverse proxy, rate limiting, pg_dump backups, automated integration tests, API docs
+
+**Known technical debt (Phase 2 gaps):**
+- GET /v1/memory/{id} — not implemented; search is the primary path
+- GET /v1/queue/status — not implemented; GET /v1/dead-letters covers the use case
+- No automated integration test against real Supabase (smoke test is manual)
 
 ---
 

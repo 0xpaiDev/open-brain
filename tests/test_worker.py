@@ -7,11 +7,13 @@ CRITICAL TESTS:
 These tests validate the two most critical bug fixes in the worker.
 """
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
+from structlog.testing import capture_logs
 
 from src.core.models import (
     Entity,
@@ -23,6 +25,7 @@ from src.core.models import (
 from src.llm.client import ExtractionFailed
 from src.pipeline.extractor import EntityExtract, ExtractionResult
 from src.pipeline.worker import (
+    _get_queue_depth,
     claim_batch,
     move_to_dead_letter,
     process_job,
@@ -152,9 +155,7 @@ async def test_process_job_creates_memory_item(async_session):
         await process_job(queue, mock_anthropic, mock_voyage)
 
     # Verify memory_item was created
-    result = await async_session.execute(
-        select(MemoryItem).where(MemoryItem.raw_id == raw.id)
-    )
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
     memory_items = result.scalars().all()
     assert len(memory_items) == 1
     assert memory_items[0].content == "test"
@@ -328,9 +329,7 @@ async def test_store_memory_item_creates_memory_item(async_session):
     embedding = [0.1] * 1024
 
     # Call store_memory_item (it starts its own transaction)
-    memory_item = await store_memory_item(
-        async_session, raw, queue, extraction, embedding, []
-    )
+    memory_item = await store_memory_item(async_session, raw, queue, extraction, embedding, [])
 
     # Verify memory_item exists
     assert memory_item is not None
@@ -375,3 +374,431 @@ async def test_move_to_dead_letter_sets_queue_status_failed(async_session):
     assert dead_letters[0].error_reason == "Test error reason"
     assert dead_letters[0].last_output == "test output"
     assert dead_letters[0].attempt_count == 3
+
+
+# ── CP 3.5 Observability tests ────────────────────────────────────────────
+#
+# Covers: worker_heartbeat, ingestion_complete, ingestion_dead_letter,
+#         and queue_depth enrichment on exception logs.
+#
+# Pattern: structlog.testing.capture_logs() captures all structlog events
+# emitted inside the `with` block regardless of log level.
+
+
+# ── A. _get_queue_depth helper ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_queue_depth_empty_queue(async_session):
+    """_get_queue_depth() returns zeros when queue is empty."""
+    depth = await _get_queue_depth(async_session)
+    assert depth == {"pending": 0, "processing": 0}
+
+
+@pytest.mark.asyncio
+async def test_get_queue_depth_counts_pending_and_processing(async_session):
+    """_get_queue_depth() returns correct counts for pending and processing rows."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    async_session.add(RefinementQueue(raw_id=raw.id, status="pending"))
+    async_session.add(RefinementQueue(raw_id=raw.id, status="pending"))
+    async_session.add(RefinementQueue(raw_id=raw.id, status="processing"))
+    await async_session.flush()
+
+    depth = await _get_queue_depth(async_session)
+    assert depth["pending"] == 2
+    assert depth["processing"] == 1
+
+
+# ── B. worker_heartbeat (via run()) ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_emitted_on_run_iteration(async_session):
+    """run() emits worker_heartbeat at the start of each polling iteration."""
+    from src.pipeline import worker as worker_mod
+
+    worker_mod._shutdown.clear()
+
+    async def mock_sleep(_):
+        worker_mod._shutdown.set()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    mock_anthropic = AsyncMock()
+    mock_voyage = AsyncMock()
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", side_effect=mock_get_db):
+            with patch("src.pipeline.worker.asyncio.sleep", mock_sleep):
+                with patch("src.pipeline.worker.signal.signal"):
+                    await worker_mod.run(mock_anthropic, mock_voyage)
+
+    heartbeats = [e for e in cap if e["event"] == "worker_heartbeat"]
+    assert len(heartbeats) >= 1
+    assert heartbeats[0]["pending"] == 0
+    assert heartbeats[0]["processing"] == 0
+    assert "poll_interval" in heartbeats[0]
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_fires_on_every_iteration(async_session):
+    """run() emits worker_heartbeat once per loop iteration."""
+    from src.pipeline import worker as worker_mod
+
+    worker_mod._shutdown.clear()
+    call_count = 0
+
+    async def mock_sleep(_):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            worker_mod._shutdown.set()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    mock_anthropic = AsyncMock()
+    mock_voyage = AsyncMock()
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", side_effect=mock_get_db):
+            with patch("src.pipeline.worker.asyncio.sleep", mock_sleep):
+                with patch("src.pipeline.worker.signal.signal"):
+                    await worker_mod.run(mock_anthropic, mock_voyage)
+
+    heartbeats = [e for e in cap if e["event"] == "worker_heartbeat"]
+    assert len(heartbeats) == 2
+
+
+# ── C. ingestion_complete ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ingestion_complete_emitted_on_success(async_session):
+    """process_job() emits ingestion_complete with raw_id, attempts, duration_ms on success."""
+    raw = RawMemory(source="api", raw_text="test content")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = '{"type": "memory", "content": "test"}'
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    events = [e for e in cap if e["event"] == "ingestion_complete"]
+    assert len(events) == 1
+    assert events[0]["raw_id"] == str(raw.id)
+    assert events[0]["attempts"] == 1
+    assert "duration_ms" in events[0]
+
+
+@pytest.mark.asyncio
+async def test_ingestion_complete_duration_ms_non_negative(async_session):
+    """ingestion_complete duration_ms is a non-negative integer."""
+    raw = RawMemory(source="api", raw_text="test content")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = '{"type": "memory", "content": "test"}'
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    events = [e for e in cap if e["event"] == "ingestion_complete"]
+    assert len(events) == 1
+    assert isinstance(events[0]["duration_ms"], int)
+    assert events[0]["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_ingestion_complete_not_emitted_on_dead_letter(async_session):
+    """process_job() does NOT emit ingestion_complete when job moves to dead letter."""
+    raw = RawMemory(source="api", raw_text="test content")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=3)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("permanent failure")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    assert not any(e["event"] == "ingestion_complete" for e in cap)
+
+
+@pytest.mark.asyncio
+async def test_ingestion_complete_not_emitted_on_retry(async_session):
+    """process_job() does NOT emit ingestion_complete when job resets to pending (retry path)."""
+    raw = RawMemory(source="api", raw_text="test content")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("transient failure")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    assert not any(e["event"] == "ingestion_complete" for e in cap)
+    assert not any(e["event"] == "ingestion_dead_letter" for e in cap)
+
+
+# ── D. ingestion_dead_letter ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_emitted(async_session):
+    """move_to_dead_letter() emits ingestion_dead_letter log event."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=3)
+    async_session.add(queue)
+    await async_session.commit()
+
+    with capture_logs() as cap:
+        await move_to_dead_letter(async_session, queue, "extraction_failed")
+
+    events = [e for e in cap if e["event"] == "ingestion_dead_letter"]
+    assert len(events) == 1
+    assert events[0]["raw_id"] == str(raw.id)
+    assert events[0]["attempts"] == 3
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_not_emitted_on_first_attempt(async_session):
+    """process_job() does NOT emit ingestion_dead_letter when attempts=1 (retry path)."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("transient")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    assert not any(e["event"] == "ingestion_dead_letter" for e in cap)
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_not_emitted_on_second_attempt(async_session):
+    """process_job() does NOT emit ingestion_dead_letter when attempts=2 (retry path)."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=2)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("transient")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    assert not any(e["event"] == "ingestion_dead_letter" for e in cap)
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_contains_max_attempts_from_settings(async_session):
+    """ingestion_dead_letter includes max_attempts from settings.dead_letter_retry_limit."""
+    from src.core.config import settings
+
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=3)
+    async_session.add(queue)
+    await async_session.commit()
+
+    with capture_logs() as cap:
+        await move_to_dead_letter(async_session, queue, "reason")
+
+    events = [e for e in cap if e["event"] == "ingestion_dead_letter"]
+    assert len(events) == 1
+    assert events[0]["max_attempts"] == settings.dead_letter_retry_limit
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_contains_error_reason(async_session):
+    """ingestion_dead_letter includes the exact error_reason string."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=3)
+    async_session.add(queue)
+    await async_session.commit()
+
+    with capture_logs() as cap:
+        await move_to_dead_letter(
+            async_session, queue, "Extraction failed after 3 attempts: bad JSON"
+        )
+
+    events = [e for e in cap if e["event"] == "ingestion_dead_letter"]
+    assert len(events) == 1
+    assert events[0]["error_reason"] == "Extraction failed after 3 attempts: bad JSON"
+
+
+@pytest.mark.asyncio
+async def test_dead_letter_log_emitted_when_attempts_above_limit(async_session):
+    """ingestion_dead_letter is emitted even when attempts > dead_letter_retry_limit.
+
+    Edge case: stale lock reclaim can push attempts above 3. The >= 3 check
+    ensures dead letter fires for any over-limit attempt count.
+    """
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=4)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("still failing")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage)
+
+    events = [e for e in cap if e["event"] == "ingestion_dead_letter"]
+    assert len(events) == 1
+    assert events[0]["attempts"] == 4
+
+
+# ── E. Exception log queue_depth enrichment ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_exception_log_enriched_with_queue_depth(async_session):
+    """process_job() exception logs include queue_depth when extraction fails."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("transient")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(
+                queue, mock_anthropic, mock_voyage, queue_depth={"pending": 5, "processing": 2}
+            )
+
+    warning_events = [e for e in cap if e.get("event") == "process_job_extraction_failed"]
+    assert len(warning_events) == 1
+    assert "queue_depth" in warning_events[0]
+
+
+@pytest.mark.asyncio
+async def test_exception_log_queue_depth_matches_passed_value(async_session):
+    """process_job() logs the exact queue_depth dict passed in."""
+    raw = RawMemory(source="api", raw_text="x")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.side_effect = ExtractionFailed("transient")
+    mock_voyage = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    specific_depth = {"pending": 7, "processing": 3}
+    with capture_logs() as cap:
+        with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+            await process_job(queue, mock_anthropic, mock_voyage, queue_depth=specific_depth)
+
+    warning_events = [e for e in cap if e.get("event") == "process_job_extraction_failed"]
+    assert len(warning_events) == 1
+    assert warning_events[0]["queue_depth"] == specific_depth

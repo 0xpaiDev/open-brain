@@ -15,6 +15,7 @@ from src.integrations.discord_bot import (
     get_api_health,
     ingest_memory,
     search_memories,
+    trigger_digest,
 )
 
 
@@ -279,3 +280,61 @@ async def test_on_message_api_error_reacts_with_x(monkeypatch) -> None:
     await bot.on_message(message)
 
     message.add_reaction.assert_awaited_once_with("❌")
+
+
+# ── trigger_digest ─────────────────────────────────────────────────────────────
+
+
+_SYNTHESIS_RESPONSE = {
+    "synthesis_id": "abc12345-0000-0000-0000-000000000000",
+    "memory_count": 5,
+    "date_from": "2026-03-08",
+    "date_to": "2026-03-15",
+    "skipped": False,
+    "message": "Synthesis complete",
+}
+
+
+@pytest.mark.asyncio
+async def test_trigger_digest_returns_response() -> None:
+    """Successful call returns the synthesis response dict."""
+    http = _make_http(post_response=_mock_response(200, _SYNTHESIS_RESPONSE))
+
+    result = await trigger_digest(http, days=7, api_key="test-key", api_base_url="http://localhost:8000")
+
+    assert result["memory_count"] == 5
+    assert result["skipped"] is False
+    assert result["synthesis_id"] == "abc12345-0000-0000-0000-000000000000"
+
+
+@pytest.mark.asyncio
+async def test_trigger_digest_raises_on_non_200() -> None:
+    """Non-2xx response raises httpx.HTTPStatusError."""
+    http = _make_http(post_response=_mock_response(500, {"detail": "server error"}))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await trigger_digest(http, days=7, api_key="test-key", api_base_url="http://localhost:8000")
+
+
+@pytest.mark.asyncio
+async def test_trigger_digest_handles_skipped() -> None:
+    """Skipped synthesis (no memories in window) returns skipped=True."""
+    skipped_response = {**_SYNTHESIS_RESPONSE, "skipped": True, "synthesis_id": None, "memory_count": 0}
+    http = _make_http(post_response=_mock_response(200, skipped_response))
+
+    result = await trigger_digest(http, days=7, api_key="test-key", api_base_url="http://localhost:8000")
+
+    assert result["skipped"] is True
+    assert result["synthesis_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_trigger_digest_sends_correct_days_param() -> None:
+    """The days parameter is forwarded correctly in the JSON body."""
+    http = _make_http(post_response=_mock_response(200, _SYNTHESIS_RESPONSE))
+
+    await trigger_digest(http, days=14, api_key="test-key", api_base_url="http://localhost:8000")
+
+    http.post.assert_awaited_once()
+    call_kwargs = http.post.call_args.kwargs
+    assert call_kwargs["json"]["days"] == 14

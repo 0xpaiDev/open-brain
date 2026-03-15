@@ -391,6 +391,51 @@ async def test_store_memory_item_sets_supersedes_id(async_session):
     assert str(memory_item.supersedes_id) == str(original_item.id)
 
 
+# ── GET /v1/memory/{memory_id} ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_memory_item_returns_200(client, auth_headers, async_session):
+    """GET /v1/memory/{id} for an existing MemoryItem returns 200 with all fields."""
+    item = await _create_memory_item(async_session)
+
+    resp = await client.get(f"/v1/memory/{item.id}", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == str(item.id)
+    assert body["type"] == "memory"
+    assert body["content"] == "original memory content"
+    assert "base_importance" in body
+    assert "dynamic_importance" in body
+    assert "is_superseded" in body
+    assert body["is_superseded"] is False
+    assert body["supersedes_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_memory_item_not_found_returns_404(client, auth_headers):
+    """GET /v1/memory/{id} with valid UUID that does not exist returns 404."""
+    import uuid
+
+    resp = await client.get(f"/v1/memory/{uuid.uuid4()}", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_memory_item_invalid_uuid_returns_422(client, auth_headers):
+    """GET /v1/memory/{id} with a non-UUID path param returns 422."""
+    resp = await client.get("/v1/memory/not-a-uuid", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_memory_item_requires_auth(client, async_session):
+    """GET /v1/memory/{id} without X-API-Key returns 401."""
+    item = await _create_memory_item(async_session)
+    resp = await client.get(f"/v1/memory/{item.id}")
+    assert resp.status_code == 401
+
+
 @pytest.mark.asyncio
 async def test_store_memory_item_no_supersedes_when_metadata_none(async_session):
     """store_memory_item() sets supersedes_id=None when raw.metadata_ is None."""

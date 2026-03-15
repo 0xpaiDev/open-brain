@@ -2,8 +2,8 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: Transition — Phase 1 complete, pre-Phase-2 validation in progress
-**Overall Progress**: ~76% (Phase 1 complete, 89 tests passing, ORM fixes committed, smoke test pending)
+**Current Phase**: Phase 3 — Intelligence Layer (starting 2026-03-15)
+**Overall Progress**: ~70% (Phase 1 + 2 complete, 329 tests passing, Phase 3 complete)
 
 ---
 
@@ -551,32 +551,122 @@ Discord integration scaffold (`src/integrations/discord_bot.py`) is implemented.
 
 ---
 
-## Phase 2: Retrieval + CLI (0% → target 50%)
+## Phase 2: Retrieval + CLI ✅ COMPLETE
 
-**Status**: Pending smoke test (Gates 1–2) and content-hash dedup
-**Est. Duration**: 31 hours
+**Status**: ✅ COMPLETE (all checkpoints 2.0–2.8 done, 270 tests passing)
+**Actual Duration**: ~17 hours (31h estimated)
+**Completed**: 2026-03-15
+**Commits**: `69b3963` (CP2.0–2.5), `bf3bc73` (CP2.6–2.7), `c451c50` (CP2.8 Discord)
 
-- [ ] 2.1: Context builder with token budget
-- [ ] 2.2: Structured filter endpoints
-- [ ] 2.3: Superseding chain (transactional)
-- [ ] 2.4: Entity alias + merge endpoints
-- [ ] 2.5: CLI (typer) with --sync flag
-- [ ] 2.6: Task + decision endpoints
-- [ ] 2.7: Dead-letter retry with retry_count guard
-- [ ] 2.8: GET /v1/search/context endpoint
+- [x] 2.0: Context builder with token budget (`src/retrieval/context_builder.py` + GET /v1/search/context)
+- [x] 2.1: Structured filter endpoints (type_filter, entity_filter, date_from, date_to on /v1/search)
+- [x] 2.2: Superseding chain (transactional supersedes_memory_id + is_superseded flag)
+- [x] 2.3: Entity resolution (pg_trgm fuzzy match 0.92 threshold + merge endpoint)
+- [x] 2.4: Entity alias + merge endpoints (POST /v1/entities/merge, POST /v1/entities/{id}/aliases)
+- [x] 2.5: CLI (typer) — `ob ingest`, `ob search`, `ob context`, `ob worker --sync`, `ob health`
+- [x] 2.6: Task + decision endpoints (GET/POST /v1/tasks, PATCH /v1/tasks/{id}, GET/POST /v1/decisions)
+- [x] 2.7: Dead-letter retry with retry_count guard (GET /v1/dead-letters, POST /v1/dead-letters/{id}/retry)
+- [x] 2.8: *(bonus — moved from Phase 4)* Discord bot (`src/integrations/discord_bot.py`) — on_message ingestion, /search + /status slash commands, 🧠/❌ reactions, user-ID allowlist
+
+**Phase 2 bug fixes (in commit `c451c50`):**
+- `extractor.py`: `DecisionExtract.reasoning` changed to `str | None` (Claude returns null)
+- `worker.py`: Coerce `reasoning=None → ""` before DB insert
+- `search.py`: Deduplicate results by content hash after ranking (prevents duplicate Discord embeds)
+
+**Phase 2 test suite (270 total, all passing):**
+```
+test_context_builder.py ✅
+test_entities.py        ✅
+test_tasks.py           ✅
+test_decisions.py       ✅
+test_queue.py           ✅
+test_cli.py             ✅
+test_discord_bot.py     14 tests ✅
+(+ all 89 Phase 1 tests retained)
+────────────────────────────────
+Total Phase 1+2:        270 tests ✅
+```
 
 ---
 
-## Phase 3: Intelligence Layer (0% → target 75%)
+---
 
-**Status**: Pending Phase 2 completion
+## Session 4 Notes (2026-03-15) — Phase 2 Complete + Ground Truth Sync
+
+### Phase 2 Completion Summary
+All 8 Phase 2 checkpoints (2.0–2.7) implemented across 3 commits. Discord integration (CP2.8) moved up from Phase 4. Total test suite grew from 89 → 270 tests.
+
+### Content-Hash Dedup (moved to Phase 1)
+`POST /v1/memory` now rejects duplicates within 24h using SHA-256 hash stored in `raw_memory.content_hash`. Implemented via Alembic migration `0002_add_content_hash`. This was originally planned for Phase 2 but implemented during Phase 1/2 boundary to unblock Discord.
+
+### Entity Merge: Key Implementation Pattern
+`POST /v1/entities/merge` uses `session.expunge(source_entity)` before Core SQL operations to avoid ORM identity map conflicts when moving FK references. See CLAUDE.md "ORM Identity Map Conflict" gotcha.
+
+### Architecture Decision: Discord as First-Class Integration
+Switched integration platform from Slack (paid) to Discord (free). Discord bot runs as opt-in Docker profile (`discord-bot`). Allowlist-gated via `DISCORD_ALLOWED_USER_IDS`. All API calls go through the HTTP API (not direct DB) — maintains clean separation of concerns.
+
+---
+
+## Technical Debt (before Phase 3)
+
+| Item | Severity | Notes |
+|------|----------|-------|
+| ~~GET /v1/memory/{id} missing~~ | ~~Low~~ | ✅ Implemented Session 3.1 |
+| ~~GET /v1/queue/status missing~~ | ~~Low~~ | ✅ Implemented Session 3.1 |
+| No automated integration test against real Supabase | Medium | Smoke test is manual; regressions in prod schema changes would be caught late |
+| ~~`dynamic_importance` stays 0.0 forever~~ | ~~High~~ | ✅ Fixed: `src/jobs/importance.py` implemented Session 3.1 |
+| ~~`src/jobs/` directory does not exist~~ | ~~Medium~~ | ✅ Created Session 3.1 |
+
+---
+
+## Session 3.1 Notes (2026-03-15) — Tech Debt + Phase 3 Kickoff
+
+### Tech Debt Cleared
+- `GET /v1/memory/{id}` — returns all MemoryItem fields; 404/422 handling
+- `GET /v1/queue/status` — returns per-status counts (`pending`, `processing`, `done`, `failed`, `total`) + `oldest_locked_at` as worker health signal
+
+### Phase 3.2: Daily Importance Job
+- `src/jobs/importance.py` — `run_importance_job(session)` aggregates all `retrieval_events` with exponential decay: `Σ exp(-age_days / half_life_days)`, normalized by `NORMALIZATION_FACTOR=5` and capped at 1.0
+- Memories with zero events decay one step per run: `current * exp(-1 / half_life_days)`, floor at 0.0
+- Invokable standalone: `python -m src.jobs.importance`
+- No migration needed — `dynamic_importance` column already existed
+
+### Test count: 270 → 287 (+17 tests, all green)
+
+---
+
+## Session 3.2 Notes (2026-03-15) — CP 3.1, CP 3.3, CP 3.4
+
+### CP 3.1: Base Importance Verification
+- `base_importance` confirmed dynamic — Claude assigns it per extraction (no hardcoded 0.6)
+- Added 5-tier scoring rubric to `EXTRACTION_SYSTEM_PROMPT` to reduce anchoring at 0.5
+- Changed JSON schema example from `0.5` → `0.6` (non-round, less anchor bias)
+- Retry prompts (`EXTRACTION_RETRY_PROMPT_1/2`) intentionally unchanged — they are JSON recovery only
+- New: `tests/test_extractor.py` (8 tests, all green)
+
+### CP 3.3 + CP 3.4: Weekly Synthesis Job
+- `src/jobs/synthesis.py` — `run_synthesis_job(session, client, days=7)`: fetch recent memories → bulk-load entity names → build annotated prompt → call Claude → persist as `RawMemory(source="synthesis")` + `MemoryItem(type="context", base_importance=0.8)`
+- `python -m src.jobs.synthesis --days 7` — standalone cron invocation
+- `src/llm/prompts.py` — `SYNTHESIS_SYSTEM_PROMPT` + `build_synthesis_user_message()` added
+- `src/api/routes/queue.py` — `POST /v1/synthesis/run` endpoint (returns synthesis_id, memory_count, date range)
+- `src/integrations/discord_bot.py` — `trigger_digest()` helper + `/digest` slash command
+- `src/core/config.py` — `synthesis_model = "claude-haiku-4-5-20251001"` (MVP default; set `SYNTHESIS_MODEL=claude-opus-4-6` for production)
+- New: `tests/test_synthesis.py` (14 tests, all green), +4 tests in `test_discord_bot.py`
+
+### Test count: 287 → 313 (+26 tests, all green)
+
+---
+
+## Phase 3: Intelligence Layer (100% ✅)
+
+**Status**: ✅ COMPLETE (2026-03-15)
 **Est. Duration**: 21 hours
 
-- [ ] 3.1: Base importance scoring in extraction
-- [ ] 3.2: Daily importance job
-- [ ] 3.3: Weekly synthesis job
-- [ ] 3.4: Synthesis prompt engineering
-- [ ] 3.5: Observability logging
+- [x] 3.1: Base importance scoring — verified dynamic (no hardcoding). Added scoring rubric to `EXTRACTION_SYSTEM_PROMPT`. 8 targeted tests in `tests/test_extractor.py`. ✅
+- [x] 3.2: Daily importance job (`src/jobs/importance.py`) — aggregate retrieval_events, decay dynamic_importance ✅
+- [x] 3.3: Weekly synthesis job (`src/jobs/synthesis.py`) — `run_synthesis_job(session, client, days)`, clusters by entities, stores report as MemoryItem(source="synthesis"). `POST /v1/synthesis/run` in `queue.py`. Discord `/digest` command. 14 tests in `tests/test_synthesis.py`. ✅
+- [x] 3.4: Synthesis prompt engineering — `SYNTHESIS_SYSTEM_PROMPT` + `build_synthesis_user_message()` added to `src/llm/prompts.py`. ✅
+- [x] 3.5: Observability logging — `worker_heartbeat` (pending/processing/poll_interval per poll cycle), `ingestion_complete` (raw_id/attempts/duration_ms on success), `ingestion_dead_letter` (raw_id/attempts/error_reason/max_attempts on failure), `queue_depth` enrichment on all exception logs. `_get_queue_depth()` helper added. 16 tests in `tests/test_worker.py`. ✅
 
 ---
 
@@ -605,8 +695,9 @@ Discord integration scaffold (`src/integrations/discord_bot.py`) is implemented.
 | Worker crashes leave jobs in processing | High | TTL reclaim + test crash recovery | ✅ Resolved (CP6) |
 | pgvector ORM type mismatch (JSONB vs Vector) | High | Use `Vector(1024).with_variant(JSON(), "sqlite")` in models.py | ✅ Resolved (Session 3) |
 | LLM worker cost spike from JSON parse failure | High | Strip markdown code fences before json.loads() | ✅ Resolved (Session 3) |
-| Discord duplicate processing (no dedup) | High | Content-hash dedup on POST /v1/memory before Discord integration goes live | 🟡 Planned (Phase 2) |
-| No production smoke test (embeddings unverified) | Medium | Run 5 real memories through pipeline, verify vector column | 🟡 In progress |
+| Discord duplicate processing (no dedup) | High | Content-hash dedup on POST /v1/memory before Discord integration goes live | ✅ Resolved (CP1/2 boundary, migration 0002) |
+| No production smoke test (embeddings unverified) | Medium | Run 5 real memories through pipeline, verify vector column | ✅ Resolved (2026-03-15: 20/20 rows non-null vectors confirmed) |
+| dynamic_importance stays 0.0 (no aggregation job) | High | retrieval_events are logged but never aggregated until Phase 3.2 | 🔴 Open (Phase 3 prerequisite) |
 
 ---
 
