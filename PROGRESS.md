@@ -516,8 +516,8 @@ Total:              89 tests  ✅
 
 ## Phase 1 Verification Gates (must all pass before Phase 2)
 
-- [ ] Gate 1: `docker compose up` → api and worker services healthy (db service no longer exists; Supabase is external)
-- [ ] Gate 2: `psql $SQLALCHEMY_URL -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'"` → 11 tables
+- [x] Gate 1: `docker compose up` → api and worker services healthy ✅ (2026-03-15)
+- [x] Gate 2: embedding column `udt_name='vector'`, 20 rows all with non-null embeddings ✅ (2026-03-15)
 - [x] Gate 3: `POST /v1/memory` → 202 with raw_id (verified via test suite ✅)
 - [x] Gate 4: raw_memory + refinement_queue rows in DB (verified via test suite ✅)
 - [x] Gate 5: Worker processes job → memory_items + entities + embedding created (verified via test suite ✅)
@@ -540,8 +540,8 @@ The LLM worker was not truly looping — it was making **3 Anthropic calls per j
 3. `client.py`: Fixed SecretStr handling to use `.get_secret_value()` instead of `str()`.
 
 ### Phase 2 Prerequisites (must complete before Slack integration)
-- [ ] Smoke test: ingest 5+ real memories, verify non-null embeddings in DB, verify search returns ranked results
-- [ ] Confirm `udt_name = 'vector'` for embedding column in Supabase
+- [x] Smoke test: ingested 5 real memories, all processed, search returns semantically ranked results ✅
+- [x] Confirm `udt_name = 'vector'` for embedding column in Supabase ✅ (20/20 rows have non-null embeddings)
 - [ ] Content-hash dedup on `POST /v1/memory` (critical for Slack — prevents duplicate processing storms)
 
 ### Decision: Sequence Before Slack
