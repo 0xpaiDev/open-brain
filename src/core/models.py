@@ -67,6 +67,8 @@ class RawMemory(Base):
     author: Mapped[str] = mapped_column(String(255), default="user")
     metadata_: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True, name="metadata")
 
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
     chunk_index: Mapped[int | None] = mapped_column(nullable=True)
     chunk_total: Mapped[int | None] = mapped_column(nullable=True)
     parent_id: Mapped[str | None] = mapped_column(

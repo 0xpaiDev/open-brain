@@ -386,6 +386,46 @@ await session.commit()  # Persist "processing" status before handing off
 
 **Additional fix**: `process_job` opens its own inner session but received `queue_row` from the outer `claim_batch` session (a different session context). The inner session cannot track or commit changes to objects from another session. Fix: capture `queue_row.id` before entering the inner session, then re-fetch with `await session.get(RefinementQueue, queue_id)` inside the inner session so the object is tracked by the correct session.
 
+### Raw SQL text() + UUID Type Mismatch on SQLite
+
+❌ **Don't**: Use `text("... WHERE id = :v")` with `str(uuid_obj)` (dashes) in raw SQL on SQLite
+✅ **Do**: Use SQLAlchemy Core `sa_delete(Model).where(Model.id == uuid_obj)` or `sa_update(Model).values(...)` — Core routes through the column's `process_bind_param`, handling dialect differences automatically
+
+```python
+from sqlalchemy import delete as sa_delete, update as sa_update
+
+# Correct — Core handles UUID format per dialect
+await session.execute(sa_delete(Entity).where(Entity.id == source_uuid))
+await session.execute(
+    sa_update(MemoryEntityLink)
+    .where(MemoryEntityLink.entity_id == source_uuid)
+    .values(entity_id=target_uuid)
+)
+```
+
+**Why**: SQLite stores `UUID(as_uuid=True)` as 32-char hex without dashes. `str(uuid_obj)` = "abc-def-..." (with dashes, 36 chars) doesn't match. PostgreSQL accepts either format for native UUID columns. Using Core bypasses this divergence.
+
+---
+
+### ORM Identity Map Conflict After Raw SQL + session.delete()
+
+❌ **Don't**: Call `session.delete(entity)` after raw SQL `UPDATE` on dependent tables — SQLAlchemy tries to blank-out FK references it sees in the stale identity map, crashing on PK columns
+✅ **Do**: `session.expunge(entity)` before any raw SQL operations on dependent tables, then delete via Core
+
+```python
+# Capture what you need before expunge
+source_name = source_entity.name
+session.expunge(source_entity)  # Remove from identity map
+
+# ... do raw SQL / Core operations on dependent tables ...
+
+# Delete via Core — no ORM dependency processing, no identity map issues
+await session.execute(sa_delete(Entity).where(Entity.id == source_uuid))
+await session.commit()
+```
+
+**Why**: Raw SQL `UPDATE` statements bypass the ORM identity map. When a parent entity is later deleted via `session.delete()`, SQLAlchemy's unit-of-work processor sees stale child objects in the identity map still referencing the parent, and attempts to SET NULL on them — which fails when those FKs are part of a composite PK. `expunge()` removes the entity from tracking entirely; Core `sa_delete()` then issues a plain DELETE with no dependency processing.
+
 ---
 
 ## Living Document Rule

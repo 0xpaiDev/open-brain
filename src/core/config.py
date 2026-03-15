@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Worker
     worker_poll_interval: int = 5
     worker_lock_ttl_seconds: int = 300
+    dead_letter_retry_limit: int = 3
 
     # Importance scoring
     importance_base_default: float = 0.5
@@ -45,6 +46,9 @@ class Settings(BaseSettings):
     search_keyword_weight: float = 0.2
     search_importance_weight: float = 0.2
     search_recency_weight: float = 0.1
+
+    # Context builder
+    context_token_budget: int = 8192
 
     # Entity resolution
     entity_fuzzy_match_threshold: float = 0.92

@@ -13,6 +13,7 @@ The worker is typically run as a separate process, not in the API loop.
 import asyncio
 import random
 import signal
+import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -316,6 +317,12 @@ async def store_memory_item(
     Raises:
         Exception: If any insert fails
     """
+    # Read supersedes side-channel written by ingestion route
+    _raw_supersedes = (raw.metadata_ or {}).get("supersedes_memory_id")
+    supersedes_memory_id: _uuid.UUID | None = (
+        _uuid.UUID(_raw_supersedes) if _raw_supersedes else None
+    )
+
     # Insert memory_item
     memory_item = MemoryItem(
         raw_id=raw.id,
@@ -324,6 +331,7 @@ async def store_memory_item(
         summary=extraction.summary,
         base_importance=extraction.base_importance,
         embedding=embedding,  # Store as JSONB/JSON list
+        supersedes_id=supersedes_memory_id,
     )
     session.add(memory_item)
     await session.flush()  # Get the ID

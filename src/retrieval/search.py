@@ -44,6 +44,9 @@ async def _execute_hybrid_sql(
     query_embedding: list[float],
     limit: int,
     type_filter: str | None,
+    entity_filter: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list:
     """Execute the hybrid search SQL and return raw rows.
 
@@ -72,20 +75,47 @@ async def _execute_hybrid_sql(
         FULL OUTER JOIN keyword_results k ON m.id = k.id
         WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
           [AND m.type = :type_filter]
-        LIMIT :limit * 2
+          [AND EXISTS (...entity subquery...)]
+          [AND m.created_at >= :date_from]
+          [AND m.created_at <= :date_to]
+        LIMIT :fetch_limit
 
     Args:
         session: Async database session.
         query_text: The user's search query (for FTS).
         query_embedding: Pre-computed embedding vector for the query.
         limit: Maximum results to fetch (before re-ranking).
-        type_filter: Optional memory type to restrict results.
+        type_filter: Optional memory type to restrict results ('memory', 'decision', 'task').
+        entity_filter: Optional entity name or alias (case-insensitive) to filter by.
+        date_from: Optional lower bound on created_at (inclusive, UTC-aware).
+        date_to: Optional upper bound on created_at (inclusive, UTC-aware).
 
     Returns:
         List of Row objects with id, content, summary, type,
         importance_score, created_at, vector_score, keyword_score.
     """
     type_clause = "AND m.type = :type_filter" if type_filter else ""
+
+    entity_clause = (
+        """AND EXISTS (
+            SELECT 1 FROM memory_entity_links mel
+            JOIN entities e ON e.id = mel.entity_id
+            WHERE mel.memory_id = m.id
+              AND (
+                  LOWER(e.name) = LOWER(:entity_filter)
+                  OR EXISTS (
+                      SELECT 1 FROM entity_aliases ea
+                      WHERE ea.entity_id = e.id
+                        AND LOWER(ea.alias) = LOWER(:entity_filter)
+                  )
+              )
+        )"""
+        if entity_filter
+        else ""
+    )
+
+    date_from_clause = "AND m.created_at >= :date_from" if date_from else ""
+    date_to_clause = "AND m.created_at <= :date_to" if date_to else ""
 
     sql = text(f"""
         WITH vector_results AS (
@@ -118,6 +148,9 @@ async def _execute_hybrid_sql(
         FULL OUTER JOIN keyword_results k ON m.id = k.id
         WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
           {type_clause}
+          {entity_clause}
+          {date_from_clause}
+          {date_to_clause}
         LIMIT :fetch_limit
     """)
 
@@ -128,6 +161,12 @@ async def _execute_hybrid_sql(
     }
     if type_filter:
         params["type_filter"] = type_filter
+    if entity_filter:
+        params["entity_filter"] = entity_filter
+    if date_from:
+        params["date_from"] = date_from
+    if date_to:
+        params["date_to"] = date_to
 
     result = await session.execute(sql, params)
     return result.fetchall()
@@ -139,6 +178,9 @@ async def hybrid_search(
     query_embedding: list[float],
     limit: int = 10,
     type_filter: str | None = None,
+    entity_filter: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[SearchResult]:
     """Run hybrid search and return ranked results.
 
@@ -152,11 +194,16 @@ async def hybrid_search(
         query_embedding: Pre-computed embedding for query_text (1024-dim).
         limit: Maximum number of results to return.
         type_filter: Optional type filter ('memory', 'decision', 'task').
+        entity_filter: Optional entity name or alias to filter by (case-insensitive).
+        date_from: Optional lower bound on created_at (inclusive, UTC-aware).
+        date_to: Optional upper bound on created_at (inclusive, UTC-aware).
 
     Returns:
         List of SearchResult, sorted by combined_score descending.
     """
-    rows = await _execute_hybrid_sql(session, query_text, query_embedding, limit, type_filter)
+    rows = await _execute_hybrid_sql(
+        session, query_text, query_embedding, limit, type_filter, entity_filter, date_from, date_to
+    )
 
     now = datetime.now(tz=timezone.utc)
     results: list[SearchResult] = []
@@ -212,5 +259,8 @@ async def hybrid_search(
         query=query_text,
         result_count=len(results),
         type_filter=type_filter,
+        entity_filter=entity_filter,
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
     )
     return results
