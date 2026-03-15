@@ -1,6 +1,6 @@
 # Claude Code Collaboration Guidelines
 
-**Project**: Open Brain | **Owner**: Shu | **Last Updated**: 2026-03-13
+**Project**: Open Brain | **Owner**: Shu | **Last Updated**: 2026-03-15
 
 ---
 
@@ -312,6 +312,38 @@ def _get_settings():
 ```
 
 **Why**: `config.settings` is `None` at module level when no `.env` file exists (common in CI/tests). When `test_config.py` imports `from src.core.config import settings` during pytest collection, the module is cached as `settings=None`. Later, `monkeypatch.setenv` sets env vars, but any module that imported `settings` at its own module level still holds the `None` reference. The lazy helper re-creates Settings() the first time it's called during a test, by which point the env vars are available. Applied to: `auth.py`, `ranking.py`, `search.py`.
+
+### Settings Singleton Captures .env Values When .env Exists
+
+❌ **Don't**: Rely on the lazy `_get_settings()` pattern alone when a `.env` file is present on disk
+✅ **Do**: Reset `config.settings` to a fresh instance in the autouse test fixture
+
+```python
+# In tests/conftest.py autouse fixture:
+from src.core import config as _config
+monkeypatch.setattr(_config, "settings", _config.Settings())  # re-reads from test env vars
+```
+
+**Why**: Once a `.env` file exists (created during actual deployment), `config.settings` is initialized at import time with production values (e.g. `API_KEY=openbrain-demo-secret-key-2026`). The lazy helper's `if config.settings is None` check short-circuits — it returns the production key, causing all API tests to get 401. The autouse fixture re-creates the singleton from test env vars (env vars take priority over .env in pydantic-settings). monkeypatch restores the original singleton after each test.
+
+**For config validation tests**: When testing that missing vars raise `ValidationError`, pass `_env_file=None` to suppress `.env` fallback:
+```python
+Settings(_env_file=None)  # .env file won't supply the missing value
+```
+
+### pgvector ORM Type Must Use SQLite Variant for Tests
+
+❌ **Don't**: Use `Vector(1024)` directly without a SQLite fallback
+✅ **Do**: Use `.with_variant(JSON(), "sqlite")` for test compatibility
+
+```python
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON
+
+VECTOR_TYPE = Vector(1024).with_variant(JSON(), "sqlite")
+```
+
+**Why**: Tests run on SQLite (in-memory). `Vector(1024)` is a PostgreSQL-specific type with no SQLite support. Without the variant, SQLite table creation and embedding inserts fail. The production DB column is already `vector(1024)` (set by Alembic migration) — only the ORM type needs the variant. Applied in: `src/core/models.py`.
 
 ### pgvector asyncpg Codec Conflicts with SQLAlchemy Vector Type
 
