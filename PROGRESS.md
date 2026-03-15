@@ -2,8 +2,8 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: Phase 1 — Foundation ✅ COMPLETE (all CP0–CP9 done)
-**Overall Progress**: ~75% (Phase 1 complete, **89 tests passing**)
+**Current Phase**: Transition — Phase 1 complete, pre-Phase-2 validation in progress
+**Overall Progress**: ~76% (Phase 1 complete, 89 tests passing, ORM fixes committed, smoke test pending)
 
 ---
 
@@ -527,9 +527,31 @@ Total:              89 tests  ✅
 
 ---
 
+## Session 3 Notes (2026-03-15) — Architecture Review & Pre-Phase-2 Validation
+
+### Root Cause: Worker "Loop" Bug
+The LLM worker was not truly looping — it was making **3 Anthropic calls per job instead of 1**. Root cause: Claude's response was wrapped in markdown code fences (` ```json ... ``` `) which caused `json.loads()` to fail with `JSONDecodeError`, triggering `ExtractionFailed` and the full 3-attempt retry cycle per job.
+
+**Fix**: Strip markdown code fences in `extractor.py` before parsing. Committed in this session.
+
+### ORM Fixes (no migration required)
+1. `embedding` column: Changed from `JSONB` placeholder to `Vector(1024)` (pgvector-sqlalchemy). DB column was already `vector(1024)` via Alembic; ORM type now matches reality. Added `.with_variant(JSON(), "sqlite")` for test compatibility.
+2. `importance_score`: Added `Computed("0.6 * base_importance + 0.4 * dynamic_importance", persisted=True)` so SQLAlchemy doesn't try to INSERT into the server-generated column.
+3. `client.py`: Fixed SecretStr handling to use `.get_secret_value()` instead of `str()`.
+
+### Phase 2 Prerequisites (must complete before Slack integration)
+- [ ] Smoke test: ingest 5+ real memories, verify non-null embeddings in DB, verify search returns ranked results
+- [ ] Confirm `udt_name = 'vector'` for embedding column in Supabase
+- [ ] Content-hash dedup on `POST /v1/memory` (critical for Slack — prevents duplicate processing storms)
+
+### Decision: Sequence Before Slack
+Slack integration is **deferred** until after Phase 2 (context builder + CLI + dedup). Reason: without CLI, there's no feedback loop to verify retrieval quality. Without dedup, Slack will cause expensive duplicate LLM processing.
+
+---
+
 ## Phase 2: Retrieval + CLI (0% → target 50%)
 
-**Status**: Pending Phase 1 completion
+**Status**: Pending smoke test (Gates 1–2) and content-hash dedup
 **Est. Duration**: 31 hours
 
 - [ ] 2.1: Context builder with token budget
@@ -574,11 +596,15 @@ Total:              89 tests  ✅
 
 | Risk | Impact | Mitigation | Status |
 |---|---|---|---|
-| UUID type mismatch in Alembic | Critical | Audit all FK types before running migration | 🔴 Not started |
-| Stale lock reclaim logic missing | Critical | Explicitly test with locked_at < now() - 5 min | 🔴 Not started |
-| GIN index expression mismatch | High | Copy exact expression from migration to query | 🔴 Not started |
-| Voyage AI rate limit not handled | High | tenacity retry + exponential backoff | 🔴 Not started |
-| Worker crashes leave jobs in processing | High | TTL reclaim + test crash recovery | 🔴 Not started |
+| UUID type mismatch in Alembic | Critical | Audit all FK types before running migration | ✅ Resolved (CP3) |
+| Stale lock reclaim logic missing | Critical | Explicitly test with locked_at < now() - 5 min | ✅ Resolved (CP6) |
+| GIN index expression mismatch | High | Copy exact expression from migration to query | ✅ Resolved (CP8) |
+| Voyage AI rate limit not handled | High | tenacity retry + exponential backoff | ✅ Resolved (CP4) |
+| Worker crashes leave jobs in processing | High | TTL reclaim + test crash recovery | ✅ Resolved (CP6) |
+| pgvector ORM type mismatch (JSONB vs Vector) | High | Use `Vector(1024).with_variant(JSON(), "sqlite")` in models.py | ✅ Resolved (Session 3) |
+| LLM worker cost spike from JSON parse failure | High | Strip markdown code fences before json.loads() | ✅ Resolved (Session 3) |
+| Slack duplicate processing (no dedup) | High | Content-hash dedup on POST /v1/memory before Slack integration | 🟡 Planned (Phase 2) |
+| No production smoke test (embeddings unverified) | Medium | Run 5 real memories through pipeline, verify vector column | 🟡 In progress |
 
 ---
 

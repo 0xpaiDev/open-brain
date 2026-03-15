@@ -4,10 +4,11 @@ services:
   migrate:
     build: .
     container_name: openbrain-migrate
-    environment:
-      SQLALCHEMY_URL: ${SQLALCHEMY_URL}
-      LOG_LEVEL: info
+    env_file: .env
     command: alembic upgrade head
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - openbrain
     profiles:
@@ -16,14 +17,12 @@ services:
   api:
     build: .
     container_name: openbrain-api
-    environment:
-      SQLALCHEMY_URL: ${SQLALCHEMY_URL}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      API_KEY: ${API_KEY:-test-secret-key}
-      LOG_LEVEL: info
+    env_file: .env
     ports:
       - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - openbrain
     profiles:
@@ -32,13 +31,11 @@ services:
   worker:
     build: .
     container_name: openbrain-worker
-    environment:
-      SQLALCHEMY_URL: ${SQLALCHEMY_URL}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      LOG_LEVEL: info
-      WORKER_POLL_INTERVAL: "5"
+    env_file: .env
     command: python -m src.pipeline.worker
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - openbrain
     profiles:

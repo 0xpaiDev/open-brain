@@ -176,10 +176,10 @@ def _create_anthropic_client() -> AnthropicClient | None:
     """Create Anthropic client if API key is present."""
     if settings is None:
         return None
-    if settings.anthropic_api_key and str(settings.anthropic_api_key).strip():
+    if settings.anthropic_api_key and settings.anthropic_api_key.get_secret_value().strip():
         try:
             return AnthropicClient(
-                api_key=str(settings.anthropic_api_key),
+                api_key=settings.anthropic_api_key.get_secret_value(),
                 model=settings.anthropic_model,
             )
         except Exception as e:
@@ -192,10 +192,10 @@ def _create_voyage_client() -> VoyageEmbeddingClient | None:
     """Create Voyage AI client if API key is present."""
     if settings is None:
         return None
-    if settings.voyage_api_key and str(settings.voyage_api_key).strip():
+    if settings.voyage_api_key and settings.voyage_api_key.get_secret_value().strip():
         try:
             return VoyageEmbeddingClient(
-                api_key=str(settings.voyage_api_key),
+                api_key=settings.voyage_api_key.get_secret_value(),
                 model=settings.voyage_model,
             )
         except Exception as e:

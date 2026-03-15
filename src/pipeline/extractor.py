@@ -111,9 +111,17 @@ async def extract(
             max_tokens=1024,
         )
 
+        # Strip markdown code fences if present (Claude sometimes wraps JSON)
+        stripped = response_text.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.split("\n", 1)[-1]
+            stripped = stripped.rsplit("```", 1)[0].strip()
+        else:
+            stripped = stripped
+
         # Parse JSON response
         try:
-            json_data = json.loads(response_text)
+            json_data = json.loads(stripped)
         except json.JSONDecodeError as e:
             logger.exception(
                 "extraction_json_parse_failed",

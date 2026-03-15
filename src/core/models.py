@@ -21,6 +21,7 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     UUID,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -29,11 +30,15 @@ from sqlalchemy import (
     Text,
     func,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Use JSONB for PostgreSQL, JSON for other databases (e.g., SQLite in tests)
 JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+
+# Use pgvector Vector for PostgreSQL, JSON for SQLite (tests)
+VECTOR_TYPE = Vector(1024).with_variant(JSON(), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -124,14 +129,15 @@ class MemoryItem(Base):
     # In Alembic migration, defined as:
     # ALTER TABLE memory_items ADD importance_score NUMERIC(4,2)
     #   GENERATED ALWAYS AS (0.6 * base_importance + 0.4 * dynamic_importance) STORED;
-    importance_score: Mapped[float | None] = mapped_column(Numeric(precision=4, scale=2), nullable=True)
+    importance_score: Mapped[float | None] = mapped_column(
+        Numeric(precision=4, scale=2),
+        Computed("0.6 * base_importance + 0.4 * dynamic_importance", persisted=True),
+        nullable=True,
+    )
 
-    # embedding: vector column (1024 dimensions) created in Alembic migration
-    # NOTE: DDL type is vector(1024) via Alembic ALTER — set in migration at runtime.
-    # ORM type is JSONB as a placeholder because SQLAlchemy doesn't have native vector
-    # type support. Always use `alembic upgrade head` for migrations, never `create_all()`.
-    embedding: Mapped[dict | None] = mapped_column(
-        JSON_TYPE, nullable=True
+    # embedding: vector(1024) — pgvector type for PostgreSQL, JSON for SQLite tests
+    embedding: Mapped[list | None] = mapped_column(
+        VECTOR_TYPE, nullable=True
     )
 
     supersedes_id: Mapped[str | None] = mapped_column(

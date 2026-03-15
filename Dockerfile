@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock* ./
 
 # Install dependencies using uv
-RUN uv pip install --system -r <(uv pip compile pyproject.toml)
+RUN uv pip compile pyproject.toml -o requirements.txt && uv pip install --system -r requirements.txt
 
 # Stage 2: Runtime
 FROM python:3.12-slim
@@ -36,7 +36,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY src/ ./src/
-COPY cli/ ./cli/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
