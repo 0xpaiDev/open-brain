@@ -1,0 +1,281 @@
+"""Tests for the Discord bot integration.
+
+Tests cover the pure business-logic helpers (ingest_memory, search_memories,
+get_api_health) and the bot's on_message handler. Discord objects are mocked
+so no real Discord connection is required. httpx.AsyncClient is always mocked
+— we never hit the real API in tests.
+"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from src.integrations.discord_bot import (
+    get_api_health,
+    ingest_memory,
+    search_memories,
+)
+
+
+# ── Fixtures ───────────────────────────────────────────────────────────────────
+
+
+def _mock_response(status: int, body: dict | list) -> MagicMock:
+    """Build a fake httpx.Response."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status
+    resp.json.return_value = body
+    resp.raise_for_status = MagicMock(
+        side_effect=None
+        if status < 400
+        else httpx.HTTPStatusError(
+            message=f"HTTP {status}",
+            request=MagicMock(),
+            response=resp,
+        )
+    )
+    return resp
+
+
+def _make_http(post_response: MagicMock | None = None, get_response: MagicMock | None = None) -> AsyncMock:
+    """Create a mock httpx.AsyncClient."""
+    http = AsyncMock(spec=httpx.AsyncClient)
+    if post_response is not None:
+        http.post.return_value = post_response
+    if get_response is not None:
+        http.get.return_value = get_response
+    return http
+
+
+# ── ingest_memory ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ingest_memory_returns_raw_id() -> None:
+    """Successful ingest returns the raw_id from the API response."""
+    raw_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    http = _make_http(post_response=_mock_response(202, {"raw_id": raw_id, "status": "pending"}))
+
+    result = await ingest_memory(http, "some memory", "123", "456", "test-key", "http://localhost:8000")
+
+    assert result == raw_id
+    http.post.assert_awaited_once()
+    call_kwargs = http.post.call_args
+    assert call_kwargs[1]["json"]["source"] == "discord"
+    assert call_kwargs[1]["json"]["text"] == "some memory"
+    assert call_kwargs[1]["json"]["metadata"]["author_id"] == "123"
+    assert call_kwargs[1]["headers"]["X-API-Key"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_ingest_memory_raises_on_4xx() -> None:
+    """HTTP 4xx from API propagates as HTTPStatusError."""
+    http = _make_http(post_response=_mock_response(422, {"detail": "bad input"}))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await ingest_memory(http, "bad", "1", "2", "key", "http://localhost:8000")
+
+
+@pytest.mark.asyncio
+async def test_ingest_memory_raises_on_401() -> None:
+    """Wrong API key returns 401, propagates as HTTPStatusError."""
+    http = _make_http(post_response=_mock_response(401, {"detail": "Unauthorized"}))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await ingest_memory(http, "text", "1", "2", "wrong-key", "http://localhost:8000")
+
+
+# ── search_memories ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_memories_returns_results() -> None:
+    """Search returns the list from the API response."""
+    items = [
+        {"id": "aaa", "content": "memory one", "score": 0.9},
+        {"id": "bbb", "content": "memory two", "score": 0.7},
+    ]
+    http = _make_http(get_response=_mock_response(200, items))
+
+    results = await search_memories(http, "memory", 5, "key", "http://localhost:8000")
+
+    assert results == items
+    call_kwargs = http.get.call_args
+    assert call_kwargs[1]["params"]["q"] == "memory"
+    assert call_kwargs[1]["params"]["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_search_memories_returns_empty_list() -> None:
+    """Empty results are returned as an empty list without error."""
+    http = _make_http(get_response=_mock_response(200, []))
+
+    results = await search_memories(http, "nothing", 5, "key", "http://localhost:8000")
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_search_memories_raises_on_500() -> None:
+    """Server error propagates as HTTPStatusError."""
+    http = _make_http(get_response=_mock_response(500, {"detail": "Internal Error"}))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await search_memories(http, "q", 5, "key", "http://localhost:8000")
+
+
+# ── get_api_health ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_api_health_returns_true_on_200() -> None:
+    """Returns True when /ready responds 200."""
+    http = _make_http(get_response=_mock_response(200, {"status": "ok"}))
+
+    result = await get_api_health(http, "http://localhost:8000")
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_get_api_health_returns_false_on_503() -> None:
+    """Returns False when /ready responds 503 (DB not ready)."""
+    http = _make_http(get_response=_mock_response(503, {"status": "not ready"}))
+
+    result = await get_api_health(http, "http://localhost:8000")
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_get_api_health_returns_false_on_connection_error() -> None:
+    """Returns False when the API is unreachable."""
+    http = AsyncMock(spec=httpx.AsyncClient)
+    http.get.side_effect = httpx.ConnectError("connection refused")
+
+    result = await get_api_health(http, "http://localhost:8000")
+
+    assert result is False
+
+
+# ── on_message handler (bot behaviour) ────────────────────────────────────────
+
+
+def _make_discord_message(
+    author_id: int,
+    content: str,
+    is_bot: bool = False,
+    channel_id: int = 999,
+) -> MagicMock:
+    """Build a minimal discord.Message mock."""
+    message = MagicMock()
+    message.content = content
+    message.author.id = author_id
+    message.author.__eq__ = lambda self, other: is_bot  # True only when author == bot.user
+    message.channel.id = channel_id
+    message.add_reaction = AsyncMock()
+    return message
+
+
+def _make_settings(allowed_ids: list[int] = None, api_key: str = "test-key") -> MagicMock:
+    """Build a minimal settings mock for on_message handler tests."""
+    return MagicMock(
+        discord_allowed_user_ids=allowed_ids or [42],
+        api_key=api_key,
+        open_brain_api_url="http://localhost:8000",
+    )
+
+
+@pytest.mark.asyncio
+async def test_on_message_allowed_user_ingests_memory(monkeypatch) -> None:
+    """Allowed user message → ingest_memory called → 🧠 reaction added."""
+    http = _make_http(post_response=_mock_response(202, {"raw_id": "aaa", "status": "pending"}))
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings())
+
+    bot = discord_bot.OpenBrainBot(http)
+    # bot.user is None (not connected) — message.author is a MagicMock, so != None
+    message = _make_discord_message(author_id=42, content="remember this thought")
+    await bot.on_message(message)
+
+    http.post.assert_awaited_once()
+    message.add_reaction.assert_awaited_once_with("🧠")
+
+
+@pytest.mark.asyncio
+async def test_on_message_unauthorized_user_ignored(monkeypatch) -> None:
+    """Message from an unknown user ID is silently ignored — no ingest call."""
+    http = _make_http()
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings(allowed_ids=[42]))
+
+    bot = discord_bot.OpenBrainBot(http)
+    message = _make_discord_message(author_id=9999, content="not allowed")
+    await bot.on_message(message)
+
+    http.post.assert_not_awaited()
+    message.add_reaction.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_message_bot_own_message_ignored(monkeypatch) -> None:
+    """Bot must not react to its own messages (prevents loops).
+
+    When the bot is not connected, self.user is None. Setting message.author = None
+    makes the equality check (message.author == self.user) → (None == None) → True,
+    causing early return before any ingest attempt.
+    """
+    http = _make_http()
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings())
+
+    bot = discord_bot.OpenBrainBot(http)
+    # self.user is None — make message.author also None so equality holds
+    message = MagicMock()
+    message.author = None
+    message.add_reaction = AsyncMock()
+
+    await bot.on_message(message)
+
+    http.post.assert_not_awaited()
+    message.add_reaction.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_message_empty_content_ignored(monkeypatch) -> None:
+    """Messages with no text content (e.g. image-only) are silently skipped."""
+    http = _make_http()
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings())
+
+    bot = discord_bot.OpenBrainBot(http)
+    message = _make_discord_message(author_id=42, content="   ")
+    await bot.on_message(message)
+
+    http.post.assert_not_awaited()
+    message.add_reaction.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_message_api_error_reacts_with_x(monkeypatch) -> None:
+    """When the API returns an error, the bot reacts with ❌ instead of 🧠."""
+    http = _make_http(post_response=_mock_response(500, {"detail": "server error"}))
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings())
+
+    bot = discord_bot.OpenBrainBot(http)
+    message = _make_discord_message(author_id=42, content="some memory")
+    await bot.on_message(message)
+
+    message.add_reaction.assert_awaited_once_with("❌")

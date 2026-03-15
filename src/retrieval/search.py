@@ -245,7 +245,17 @@ async def hybrid_search(
 
     # Sort descending by combined_score
     results.sort(key=lambda r: r.combined_score, reverse=True)
-    results = results[:limit]
+
+    # Deduplicate by content — keeps the highest-scoring copy when duplicate
+    # rows exist in the DB (possible before content-hash dedup was enforced)
+    seen: set[str] = set()
+    deduped: list[SearchResult] = []
+    for r in results:
+        key = r.content.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    results = deduped[:limit]
 
     # Log retrieval events for dynamic importance (FIX-3)
     # UUID(as_uuid=True) columns expect a UUID object, not a string

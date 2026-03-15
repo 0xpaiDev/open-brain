@@ -351,7 +351,7 @@ async def store_memory_item(
         decision = Decision(
             memory_id=memory_item.id,
             decision=decision_extract.decision,
-            reasoning=decision_extract.reasoning,
+            reasoning=decision_extract.reasoning or "",
             alternatives=decision_extract.alternatives,
         )
         session.add(decision)

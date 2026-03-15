@@ -474,6 +474,7 @@ Quick reference: which module owns which task.
 | Shared config / settings | `src/core/` | `config.py` |
 | Intelligence jobs (daily/weekly) | `src/jobs/` | `importance.py`, `synthesis.py` |
 | CLI commands | `cli/` | `ob.py` |
+| Discord / external integrations | `src/integrations/` | `discord_bot.py` |
 | Tests | `tests/` | `conftest.py`, `test_*.py` |
 
 ---

@@ -31,7 +31,7 @@ class DecisionExtract(BaseModel):
     """An extracted decision with reasoning and alternatives."""
 
     decision: str = Field(..., description="What was decided")
-    reasoning: str = Field(..., description="Why this decision was made")
+    reasoning: str | None = Field(default=None, description="Why this decision was made")
     alternatives: list[str] = Field(
         default_factory=list, description="Alternatives that were considered"
     )

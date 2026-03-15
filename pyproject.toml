@@ -47,6 +47,9 @@ dependencies = [
     # Logging
     "structlog>=23.2.0",
     "python-json-logger>=2.0.0",
+
+    # Discord integration
+    "discord.py>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -105,6 +108,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tqdm.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "discord.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

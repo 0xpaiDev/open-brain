@@ -539,13 +539,15 @@ The LLM worker was not truly looping — it was making **3 Anthropic calls per j
 2. `importance_score`: Added `Computed("0.6 * base_importance + 0.4 * dynamic_importance", persisted=True)` so SQLAlchemy doesn't try to INSERT into the server-generated column.
 3. `client.py`: Fixed SecretStr handling to use `.get_secret_value()` instead of `str()`.
 
-### Phase 2 Prerequisites (must complete before Slack integration)
+### Phase 2 Prerequisites (must complete before Discord integration goes live)
 - [x] Smoke test: ingested 5 real memories, all processed, search returns semantically ranked results ✅
 - [x] Confirm `udt_name = 'vector'` for embedding column in Supabase ✅ (20/20 rows have non-null embeddings)
-- [ ] Content-hash dedup on `POST /v1/memory` (critical for Slack — prevents duplicate processing storms)
+- [ ] Content-hash dedup on `POST /v1/memory` (critical for Discord — prevents duplicate processing storms)
 
-### Decision: Sequence Before Slack
-Slack integration is **deferred** until after Phase 2 (context builder + CLI + dedup). Reason: without CLI, there's no feedback loop to verify retrieval quality. Without dedup, Slack will cause expensive duplicate LLM processing.
+### Decision: Integration Platform = Discord
+Switched from Slack to Discord (2026-03-15). Reasons: Slack requires paid plan for persistent history; Discord is free, developer-friendly, and has a cleaner bot API.
+
+Discord integration scaffold (`src/integrations/discord_bot.py`) is implemented. Full deployment deferred until after Phase 2 (context builder + CLI + dedup complete). Reason: without dedup, the bot will cause expensive duplicate LLM processing on resent messages.
 
 ---
 
@@ -603,7 +605,7 @@ Slack integration is **deferred** until after Phase 2 (context builder + CLI + d
 | Worker crashes leave jobs in processing | High | TTL reclaim + test crash recovery | ✅ Resolved (CP6) |
 | pgvector ORM type mismatch (JSONB vs Vector) | High | Use `Vector(1024).with_variant(JSON(), "sqlite")` in models.py | ✅ Resolved (Session 3) |
 | LLM worker cost spike from JSON parse failure | High | Strip markdown code fences before json.loads() | ✅ Resolved (Session 3) |
-| Slack duplicate processing (no dedup) | High | Content-hash dedup on POST /v1/memory before Slack integration | 🟡 Planned (Phase 2) |
+| Discord duplicate processing (no dedup) | High | Content-hash dedup on POST /v1/memory before Discord integration goes live | 🟡 Planned (Phase 2) |
 | No production smoke test (embeddings unverified) | Medium | Run 5 real memories through pipeline, verify vector column | 🟡 In progress |
 
 ---

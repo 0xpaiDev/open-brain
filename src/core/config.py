@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Synthesis
     synthesis_max_memories_per_report: int = 50
 
+    # Discord integration (optional — leave blank to disable)
+    discord_bot_token: SecretStr = SecretStr("")
+    discord_allowed_user_ids: list[int] = []
+
+    # Open Brain API URL (used by integrations to call the local API)
+    open_brain_api_url: str = "http://localhost:8000"
+
     @field_validator("sqlalchemy_url")
     @classmethod
     def validate_sqlalchemy_url(cls, v: str) -> str:
