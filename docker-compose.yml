@@ -1,5 +1,11 @@
 version: '3.9'
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   migrate:
     build: .
@@ -13,13 +19,15 @@ services:
       - openbrain
     profiles:
       - migrate
+    logging: *default-logging
 
   api:
     build: .
     container_name: openbrain-api
     env_file: .env
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
     ports:
-      - "8000:8000"
+      - "0.0.0.0:8000:8000"
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -27,6 +35,19 @@ services:
       - openbrain
     profiles:
       - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   worker:
     build: .
@@ -40,6 +61,13 @@ services:
       - openbrain
     profiles:
       - worker
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   discord-bot:
     build: .
@@ -57,7 +85,35 @@ services:
     profiles:
       - discord
     restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: openbrain-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - openbrain
+    profiles:
+      - caddy
+    restart: unless-stopped
+    logging: *default-logging
 
 networks:
   openbrain:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
