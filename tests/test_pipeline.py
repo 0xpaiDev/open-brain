@@ -374,3 +374,31 @@ async def test_resolve_entities_with_multiple_entities(async_session):
 
     assert len(result) == 3
     assert {r.name for r in result} == {"Entity1", "Entity2", "Entity3"}
+
+
+@pytest.mark.asyncio
+async def test_resolve_entities_finds_entity_by_name_without_alias(async_session):
+    """resolve_entities() returns existing entity matched by name even if no alias exists.
+
+    Regression test: previously, if an entity existed in the DB by name but had no
+    alias row, resolve_entities() would skip it (alias check fails, fuzzy unavailable
+    on SQLite) and try to INSERT a duplicate, causing UniqueViolationError.
+    """
+    # Pre-create entity with no alias
+    existing = Entity(name="Model Context Protocol", type="concept")
+    async_session.add(existing)
+    await async_session.commit()
+
+    # Resolve the same name — should find via direct name lookup, not INSERT
+    result = await resolve_entities(
+        async_session, [EntityExtract(name="Model Context Protocol", type="concept")]
+    )
+
+    assert len(result) == 1
+    assert result[0].id == existing.id
+
+    # Confirm no duplicate entity was created
+    query = await async_session.execute(
+        select(Entity).where(Entity.name == "Model Context Protocol")
+    )
+    assert len(query.scalars().all()) == 1

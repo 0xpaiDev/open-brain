@@ -64,6 +64,22 @@ async def resolve_entities(
                     resolved.append(canonical_entity)
                     continue
 
+            # Step 1.5: Check for exact entity name match (no alias needed)
+            name_result = await session.execute(
+                select(Entity).where(Entity.name == canonical_name)
+            )
+            exact_name_entity = name_result.scalars().first()
+
+            if exact_name_entity:
+                logger.info(
+                    "entity_resolved_via_name",
+                    name=canonical_name,
+                    type=entity_type,
+                    canonical_id=str(exact_name_entity.id),
+                )
+                resolved.append(exact_name_entity)
+                continue
+
             # Step 2: Fuzzy match with pg_trgm similarity
             # NOTE: This query uses PostgreSQL's pg_trgm extension.
             # SQLite does not have similarity() — tests must mock this query.
