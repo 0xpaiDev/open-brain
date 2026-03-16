@@ -46,18 +46,17 @@ async def pg_engine():
     if not url:
         pytest.skip("SQLALCHEMY_URL is not set")
 
-    engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+    engine = create_async_engine(url, echo=False)
     yield engine
     await engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def pg_session(pg_engine) -> AsyncSession:
-    """Per-test async session wrapping each test in a transaction that is rolled back."""
+    """Per-test async session against the real Postgres DB."""
     factory = sessionmaker(pg_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
         yield session
-        await session.rollback()  # Roll back all changes after each test
 
 
 # ── Test: embedding column type ───────────────────────────────────────────────
