@@ -53,6 +53,9 @@ dependencies = [
 
     # Rate limiting
     "slowapi>=0.1.9",
+
+    # MCP server (AI-agnostic tool access)
+    "fastmcp>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -116,6 +119,19 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "discord.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.generativeai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "openai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "cli.*"
+disallow_untyped_defs = false
+warn_return_any = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

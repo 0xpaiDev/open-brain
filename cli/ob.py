@@ -11,9 +11,11 @@ Entry point registered in pyproject.toml:
 
 import asyncio
 import hashlib
-from datetime import datetime, timedelta, timezone
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
+import httpx
 import structlog
 import typer
 from sqlalchemy import select
@@ -58,7 +60,7 @@ def _parse_date(s: str | None) -> datetime | None:
         return None
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -86,7 +88,7 @@ async def _ingest_async(text: str, source: str) -> None:
     await init_db()
 
     content_hash = _content_hash(text)
-    window_start = datetime.now(timezone.utc) - timedelta(hours=24)
+    window_start = datetime.now(UTC) - timedelta(hours=24)
 
     async with get_db_context() as session:
         result = await session.execute(
@@ -228,7 +230,9 @@ async def _context_async(query: str, limit: int) -> None:
 
     ctx = build_context(results)
     typer.echo(ctx.context)
-    typer.echo(f"\n--- {ctx.items_included} items, {ctx.tokens_used}/{ctx.tokens_budget} tokens ---")
+    typer.echo(
+        f"\n--- {ctx.items_included} items, {ctx.tokens_used}/{ctx.tokens_budget} tokens ---"
+    )
 
 
 # ── ob worker ─────────────────────────────────────────────────────────────────
@@ -238,7 +242,9 @@ async def _context_async(query: str, limit: int) -> None:
 def worker(
     sync: Annotated[
         bool,
-        typer.Option("--sync", help="Process one batch and exit (default: continuous polling loop)"),
+        typer.Option(
+            "--sync", help="Process one batch and exit (default: continuous polling loop)"
+        ),
     ] = False,
 ) -> None:
     """Run the pipeline worker.
@@ -264,9 +270,7 @@ async def _worker_async(sync: bool) -> None:
 
     # --sync: claim one batch and process it, then exit
     if anthropic_client is None or embedding_client is None:
-        typer.echo(
-            "Error: Anthropic or Voyage API key not configured in environment.", err=True
-        )
+        typer.echo("Error: Anthropic or Voyage API key not configured in environment.", err=True)
         raise typer.Exit(code=1)
 
     async with get_db_context() as session:
@@ -303,6 +307,227 @@ async def _health_async() -> None:
     else:
         typer.echo("status=error database=unreachable", err=True)
         raise typer.Exit(code=1)
+
+
+# ── ob chat ───────────────────────────────────────────────────────────────────
+
+_SUPPORTED_MODELS = ("claude", "gemini", "openai")
+
+# Open Brain API coordinates for chat (reads env, falls back to local defaults)
+_OB_API_URL: str = os.environ.get("OPENBRAIN_API_URL", "http://localhost:8000").rstrip("/")
+_OB_API_KEY: str = os.environ.get("OPENBRAIN_API_KEY", "")
+_OB_TIMEOUT: float = 30.0
+
+
+def _fetch_ob_context(query: str) -> str:
+    """Fetch LLM-ready context from the Open Brain API.
+
+    Returns an empty string on any error so the chat loop degrades gracefully.
+    """
+    try:
+        resp = httpx.get(
+            f"{_OB_API_URL}/v1/search/context",
+            params={"q": query, "limit": 10},
+            headers={"X-API-Key": _OB_API_KEY},
+            timeout=_OB_TIMEOUT,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("context", "")
+    except Exception:
+        pass
+    return ""
+
+
+async def _call_claude(system: str, messages: list[dict[str, str]]) -> str:
+    """Call Claude Haiku and return reply text."""
+    from anthropic import Anthropic
+
+    api_key_env = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key_env:
+        s = _get_settings()
+        api_key_env = s.anthropic_api_key.get_secret_value() if s.anthropic_api_key else ""
+    if not api_key_env:
+        typer.echo("Error: ANTHROPIC_API_KEY not set.", err=True)
+        raise typer.Exit(code=1)
+    client = Anthropic(api_key=api_key_env)
+    response = await asyncio.to_thread(
+        lambda: client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2048,
+            system=system,
+            messages=messages,  # type: ignore[arg-type]
+        )
+    )
+    # First content block is always TextBlock for non-tool calls
+    return str(response.content[0].text)  # type: ignore[union-attr]
+
+
+async def _call_gemini(system: str, messages: list[dict[str, str]]) -> str:
+    """Call Gemini Flash and return reply text."""
+    try:
+        from google import genai  # type: ignore[import-not-found]
+        from google.genai import types  # type: ignore[import-not-found]
+    except ImportError as exc:
+        typer.echo("Error: google-genai not installed. Run: pip install google-genai", err=True)
+        raise typer.Exit(code=1) from exc
+    api_key_env = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key_env:
+        typer.echo("Error: GEMINI_API_KEY not set.", err=True)
+        raise typer.Exit(code=1)
+    client = genai.Client(api_key=api_key_env)
+    history = [
+        types.Content(role=m["role"], parts=[types.Part(text=m["content"])])
+        for m in messages[:-1]
+    ]
+    chat_session = client.chats.create(
+        model="gemini-2.0-flash",
+        config=types.GenerateContentConfig(system_instruction=system),
+        history=history,
+    )
+    result = await asyncio.to_thread(chat_session.send_message, messages[-1]["content"])
+    return str(result.text)
+
+
+async def _call_openai(system: str, messages: list[dict[str, str]]) -> str:
+    """Call GPT-4o-mini and return reply text."""
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        typer.echo("Error: openai not installed. Run: pip install openai", err=True)
+        raise typer.Exit(code=1) from exc
+    api_key_env = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key_env:
+        typer.echo("Error: OPENAI_API_KEY not set.", err=True)
+        raise typer.Exit(code=1)
+    client = OpenAI(api_key=api_key_env)
+    all_messages = [{"role": "system", "content": system}] + messages
+    response = await asyncio.to_thread(
+        client.chat.completions.create,
+        model="gpt-4o-mini",
+        messages=all_messages,
+        max_tokens=2048,
+    )
+    return response.choices[0].message.content or ""
+
+
+async def _call_llm_for_chat(model: str, system: str, messages: list[dict[str, str]]) -> str:
+    """Dispatch to the correct LLM backend.
+
+    Raises:
+        typer.Exit: if model is unknown or API keys are missing.
+        Exception: propagated from the LLM SDK on API error.
+    """
+    if model == "claude":
+        return await _call_claude(system, messages)
+    if model == "gemini":
+        return await _call_gemini(system, messages)
+    if model == "openai":
+        return await _call_openai(system, messages)
+    typer.echo(
+        f"Error: unknown model '{model}'. Choose from: {', '.join(_SUPPORTED_MODELS)}", err=True
+    )
+    raise typer.Exit(code=1)
+
+
+def _post_to_ob(text: str, source: str) -> None:
+    """Post text to Open Brain for async pipeline ingestion. Silently ignores errors."""
+    try:
+        httpx.post(
+            f"{_OB_API_URL}/v1/memory",
+            json={"text": text, "source": source},
+            headers={"X-API-Key": _OB_API_KEY, "Content-Type": "application/json"},
+            timeout=_OB_TIMEOUT,
+        )
+    except Exception:
+        pass
+
+
+@app.command()
+def chat(
+    model: Annotated[
+        str, typer.Option("--model", help=f"LLM to use: {', '.join(_SUPPORTED_MODELS)}")
+    ] = "claude",
+    topic: Annotated[
+        str | None, typer.Option("--topic", help="Seed topic for initial memory search")
+    ] = None,
+    no_ingest: Annotated[
+        bool, typer.Option("--no-ingest", help="Skip ingesting the conversation at session end")
+    ] = False,
+) -> None:
+    """Start an interactive chat session grounded in your Open Brain memory.
+
+    On each turn the CLI fetches relevant context from Open Brain and injects
+    it into the LLM system prompt. At session end the conversation is ingested
+    back into Open Brain (use --no-ingest to skip).
+
+    Supported models: claude (default), gemini, openai.
+    """
+    if model not in _SUPPORTED_MODELS:
+        typer.echo(
+            f"Error: unknown model '{model}'. Choose from: {', '.join(_SUPPORTED_MODELS)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    asyncio.run(_chat_async(model, topic, no_ingest))
+
+
+async def _chat_async(model: str, topic: str | None, no_ingest: bool) -> None:
+    """Core chat loop: context retrieval → LLM call → optional ingestion."""
+    conversation: list[dict[str, str]] = []
+
+    typer.echo(f"Open Brain Chat [{model}] — type 'exit' or Ctrl+C to quit.\n")
+
+    # Seed context from --topic before first user message
+    seed_context = _fetch_ob_context(topic) if topic else ""
+    base_system = (
+        "You are an AI assistant with access to the user's personal memory system (Open Brain). "
+        "Use the context below to give informed, personalised responses. "
+        "If the context is empty, answer from your general knowledge.\n"
+    )
+
+    try:
+        while True:
+            try:
+                user_input = input("You: ").strip()
+            except EOFError:
+                break
+
+            if not user_input:
+                continue
+
+            if user_input.lower() in ("exit", "quit"):
+                break
+
+            # Refresh context on each turn using the user's message
+            turn_context = _fetch_ob_context(user_input)
+            context_block = turn_context or seed_context
+
+            system_prompt = base_system
+            if context_block:
+                system_prompt += f"\n## Relevant Memory Context\n\n{context_block}"
+
+            conversation.append({"role": "user", "content": user_input})
+
+            try:
+                reply = await _call_llm_for_chat(model, system_prompt, conversation)
+            except typer.Exit:
+                raise
+            except Exception as e:
+                typer.echo(f"\nLLM error: {e}\n", err=True)
+                conversation.pop()  # remove the failed user message
+                continue
+
+            typer.echo(f"\nAssistant: {reply}\n")
+            conversation.append({"role": "assistant", "content": reply})
+
+    except KeyboardInterrupt:
+        pass
+
+    if not no_ingest and conversation:
+        turns = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in conversation)
+        full_text = f"[ob chat session — model={model}]\n\n{turns}"
+        _post_to_ob(full_text, source="ob-chat")
+        typer.echo("\nConversation ingested into Open Brain.")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

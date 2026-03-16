@@ -2,8 +2,49 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: ✅ DEPLOYED — Live on GCP at 34.118.15.81
-**Overall Progress**: 100% complete + deployed (2026-03-16, 334 tests passing, 10/10 integration tests passing)
+**Current Phase**: ✅ DEPLOYED + AI-AGNOSTIC ACCESS LAYER — Live on GCP at 34.118.15.81
+**Overall Progress**: Phase 5 complete (2026-03-16, 410 tests passing, 10/10 integration tests passing)
+
+---
+
+## Phase 5: AI-Agnostic Access Layer ✅ COMPLETE (2026-03-16)
+
+**Goal**: Make Open Brain accessible from any AI, auto-capture all conversations, enable memory-grounded chat.
+
+### Checkpoint 5.1: MCP Server ✅
+- [x] `src/mcp_server.py` — FastMCP server exposing 3 tools over stdio
+  - `search_memory(query, limit)` → hybrid search, returns formatted results
+  - `get_context(query, limit)` → LLM-ready token-budgeted context block
+  - `ingest_memory(text, source)` → POSTs to `/v1/memory`, returns status
+- [x] `.mcp.json` — Claude Code project-level MCP config (gitignored, contains API key)
+- [x] `fastmcp>=3.0.0` added to `pyproject.toml` dependencies
+- [x] `tests/test_mcp_server.py` — 28 tests (happy path + empty results + auth errors + timeouts + connection errors + input validation)
+
+**Verification**: Open any new Claude Code session in this project → Claude has `search_memory`, `get_context`, `ingest_memory` available as tools automatically.
+
+### Checkpoint 5.2: `ob chat` Command ✅
+- [x] `cli/ob.py` — added `chat` command with interactive loop
+  - Searches Open Brain context on each turn via `_fetch_ob_context()`
+  - Injects context into LLM system prompt
+  - Supports `--model claude|gemini|openai`, `--topic TOPIC`, `--no-ingest`
+  - Auto-ingests conversation at session end (`source=ob-chat`)
+  - LLM backends: `_call_claude()`, `_call_gemini()`, `_call_openai()` (optional deps, graceful error if missing)
+- [x] `tests/test_ob_chat.py` — 22 tests (context injection, LLM errors, empty input, ingest flag, model validation, topic seeding)
+
+**Verification**: `ob chat` → ask about something in your memory → reply references stored context.
+
+### Checkpoint 5.3: Auto-Capture (Claude Code Stop Hook) ✅
+- [x] `scripts/capture_claude_code.py` — Stop hook script
+  - Reads JSON payload from stdin, parses JSONL transcript
+  - Skips sessions < 300 chars, skips `stop_hook_active=True` (loop guard)
+  - POSTs to `/v1/memory` with `source=claude-code`; exits 0 always (never breaks Claude Code)
+- [x] `~/.claude/settings.json` — Stop hook registered with `OPENBRAIN_API_URL`/`OPENBRAIN_API_KEY` env vars
+- [x] `scripts/import_openai.py` — Import ChatGPT conversation export (follows `import_claude.py` pattern)
+- [x] `tests/test_capture_claude_code.py` — 26 tests (transcript parsing, short session skip, stop_hook_active guard, malformed JSON, API errors, source field)
+
+**Verification**: End a Claude Code session → wait 1-2 min for pipeline → `ob search <topic discussed>` shows the session.
+
+**Tests**: 410 passing (76 new in this session), 10 skipped (integration, require INTEGRATION_TEST=1), 0 regressions.
 
 ---
 
