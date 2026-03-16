@@ -92,4 +92,6 @@ clean:
 	find . -type f -name .coverage -delete
 	find . -type d -name htmlcov -exec rm -rf {} +
 	find . -type d -name .mypy_cache -exec rm -rf {} +
+	find . -type d -name .ruff_cache -exec rm -rf {} +
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
 
