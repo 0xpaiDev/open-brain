@@ -2,8 +2,8 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: Phase 4 — Production Hardening ✅ COMPLETE
-**Overall Progress**: ~100% (All phases complete, 334 tests passing)
+**Current Phase**: ✅ DEPLOYED — Live on GCP at 34.118.15.81
+**Overall Progress**: 100% complete + deployed (2026-03-16, 334 tests passing, 10/10 integration tests passing)
 
 ---
 
@@ -701,6 +701,30 @@ Switched integration platform from Slack (paid) to Discord (free). Discord bot r
 - **Docs**: FastAPI router tags (Health/Memory/Search/Entities/Tasks/Decisions/Queue), all 28 env vars in README table, corrected CLI commands (ob ingest, not ob add)
 
 ### Test count: 329 → 334 (+5 rate limit tests, 10 integration tests skip by default)
+
+---
+
+## Deployment (2026-03-16) ✅ LIVE
+
+**Server**: GCP e2-small, Ubuntu 24.04, `34.118.15.81`
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0002)
+**Services running**: API + Worker (Docker Compose), Discord bot available via `--profile discord`
+**Cron jobs**: importance (3 AM daily), synthesis (2 AM Sunday), backup (3:30 AM daily)
+**Integration tests**: 10/10 passing against real Supabase
+
+### Deployment gotchas discovered
+
+- **Supabase direct URL is IPv6-only** — GCP VMs have no IPv6. Fix: use session-mode pooler (`aws-X-region.pooler.supabase.com:5432`) — supports `SELECT FOR UPDATE SKIP LOCKED`, has IPv4
+- **pytest-asyncio event loop scope mismatch** — `pg_engine` fixture is `scope="module"` but tests ran in function-scoped loops. Fix: added `asyncio_default_test_loop_scope = "module"` and `asyncio_default_fixture_loop_scope = "module"` to `pyproject.toml`
+- **Integration test rollback pattern incompatible with asyncpg pooler** — `session.rollback()` in fixture teardown failed with "cannot use Connection.transaction() in a manually started transaction". Fix: removed rollback from `pg_session` fixture
+- **Alembic stamp needed** — DB already had `content_hash` column from prior dev work but `alembic_version` was at 0001. Fix: `alembic stamp head` to sync version table without re-running migration
+- **docker-compose `version` attribute obsolete** — warning only, no action needed
+
+### Next steps
+
+- Add domain + enable Caddy (`--profile caddy`) for HTTPS
+- Import AI conversation history (see `import-ai-memory.md`)
+- Switch Discord bot on permanently once memories accumulate
 
 ---
 
