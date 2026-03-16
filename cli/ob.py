@@ -311,7 +311,7 @@ async def _health_async() -> None:
 
 # ── ob chat ───────────────────────────────────────────────────────────────────
 
-_SUPPORTED_MODELS = ("claude", "gemini", "openai")
+_SUPPORTED_MODELS = ("claude", "openai")
 
 # Open Brain API coordinates for chat (reads env, falls back to local defaults)
 _OB_API_URL: str = os.environ.get("OPENBRAIN_API_URL", "http://localhost:8000").rstrip("/")
@@ -362,31 +362,6 @@ async def _call_claude(system: str, messages: list[dict[str, str]]) -> str:
     return str(response.content[0].text)  # type: ignore[union-attr]
 
 
-async def _call_gemini(system: str, messages: list[dict[str, str]]) -> str:
-    """Call Gemini Flash and return reply text."""
-    try:
-        from google import genai  # type: ignore[import-not-found]
-        from google.genai import types  # type: ignore[import-not-found]
-    except ImportError as exc:
-        typer.echo("Error: google-genai not installed. Run: pip install google-genai", err=True)
-        raise typer.Exit(code=1) from exc
-    api_key_env = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key_env:
-        typer.echo("Error: GEMINI_API_KEY not set.", err=True)
-        raise typer.Exit(code=1)
-    client = genai.Client(api_key=api_key_env)
-    history = [
-        types.Content(role=m["role"], parts=[types.Part(text=m["content"])])
-        for m in messages[:-1]
-    ]
-    chat_session = client.chats.create(
-        model="gemini-2.0-flash",
-        config=types.GenerateContentConfig(system_instruction=system),
-        history=history,
-    )
-    result = await asyncio.to_thread(chat_session.send_message, messages[-1]["content"])
-    return str(result.text)
-
 
 async def _call_openai(system: str, messages: list[dict[str, str]]) -> str:
     """Call GPT-4o-mini and return reply text."""
@@ -419,8 +394,6 @@ async def _call_llm_for_chat(model: str, system: str, messages: list[dict[str, s
     """
     if model == "claude":
         return await _call_claude(system, messages)
-    if model == "gemini":
-        return await _call_gemini(system, messages)
     if model == "openai":
         return await _call_openai(system, messages)
     typer.echo(

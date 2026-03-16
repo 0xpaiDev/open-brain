@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = ConfigDict(env_file=".env", case_sensitive=False)
+    model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     # Database — Supabase direct connection, port 5432. Required.
     # Set SQLALCHEMY_URL in .env (copy from .env.example)
