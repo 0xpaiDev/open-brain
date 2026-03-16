@@ -57,7 +57,27 @@ JSON schema:
   "base_importance": 0.6
 }
 
-Be concise. Extract only what is explicitly mentioned. If a field is not applicable, use empty arrays or null.
+EXAMPLE OUTPUT (for "Team decided to use PostgreSQL over MySQL for the new service"):
+{
+  "type": "decision",
+  "content": "Team decided to use PostgreSQL over MySQL for the new service.",
+  "summary": "PostgreSQL chosen for new service.",
+  "entities": [
+    {"name": "PostgreSQL", "type": "tool"},
+    {"name": "MySQL", "type": "tool"}
+  ],
+  "decisions": [
+    {
+      "decision": "Use PostgreSQL for the new service",
+      "reasoning": "Better support for JSON columns and pgvector",
+      "alternatives": ["MySQL", "SQLite"]
+    }
+  ],
+  "tasks": [],
+  "base_importance": 0.8
+}
+
+Now extract from the actual input below. Be concise. Extract only what is explicitly mentioned. If a field is not applicable, use empty arrays or null.
 Do NOT invent entities, decisions, or tasks that aren't mentioned."""
 
 EXTRACTION_RETRY_PROMPT_1 = """You are an AI assistant helping to extract and structure organizational memory.
@@ -71,9 +91,9 @@ JSON schema:
   "type": "memory|decision|task|context",
   "content": "main text content",
   "summary": "brief one-sentence summary",
-  "entities": [{"name": "string", "type": "person|org|project|concept|tool|place"}],
-  "decisions": [{"decision": "string", "reasoning": "string", "alternatives": []}],
-  "tasks": [{"description": "string", "owner": null, "due_date": null}],
+  "entities": [{"name": "Project Aegis", "type": "project"}],
+  "decisions": [{"decision": "Deploy on Friday", "reasoning": "Deadline is Monday", "alternatives": ["Deploy Saturday"]}],
+  "tasks": [{"description": "Write deployment checklist", "owner": "Alice", "due_date": null}],
   "base_importance": 0.5
 }
 
@@ -86,11 +106,13 @@ Respond with ONLY this JSON (no other text):
   "type": "memory",
   "content": "the main text",
   "summary": "one sentence",
-  "entities": [],
-  "decisions": [],
-  "tasks": [],
+  "entities": [{"name": "Example Corp", "type": "org"}],
+  "decisions": [{"decision": "example decision", "reasoning": null, "alternatives": []}],
+  "tasks": [{"description": "example task", "owner": null, "due_date": null}],
   "base_importance": 0.5
-}"""
+}
+
+Use empty arrays [] if no entities/decisions/tasks are present. Each entity must be an object with "name" and "type" keys."""
 
 
 def build_extraction_user_message(text: str) -> str:

@@ -18,7 +18,7 @@ from src.llm.prompts import (
     EXTRACTION_RETRY_PROMPT_2,
     EXTRACTION_SYSTEM_PROMPT,
 )
-from src.pipeline.extractor import extract
+from src.pipeline.extractor import EntityExtract, extract
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -113,3 +113,84 @@ async def test_extract_uses_correct_prompt_per_attempt() -> None:
 
     await extract("text", attempt=2, client=client)
     assert client.complete.call_args_list[-1].kwargs["system_prompt"] == EXTRACTION_RETRY_PROMPT_2
+
+
+@pytest.mark.asyncio
+async def test_extract_coerces_entity_strings_to_objects() -> None:
+    """Plain string entities are coerced to EntityExtract objects with type='concept'."""
+    payload = json.dumps({
+        "type": "memory",
+        "content": "test content",
+        "entities": ["Project Aegis", "Daily Planner agent"],
+        "decisions": [],
+        "tasks": [],
+        "base_importance": 0.5,
+    })
+    result = await extract("text", attempt=0, client=_mock_client(payload))
+    assert len(result.entities) == 2
+    assert all(isinstance(e, EntityExtract) for e in result.entities)
+    assert result.entities[0].name == "Project Aegis"
+    assert result.entities[0].type == "concept"
+    assert result.entities[1].name == "Daily Planner agent"
+
+
+@pytest.mark.asyncio
+async def test_extract_coerces_decision_strings_to_objects() -> None:
+    """Plain string decisions are coerced to DecisionExtract objects."""
+    payload = json.dumps({
+        "type": "memory",
+        "content": "test content",
+        "entities": [],
+        "decisions": ["Cut voice pipeline from v0.1", "Start with Daily Planner agent only"],
+        "tasks": [],
+        "base_importance": 0.5,
+    })
+    result = await extract("text", attempt=0, client=_mock_client(payload))
+    assert len(result.decisions) == 2
+    assert result.decisions[0].decision == "Cut voice pipeline from v0.1"
+    assert result.decisions[0].reasoning is None
+    assert result.decisions[0].alternatives == []
+
+
+@pytest.mark.asyncio
+async def test_extract_coerces_task_strings_to_objects() -> None:
+    """Plain string tasks are coerced to TaskExtract objects."""
+    payload = json.dumps({
+        "type": "memory",
+        "content": "test content",
+        "entities": [],
+        "decisions": [],
+        "tasks": ["Write deployment checklist", "Deploy on Friday"],
+        "base_importance": 0.5,
+    })
+    result = await extract("text", attempt=0, client=_mock_client(payload))
+    assert len(result.tasks) == 2
+    assert result.tasks[0].description == "Write deployment checklist"
+    assert result.tasks[0].owner is None
+    assert result.tasks[0].due_date is None
+
+
+@pytest.mark.asyncio
+async def test_extract_coercion_does_not_affect_correct_objects() -> None:
+    """Valid object arrays pass through coercion unchanged."""
+    payload = json.dumps({
+        "type": "memory",
+        "content": "test content",
+        "entities": [{"name": "PostgreSQL", "type": "tool"}],
+        "decisions": [{"decision": "Use PostgreSQL", "reasoning": "Better pgvector support", "alternatives": []}],
+        "tasks": [{"description": "Run migrations", "owner": "Alice", "due_date": None}],
+        "base_importance": 0.7,
+    })
+    result = await extract("text", attempt=0, client=_mock_client(payload))
+    assert result.entities[0].name == "PostgreSQL"
+    assert result.entities[0].type == "tool"
+    assert result.decisions[0].reasoning == "Better pgvector support"
+    assert result.tasks[0].owner == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_extract_uses_max_tokens_2048() -> None:
+    """client.complete is called with max_tokens=2048."""
+    client = _mock_client(_valid_json())
+    await extract("text", attempt=0, client=client)
+    assert client.complete.call_args.kwargs["max_tokens"] == 2048

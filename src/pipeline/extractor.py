@@ -41,9 +41,7 @@ class TaskExtract(BaseModel):
     """An extracted actionable task."""
 
     description: str = Field(..., description="What needs to be done")
-    owner: str | None = Field(
-        default=None, description="Who is responsible for this task"
-    )
+    owner: str | None = Field(default=None, description="Who is responsible for this task")
     due_date: str | None = Field(
         default=None, description="ISO date string for due date (YYYY-MM-DD)"
     )
@@ -65,18 +63,67 @@ class ExtractionResult(BaseModel):
     entities: list[EntityExtract] = Field(
         default_factory=list, description="Named entities mentioned"
     )
-    decisions: list[DecisionExtract] = Field(
-        default_factory=list, description="Decisions made"
-    )
-    tasks: list[TaskExtract] = Field(
-        default_factory=list, description="Actionable tasks"
-    )
+    decisions: list[DecisionExtract] = Field(default_factory=list, description="Decisions made")
+    tasks: list[TaskExtract] = Field(default_factory=list, description="Actionable tasks")
     base_importance: float = Field(
         default=0.5,
         description="Importance score 0.0–1.0, rated by Claude",
         ge=0.0,
         le=1.0,
     )
+
+
+# ── Extraction Helpers ────────────────────────────────────────────────────
+
+
+def _coerce_extraction_data(json_data: dict, attempt: int) -> dict:
+    """Coerce flat string arrays to object arrays expected by ExtractionResult.
+
+    Haiku sometimes returns entities/decisions/tasks as plain string arrays
+    instead of arrays of objects. This function coerces them and logs a warning
+    so prompt quality regressions remain visible.
+
+    Args:
+        json_data: Parsed JSON dict from Claude response
+        attempt: Retry attempt number (for structured logging)
+
+    Returns:
+        json_data with entities/decisions/tasks guaranteed to be object arrays
+    """
+    coerced_fields: list[str] = []
+
+    entities = json_data.get("entities", [])
+    if entities and isinstance(entities[0], str):
+        json_data["entities"] = [
+            {"name": e, "type": "concept"} for e in entities if isinstance(e, str)
+        ]
+        coerced_fields.append("entities")
+
+    decisions = json_data.get("decisions", [])
+    if decisions and isinstance(decisions[0], str):
+        json_data["decisions"] = [
+            {"decision": d, "reasoning": None, "alternatives": []}
+            for d in decisions
+            if isinstance(d, str)
+        ]
+        coerced_fields.append("decisions")
+
+    tasks = json_data.get("tasks", [])
+    if tasks and isinstance(tasks[0], str):
+        json_data["tasks"] = [
+            {"description": t, "owner": None, "due_date": None} for t in tasks if isinstance(t, str)
+        ]
+        coerced_fields.append("tasks")
+
+    if coerced_fields:
+        logger.warning(
+            "extraction_coercion_applied",
+            attempt=attempt,
+            coerced_fields=coerced_fields,
+            note="Claude returned flat string arrays instead of objects — check prompt quality",
+        )
+
+    return json_data
 
 
 # ── Extraction Function ───────────────────────────────────────────────────
@@ -108,7 +155,7 @@ async def extract(
         response_text = await client.complete(
             system_prompt=system_prompt,
             user_content=user_message,
-            max_tokens=1024,
+            max_tokens=2048,
         )
 
         # Strip markdown code fences if present (Claude sometimes wraps JSON)
@@ -129,9 +176,10 @@ async def extract(
                 error=str(e),
                 response_text=response_text[:200],
             )
-            raise ExtractionFailed(
-                f"Failed to parse Claude response as JSON: {e}"
-            ) from e
+            raise ExtractionFailed(f"Failed to parse Claude response as JSON: {e}") from e
+
+        # Coerce flat string arrays to object arrays (Haiku format regression safety net)
+        json_data = _coerce_extraction_data(json_data, attempt=attempt)
 
         # Validate against schema
         try:
@@ -143,9 +191,7 @@ async def extract(
                 error=str(e),
                 json_data=json_data,
             )
-            raise ExtractionFailed(
-                f"Claude response does not match schema: {e}"
-            ) from e
+            raise ExtractionFailed(f"Claude response does not match schema: {e}") from e
 
         logger.info(
             "extraction_success",
