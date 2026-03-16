@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     # Set SYNTHESIS_MODEL=claude-opus-4-6 in .env before going to production.
     synthesis_model: str = "claude-haiku-4-5-20251001"
 
+    # Rate limiting (requests per minute per IP)
+    rate_limit_memory_per_minute: int = 50
+    rate_limit_search_per_minute: int = 100
+    rate_limit_dead_letters_per_minute: int = 5
+
     # Discord integration (optional — leave blank to disable)
     discord_bot_token: SecretStr = SecretStr("")
     discord_allowed_user_ids: list[int] = []

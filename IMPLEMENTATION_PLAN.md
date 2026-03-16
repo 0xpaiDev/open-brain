@@ -435,9 +435,9 @@ Phase 1 and Phase 2 are complete. Phase 3 begins now.
 5. **Phase 4**: Docker Compose production config, Caddy reverse proxy, rate limiting, pg_dump backups, automated integration tests, API docs
 
 **Known technical debt (Phase 2 gaps):**
-- GET /v1/memory/{id} — not implemented; search is the primary path
-- GET /v1/queue/status — not implemented; GET /v1/dead-letters covers the use case
-- No automated integration test against real Supabase (smoke test is manual)
+- ~~GET /v1/memory/{id} — not implemented~~ ✅ Implemented Session 3.1
+- ~~GET /v1/queue/status — not implemented~~ ✅ Implemented Session 3.1 (GET /v1/queue/status returns per-status counts)
+- No automated integration test against real Supabase (smoke test is manual) — scoped as Phase 4.5
 
 ---
 

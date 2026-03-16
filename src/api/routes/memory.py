@@ -18,11 +18,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import limiter, memory_limit
 from src.core.database import get_db
 from src.core.models import MemoryItem, RawMemory, RefinementQueue
 
@@ -71,7 +72,9 @@ class MemoryItemResponse(BaseModel):
 
 
 @router.post("/v1/memory", status_code=status.HTTP_202_ACCEPTED, response_model=MemoryResponse)
+@limiter.limit(memory_limit)
 async def ingest_memory(
+    request: Request,
     body: MemoryCreate,
     session: AsyncSession = Depends(get_db),
 ) -> MemoryResponse:

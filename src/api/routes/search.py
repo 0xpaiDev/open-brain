@@ -9,10 +9,11 @@ logs retrieval events (FIX-3), and returns ranked results.
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import limiter, search_limit
 from src.core.database import get_db
 from src.llm.client import VoyageEmbeddingClient
 from src.retrieval.context_builder import ContextResult, build_context
@@ -60,7 +61,9 @@ class ContextResponse(BaseModel):
 
 
 @router.get("/v1/search", response_model=SearchResponse)
+@limiter.limit(search_limit)
 async def search_memories(
+    request: Request,
     q: str = Query(..., description="Search query text"),
     limit: int = Query(default=10, ge=1, le=100, description="Maximum results to return"),
     type_filter: str | None = Query(
@@ -136,7 +139,9 @@ async def search_memories(
 
 
 @router.get("/v1/search/context", response_model=ContextResponse)
+@limiter.limit(search_limit)
 async def search_context(
+    request: Request,
     q: str = Query(..., description="Search query text"),
     limit: int = Query(
         default=10, ge=1, le=100, description="Maximum results to search before building context"

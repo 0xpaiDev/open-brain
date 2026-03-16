@@ -9,6 +9,7 @@ An AI-native organizational memory system that captures thoughts, decisions, and
 - Supabase account (free tier: https://supabase.com)
 - Anthropic API key (Claude Haiku credits)
 - Voyage AI API key (free tier: 200M tokens/month)
+- Docker + Docker Compose
 
 ### Setup
 
@@ -21,26 +22,30 @@ cp .env.example .env
 # Edit .env with your API keys and database URL
 
 # Install dependencies
-pip install -e .  # or: uv sync
+uv sync
 
-# Start services (Docker)
-docker compose up -d
+# Apply migrations
+SQLALCHEMY_URL=<your-supabase-url> alembic upgrade head
 
-# Run migrations
-alembic upgrade head
+# Start the API
+docker compose --profile api up -d
 
 # Start the worker
-python -m src.pipeline.worker &
+docker compose --profile worker up -d
 
 # Try the CLI
-ob add "My first memory"
+ob ingest "My first memory"
 ob search "first"
 ```
 
 ### Running Tests
 
 ```bash
-pytest tests/ -v --cov=src
+# Unit tests (SQLite — no Postgres required)
+.venv/bin/pytest tests/ -v
+
+# Integration tests (requires real Postgres)
+INTEGRATION_TEST=1 pytest tests/test_integration.py -v
 ```
 
 ---
@@ -66,7 +71,7 @@ pytest tests/ -v --cov=src
 - **jobs**: Scheduled importance + synthesis jobs (via host cron)
 
 ### Database
-- **12 tables**: raw_memory, memory_items, entities, entity_aliases, entity_relations, memory_entity_links, decisions, tasks, refinement_queue, failed_refinements, retrieval_events
+- **11 tables**: raw_memory, memory_items, entities, entity_aliases, entity_relations, memory_entity_links, decisions, tasks, refinement_queue, failed_refinements, retrieval_events
 - **Immutable**: raw_memory is append-only
 - **Append-only**: Corrections supersede originals, never overwrite
 - **Vector search**: HNSW index on 1024-dim embeddings (Voyage AI)
@@ -128,58 +133,53 @@ All endpoints require `X-API-Key` header. Prefix: `/v1/`
 ## CLI Commands
 
 ```bash
-ob add "text"                                    # Ingest memory
-ob add "text" --sync                             # Ingest + wait for completion
-ob search "query" [--type insight|decision|task]  # Search memories
-ob task "description" --owner name --due 2026-04-01  # Create task
-ob decision "decision" [--reasoning "why"]        # Create decision
-ob tasks [--status open|done]                     # List tasks
-ob entities [--type person|org|project]           # List entities
-ob status                                         # Queue health
+ob ingest "text"                                    # Ingest memory
+ob ingest "text" --source discord                   # Ingest with source label
+ob search "query"                                   # Hybrid search
+ob search "query" --type decision                   # Filter by type
+ob context "query"                                  # Search + LLM-ready context string
+ob worker --sync                                    # Process one job inline (debug)
+ob health                                           # Check API health
 ```
 
 ---
 
 ## Configuration
 
-Environment variables (`.env`):
+All configuration is via environment variables. Copy `.env.example` → `.env` and set values.
 
-```bash
-# Database (Supabase direct connection)
-# Find this in Supabase dashboard: Settings → Database → Connection pooler
-# Use direct connection (port 5432), NOT the pooler (port 6543)
-SQLALCHEMY_URL=postgresql+asyncpg://postgres.YOUR_REF:YOUR_PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-
-# API
-API_KEY=your-secret-api-key-here
-
-# LLM
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-
-# Embeddings
-VOYAGE_API_KEY=pa-...
-VOYAGE_MODEL=voyage-3
-EMBEDDING_DIMENSIONS=1024
-
-# Search weights (sum to 1.0)
-SEARCH_VECTOR_WEIGHT=0.5
-SEARCH_KEYWORD_WEIGHT=0.2
-SEARCH_IMPORTANCE_WEIGHT=0.2
-SEARCH_RECENCY_WEIGHT=0.1
-
-# Importance scoring
-IMPORTANCE_BASE_DEFAULT=0.5
-IMPORTANCE_RECENCY_HALF_LIFE_DAYS=30
-
-# Worker
-WORKER_POLL_INTERVAL=5
-WORKER_LOCK_TTL_SECONDS=300
-
-# Application
-LOG_LEVEL=info
-ENVIRONMENT=development
-```
+| Variable | Default | Description |
+|---|---|---|
+| `SQLALCHEMY_URL` | *(required)* | Postgres direct connection URL (port 5432, not 6543) |
+| `API_KEY` | *(required)* | X-API-Key header value for auth |
+| `API_HOST` | `localhost` | Bind address (use `0.0.0.0` behind a proxy) |
+| `API_PORT` | `8000` | Port to bind |
+| `ANTHROPIC_API_KEY` | *(required)* | Claude API key for extraction + synthesis |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Extraction model (Haiku for cost) |
+| `SYNTHESIS_MODEL` | `claude-haiku-4-5-20251001` | Synthesis model — **set to `claude-opus-4-6` in production** |
+| `VOYAGE_API_KEY` | *(required)* | Voyage AI key for embeddings |
+| `VOYAGE_MODEL` | `voyage-3` | Embedding model |
+| `EMBEDDING_DIMENSIONS` | `1024` | Must match voyage-3 output (do not change after deploy) |
+| `LOG_LEVEL` | `info` | Structlog level: debug, info, warning, error |
+| `ENVIRONMENT` | `development` | Environment tag (development, production) |
+| `WORKER_POLL_INTERVAL` | `5` | Seconds between queue polls |
+| `WORKER_LOCK_TTL_SECONDS` | `300` | Stale lock reclaim threshold (5 minutes) |
+| `IMPORTANCE_BASE_DEFAULT` | `0.5` | Default base_importance when not assigned by LLM |
+| `IMPORTANCE_RECENCY_HALF_LIFE_DAYS` | `30` | Recency decay half-life in days |
+| `SEARCH_DEFAULT_LIMIT` | `10` | Default search result count |
+| `SEARCH_VECTOR_WEIGHT` | `0.5` | Weight for vector similarity score |
+| `SEARCH_KEYWORD_WEIGHT` | `0.2` | Weight for full-text search score |
+| `SEARCH_IMPORTANCE_WEIGHT` | `0.2` | Weight for importance score |
+| `SEARCH_RECENCY_WEIGHT` | `0.1` | Weight for recency score |
+| `ENTITY_FUZZY_MATCH_THRESHOLD` | `0.92` | pg_trgm similarity threshold for entity merge |
+| `SYNTHESIS_MAX_MEMORIES_PER_REPORT` | `50` | Max memories to include in weekly digest |
+| `RATE_LIMIT_MEMORY_PER_MINUTE` | `50` | Rate limit for POST /v1/memory per IP |
+| `RATE_LIMIT_SEARCH_PER_MINUTE` | `100` | Rate limit for GET /v1/search per IP |
+| `RATE_LIMIT_DEAD_LETTERS_PER_MINUTE` | `5` | Rate limit for POST /v1/dead-letters/{id}/retry per IP |
+| `DISCORD_BOT_TOKEN` | *(optional)* | Discord bot token |
+| `DISCORD_ALLOWED_USER_IDS` | `[]` | Allowed Discord user IDs (JSON array) |
+| `DOMAIN` | *(optional)* | Domain for Caddy TLS (e.g. `openbrain.example.com`) |
+| `OPEN_BRAIN_API_URL` | `http://localhost:8000` | API URL for integrations running in Docker |
 
 ---
 
@@ -248,25 +248,49 @@ pytest tests/ -vv --tb=short
 
 ### VPS (Production)
 
-1. **Postgres on managed service** (AWS RDS, Heroku, etc.)
-   - PostgreSQL 16, pgvector, pg_trgm extensions enabled
-   - Daily automated backups
+1. **Prepare the VPS**
+   - Clone the repo and copy `.env.example` → `.env`
+   - Set production values: `API_KEY`, `SQLALCHEMY_URL`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`
+   - Set `ENVIRONMENT=production`, `LOG_LEVEL=info`
+   - Set `DOMAIN=yourdomain.example` for Caddy TLS
 
-2. **Docker Compose on VPS**
-   - Update `.env` with production secrets (use `.env` file, not plaintext)
-   - Use Caddy for TLS termination and reverse proxy
-   - API bound to localhost, Caddy handles external traffic
+2. **Apply migrations**
+   ```bash
+   docker compose --profile migrate up
+   ```
 
-3. **Scheduled jobs**
-   - Add to host cron:
-     ```bash
-     0 3 * * * docker compose -f /path/to/docker-compose.yml run --rm importance python -m src.jobs.importance
-     0 2 * * 0 docker compose -f /path/to/docker-compose.yml run --rm synthesis python -m src.jobs.synthesis
-     ```
+3. **Start API, worker, and Caddy reverse proxy**
+   ```bash
+   docker compose --profile api --profile worker --profile caddy up -d
+   ```
+   Caddy auto-provisions TLS via Let's Encrypt. API is available at `https://yourdomain.example`.
 
-4. **Backups**
-   - Daily: `pg_dump` to S3 or external storage
-   - Test restore quarterly
+4. **Start Discord bot** (optional)
+   ```bash
+   docker compose --profile discord up -d
+   ```
+
+5. **Scheduled intelligence jobs** — add to host cron:
+   ```bash
+   # Daily at 3 AM — update dynamic_importance from retrieval_events
+   0 3 * * * cd /opt/open-brain && docker compose run --rm worker python -m src.jobs.importance >> /var/log/openbrain-jobs.log 2>&1
+
+   # Weekly Sunday at 2 AM — generate synthesis report
+   0 2 * * 0 cd /opt/open-brain && docker compose run --rm worker python -m src.jobs.synthesis >> /var/log/openbrain-jobs.log 2>&1
+   ```
+
+6. **Automated backups** — add to host cron:
+   ```bash
+   # Daily at 3:30 AM — pg_dump with 30-day retention
+   30 3 * * * cd /opt/open-brain && ./scripts/backup.sh >> /var/log/openbrain-backup.log 2>&1
+   ```
+   Manual restore: `./scripts/restore.sh backups/open-brain-YYYYMMDD-HHMMSS.sql.gz`
+
+7. **Production synthesis model** — set in `.env`:
+   ```
+   SYNTHESIS_MODEL=claude-opus-4-6
+   ```
+   (Default is Haiku for cost savings. Switch before going live.)
 
 ---
 
@@ -324,6 +348,25 @@ Full audit trail (never lose data), correction chains (see reasoning for changes
 - Verify header spelling: `X-API-Key` (not `x-api-key`)
 - Check `.env` value matches header value
 - Log auth middleware: set `LOG_LEVEL=DEBUG`
+
+### 429 Too Many Requests
+- Rate limit exceeded per IP per minute
+- Check limits: `RATE_LIMIT_MEMORY_PER_MINUTE`, `RATE_LIMIT_SEARCH_PER_MINUTE`
+- Retry after the `Retry-After` header value (seconds)
+
+### Synthesis generating poor output
+- Default model is Claude Haiku. Switch to Opus for better quality:
+  `SYNTHESIS_MODEL=claude-opus-4-6`
+- Increase lookback window: `POST /v1/synthesis/run` with `{"days": 14}`
+
+### Backup verification
+```bash
+# Run backup manually
+./scripts/backup.sh
+
+# Test restore to a scratch database
+./scripts/restore.sh backups/open-brain-YYYYMMDD-HHMMSS.sql.gz postgresql://user:pass@host/scratch_db
+```
 
 ---
 

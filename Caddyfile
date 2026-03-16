@@ -1,0 +1,29 @@
+# Open Brain — Caddy reverse proxy
+# Caddy auto-provisions TLS certificates via Let's Encrypt.
+# Replace {$DOMAIN} by setting the DOMAIN environment variable, or hardcode the domain.
+# Example: openbrain.yourdomain.com
+
+{$DOMAIN} {
+    # Reverse proxy to FastAPI (uvicorn)
+    reverse_proxy api:8000
+
+    # Enable gzip compression
+    encode gzip
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Remove server fingerprinting
+        -Server
+    }
+
+    # Access logs
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}

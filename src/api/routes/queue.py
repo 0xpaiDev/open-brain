@@ -11,11 +11,12 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import dead_letters_limit, limiter
 from src.core.database import get_db
 from src.core.models import FailedRefinement, RefinementQueue
 
@@ -184,7 +185,9 @@ async def list_dead_letters(
 
 
 @router.post("/v1/dead-letters/{failed_id}/retry", response_model=RetryResponse)
+@limiter.limit(dead_letters_limit)
 async def retry_dead_letter(
+    request: Request,
     failed_id: str,
     session: AsyncSession = Depends(get_db),
 ) -> RetryResponse:
