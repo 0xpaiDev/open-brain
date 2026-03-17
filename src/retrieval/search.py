@@ -151,13 +151,11 @@ async def _execute_hybrid_sql(
           {entity_clause}
           {date_from_clause}
           {date_to_clause}
-        LIMIT :fetch_limit
     """)
 
     params: dict = {
         "embedding": "[" + ",".join(str(x) for x in query_embedding) + "]",
         "q": query_text,
-        "fetch_limit": limit * 2,
     }
     if type_filter:
         params["type_filter"] = type_filter
