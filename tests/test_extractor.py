@@ -194,3 +194,20 @@ async def test_extract_uses_max_tokens_2048() -> None:
     client = _mock_client(_valid_json())
     await extract("text", attempt=0, client=client)
     assert client.complete.call_args.kwargs["max_tokens"] == 2048
+
+
+@pytest.mark.asyncio
+async def test_extract_handles_json_embedded_in_text() -> None:
+    """JSON block preceded by explanatory text is extracted via regex fallback."""
+    valid_json = _valid_json(0.6)
+    response_with_preamble = f"Here is the structured extraction:\n{valid_json}"
+    result = await extract("text", attempt=0, client=_mock_client(response_with_preamble))
+    assert result.base_importance == 0.6
+    assert result.content == "test content"
+
+
+@pytest.mark.asyncio
+async def test_extract_raises_when_no_json_found() -> None:
+    """Response with no JSON object at all raises ExtractionFailed."""
+    with pytest.raises(ExtractionFailed):
+        await extract("text", attempt=0, client=_mock_client("I cannot process this request."))

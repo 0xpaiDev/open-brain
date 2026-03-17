@@ -53,20 +53,37 @@ def _make_http(post_response: MagicMock | None = None, get_response: MagicMock |
 
 
 @pytest.mark.asyncio
-async def test_ingest_memory_returns_raw_id() -> None:
-    """Successful ingest returns the raw_id from the API response."""
+async def test_ingest_memory_returns_raw_id_and_status() -> None:
+    """Successful ingest returns (raw_id, status) tuple from the API response."""
     raw_id = "aaaaaaaa-0000-0000-0000-000000000001"
-    http = _make_http(post_response=_mock_response(202, {"raw_id": raw_id, "status": "pending"}))
+    http = _make_http(post_response=_mock_response(202, {"raw_id": raw_id, "status": "queued"}))
 
-    result = await ingest_memory(http, "some memory", "123", "456", "test-key", "http://localhost:8000")
+    result_id, result_status = await ingest_memory(
+        http, "some memory", "123", "456", "test-key", "http://localhost:8000"
+    )
 
-    assert result == raw_id
+    assert result_id == raw_id
+    assert result_status == "queued"
     http.post.assert_awaited_once()
     call_kwargs = http.post.call_args
     assert call_kwargs[1]["json"]["source"] == "discord"
     assert call_kwargs[1]["json"]["text"] == "some memory"
     assert call_kwargs[1]["json"]["metadata"]["author_id"] == "123"
     assert call_kwargs[1]["headers"]["X-API-Key"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_ingest_memory_returns_duplicate_status() -> None:
+    """Duplicate content returns status='duplicate' in the tuple."""
+    raw_id = "aaaaaaaa-0000-0000-0000-000000000002"
+    http = _make_http(post_response=_mock_response(202, {"raw_id": raw_id, "status": "duplicate"}))
+
+    result_id, result_status = await ingest_memory(
+        http, "some memory", "123", "456", "test-key", "http://localhost:8000"
+    )
+
+    assert result_id == raw_id
+    assert result_status == "duplicate"
 
 
 @pytest.mark.asyncio
@@ -191,7 +208,7 @@ def _make_settings(allowed_ids: list[int] = None, api_key: str = "test-key") -> 
 @pytest.mark.asyncio
 async def test_on_message_allowed_user_ingests_memory(monkeypatch) -> None:
     """Allowed user message → ingest_memory called → 🧠 reaction added."""
-    http = _make_http(post_response=_mock_response(202, {"raw_id": "aaa", "status": "pending"}))
+    http = _make_http(post_response=_mock_response(202, {"raw_id": "aaa", "status": "queued"}))
 
     from src.integrations import discord_bot
 
@@ -204,6 +221,23 @@ async def test_on_message_allowed_user_ingests_memory(monkeypatch) -> None:
 
     http.post.assert_awaited_once()
     message.add_reaction.assert_awaited_once_with("🧠")
+
+
+@pytest.mark.asyncio
+async def test_on_message_duplicate_reacts_with_recycle(monkeypatch) -> None:
+    """Duplicate message (same content within 24h) → ♻️ reaction instead of 🧠."""
+    http = _make_http(post_response=_mock_response(202, {"raw_id": "bbb", "status": "duplicate"}))
+
+    from src.integrations import discord_bot
+
+    monkeypatch.setattr(discord_bot, "_get_settings", lambda: _make_settings())
+
+    bot = discord_bot.OpenBrainBot(http)
+    message = _make_discord_message(author_id=42, content="already sent this")
+    await bot.on_message(message)
+
+    http.post.assert_awaited_once()
+    message.add_reaction.assert_awaited_once_with("♻️")
 
 
 @pytest.mark.asyncio

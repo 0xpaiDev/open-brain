@@ -1,6 +1,7 @@
 """JSON extraction from raw text via Claude."""
 
 import json
+import re
 
 import structlog
 from pydantic import BaseModel, Field
@@ -166,17 +167,39 @@ async def extract(
         else:
             stripped = stripped
 
-        # Parse JSON response
+        # Parse JSON response — primary attempt
         try:
             json_data = json.loads(stripped)
-        except json.JSONDecodeError as e:
-            logger.exception(
-                "extraction_json_parse_failed",
-                attempt=attempt,
-                error=str(e),
-                response_text=response_text[:200],
-            )
-            raise ExtractionFailed(f"Failed to parse Claude response as JSON: {e}") from e
+        except json.JSONDecodeError as primary_err:
+            # Fallback: Haiku sometimes writes text before/after the JSON block.
+            # Extract the first {...} object from the response.
+            match = re.search(r"\{[\s\S]*\}", stripped)
+            if match:
+                try:
+                    json_data = json.loads(match.group())
+                    logger.warning(
+                        "extraction_json_extracted_from_text",
+                        attempt=attempt,
+                        note="JSON found embedded in surrounding text — check prompt quality",
+                    )
+                except json.JSONDecodeError as e:
+                    logger.exception(
+                        "extraction_json_parse_failed",
+                        attempt=attempt,
+                        error=str(e),
+                        response_text=response_text[:200],
+                    )
+                    raise ExtractionFailed(f"Failed to parse Claude response as JSON: {e}") from e
+            else:
+                logger.exception(
+                    "extraction_json_parse_failed",
+                    attempt=attempt,
+                    error=str(primary_err),
+                    response_text=response_text[:200],
+                )
+                raise ExtractionFailed(
+                    f"Failed to parse Claude response as JSON: {primary_err}"
+                ) from primary_err
 
         # Coerce flat string arrays to object arrays (Haiku format regression safety net)
         json_data = _coerce_extraction_data(json_data, attempt=attempt)

@@ -44,8 +44,11 @@ async def ingest_memory(
     channel_id: str,
     api_key: str,
     api_base_url: str,
-) -> str:
-    """POST /v1/memory and return the raw_id string.
+) -> tuple[str, str]:
+    """POST /v1/memory and return (raw_id, status).
+
+    status is "queued" for newly enqueued memories, or "duplicate" when the
+    same content was already ingested within the last 24 hours.
 
     Raises:
         httpx.HTTPStatusError: if the API returns a non-2xx status.
@@ -60,7 +63,8 @@ async def ingest_memory(
         headers={"X-API-Key": api_key},
     )
     response.raise_for_status()
-    return str(response.json()["raw_id"])
+    body = response.json()
+    return str(body["raw_id"]), str(body.get("status", "queued"))
 
 
 async def search_memories(
@@ -282,7 +286,7 @@ class OpenBrainBot(discord.Client):
         log = logger.bind(author_id=message.author.id, channel_id=message.channel.id)
 
         try:
-            raw_id = await ingest_memory(
+            raw_id, ingest_status = await ingest_memory(
                 self._http,
                 raw_text=raw_text,
                 author_id=str(message.author.id),
@@ -290,8 +294,11 @@ class OpenBrainBot(discord.Client):
                 api_key=settings.api_key,
                 api_base_url=settings.open_brain_api_url,
             )
-            log.info("discord_memory_ingested", raw_id=raw_id)
-            await message.add_reaction("🧠")
+            log.info("discord_memory_ingested", raw_id=raw_id, status=ingest_status)
+            if ingest_status == "duplicate":
+                await message.add_reaction("♻️")  # already in memory, not re-queued
+            else:
+                await message.add_reaction("🧠")  # newly queued for processing
         except httpx.HTTPStatusError as exc:
             log.error("discord_ingest_error", status=exc.response.status_code)
             await message.add_reaction("❌")
