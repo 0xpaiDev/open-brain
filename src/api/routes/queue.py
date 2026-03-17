@@ -254,7 +254,7 @@ async def retry_dead_letter(
 
 
 class SynthesisRunRequest(BaseModel):
-    days: int = Field(default=7, ge=1, le=365, description="Days to look back for memories")
+    days: int = Field(default=7, ge=1, le=90, description="Days to look back for memories")
 
 
 class SynthesisRunResponse(BaseModel):
