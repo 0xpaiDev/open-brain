@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     sqlalchemy_url: str
 
     # API
-    api_key: str
+    api_key: SecretStr
     api_host: str = "localhost"
     api_port: int = 8000
 
@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Importance scoring
     importance_base_default: float = 0.5
     importance_recency_half_life_days: int = 30
+    # Auto-captured sessions (source="claude-code") are background work noise.
+    # Cap their base_importance so real intentional memories always rank higher.
+    auto_capture_importance_ceiling: float = 0.4
 
     # Search
     search_default_limit: int = 10
@@ -76,14 +79,16 @@ class Settings(BaseSettings):
     def validate_sqlalchemy_url(cls, v: str) -> str:
         """Ensure database URL is set."""
         if not v or not v.strip():
-            raise ValueError("SQLALCHEMY_URL is required. Set it in .env or as an environment variable.")
+            raise ValueError(
+                "SQLALCHEMY_URL is required. Set it in .env or as an environment variable."
+            )
         return v
 
     @field_validator("api_key")
     @classmethod
-    def validate_api_key(cls, v: str) -> str:
+    def validate_api_key(cls, v: SecretStr) -> SecretStr:
         """Ensure API key is set."""
-        if not v or not v.strip():
+        if not v or not v.get_secret_value().strip():
             raise ValueError("API_KEY is required. Set it in .env or as an environment variable.")
         return v
 
@@ -97,12 +102,28 @@ class Settings(BaseSettings):
             raise ValueError(f"embedding_dimensions must be one of {valid_dimensions}, got {v}")
         return v
 
-    @field_validator("search_vector_weight", "search_keyword_weight", "search_importance_weight", "search_recency_weight")
+    @field_validator(
+        "search_vector_weight",
+        "search_keyword_weight",
+        "search_importance_weight",
+        "search_recency_weight",
+    )
     @classmethod
     def validate_search_weights(cls, v: float) -> float:
         """Validate search weights are between 0 and 1."""
         if not 0.0 <= v <= 1.0:
             raise ValueError(f"Search weights must be between 0 and 1, got {v}")
+        return v
+
+    @field_validator("entity_fuzzy_match_threshold")
+    @classmethod
+    def validate_fuzzy_threshold(cls, v: float) -> float:
+        """Validate fuzzy match threshold is within [0.5, 1.0].
+
+        Values below 0.5 cause excessive false-positive entity merges.
+        """
+        if not 0.5 <= v <= 1.0:
+            raise ValueError(f"entity_fuzzy_match_threshold must be between 0.5 and 1.0, got {v}")
         return v
 
     @model_validator(mode="after")

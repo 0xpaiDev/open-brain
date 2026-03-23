@@ -13,13 +13,14 @@ new rows are created and no LLM call is wasted.
 """
 
 import hashlib
+import json
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,8 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
+_MAX_METADATA_BYTES = 8192  # 8 KB limit on serialized metadata
+
 
 def _content_hash(text: str) -> str:
     """SHA-256 hash of normalized text (lowercase + collapsed whitespace)."""
@@ -41,10 +44,23 @@ def _content_hash(text: str) -> str:
 class MemoryCreate(BaseModel):
     """Request body for POST /v1/memory."""
 
-    text: str
-    source: str = "api"
+    text: str = Field(..., min_length=1, max_length=50000)
+    source: str = Field("api", max_length=200)
     metadata: dict[str, Any] | None = None
     supersedes_id: str | None = None
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Reject metadata payloads that exceed the serialized byte limit."""
+        if v is None:
+            return v
+        serialized = json.dumps(v, separators=(",", ":"))
+        if len(serialized.encode()) > _MAX_METADATA_BYTES:
+            raise ValueError(
+                f"metadata exceeds maximum allowed size of {_MAX_METADATA_BYTES} bytes"
+            )
+        return v
 
 
 class MemoryResponse(BaseModel):
@@ -111,7 +127,9 @@ async def ingest_memory(
         try:
             target_uuid = _uuid.UUID(body.supersedes_id)
         except ValueError:
-            raise HTTPException(status_code=422, detail="supersedes_id is not a valid UUID") from None
+            raise HTTPException(
+                status_code=422, detail="supersedes_id is not a valid UUID"
+            ) from None
         superseded_item = await session.get(MemoryItem, target_uuid)
         if superseded_item is None:
             raise HTTPException(status_code=404, detail="supersedes_id not found")
@@ -185,7 +203,9 @@ async def get_memory_item(
         summary=item.summary,
         base_importance=float(item.base_importance),
         dynamic_importance=float(item.dynamic_importance),
-        importance_score=float(item.importance_score) if item.importance_score is not None else None,
+        importance_score=(
+            float(item.importance_score) if item.importance_score is not None else None
+        ),
         is_superseded=item.is_superseded,
         supersedes_id=str(item.supersedes_id) if item.supersedes_id is not None else None,
         created_at=item.created_at,

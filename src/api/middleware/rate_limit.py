@@ -54,6 +54,18 @@ def _get_dead_letters_rate() -> str:
     return f"{s.rate_limit_dead_letters_per_minute}/minute"
 
 
+def _get_entities_rate() -> str:
+    return "60/minute"
+
+
+def _get_decisions_rate() -> str:
+    return "60/minute"
+
+
+def _get_queue_rate() -> str:
+    return "30/minute"
+
+
 # Module-level limiter — shared across all routes that import it.
 # key_func=get_remote_address uses the client IP (or X-Forwarded-For when
 # --proxy-headers is active, which we enable in docker-compose.yml).
@@ -63,3 +75,6 @@ limiter = Limiter(key_func=get_remote_address)
 memory_limit = _get_memory_rate
 search_limit = _get_search_rate
 dead_letters_limit = _get_dead_letters_rate
+entities_limit = _get_entities_rate
+decisions_limit = _get_decisions_rate
+queue_limit = _get_queue_rate

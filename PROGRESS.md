@@ -2,8 +2,37 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: ✅ DEPLOYED + AI-AGNOSTIC ACCESS LAYER — Live on GCP at 34.118.15.81
+**Current Phase**: ✅ Phase 5 complete. Phase 6 (Module Expansion) planned — spec in `new-feature-implementation-plan.md`
 **Overall Progress**: Phase 5 complete (2026-03-16, 410 tests passing, 10/10 integration tests passing)
+
+---
+
+## Phase 6: Module Expansion 🔲 PLANNED (2026-03-23)
+
+**Spec**: `new-feature-implementation-plan.md`
+**Modules**: Todo System, Morning Pulse, Discord RAG Chat
+**Phase order**: A (Foundation) → B (Todo) → C (RAG Chat) → D (Pulse) → E (Hardening)
+
+### Phase A: Foundation 🔲
+- [ ] A1: Discord bot refactor → `kernel.py` + `modules/` directory structure
+- [ ] A2: Schema migration `0003_new_modules.py` + 4 new tables + config settings
+
+### Phase B: Todo Module 🔲
+- [ ] B1: `src/api/routes/todos.py` + `src/api/services/todo_service.py`
+- [ ] B2: `src/integrations/modules/todo_cog.py` (slash commands + interactive embeds)
+
+### Phase C: Discord RAG Chat 🔲
+- [ ] C1: `src/integrations/modules/rag_cog.py` (full RAG pipeline + conversation buffer)
+
+### Phase D: Morning Pulse 🔲
+- [ ] D1: `src/integrations/calendar.py` (ported from Cadence)
+- [ ] D2: `src/jobs/pulse.py` + `src/api/routes/pulse.py`
+- [ ] D3: `src/integrations/modules/pulse_cog.py`
+
+### Phase E: Hardening 🔲
+- [ ] Update `CLAUDE.md` Module Ownership table
+- [ ] Update `ARCHITECTURE.md` for module system
+- [ ] End-to-end integration tests
 
 ---
 

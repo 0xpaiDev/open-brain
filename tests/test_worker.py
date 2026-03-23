@@ -306,6 +306,113 @@ async def test_process_job_creates_entities_and_links(async_session):
     assert len(links) >= 1
 
 
+# ── Importance capping tests ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_process_job_caps_importance_for_claude_code_source(async_session):
+    """process_job() caps base_importance at ceiling for source='claude-code'.
+
+    Auto-captured sessions are background work noise. Their importance must not
+    exceed auto_capture_importance_ceiling (default 0.4) so intentional memories
+    ingested via Discord/CLI always rank higher.
+    """
+    raw = RawMemory(source="claude-code", raw_text="session transcript")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    # Claude assigns a high importance (0.9) — should be capped at 0.4
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = (
+        '{"type": "memory", "content": "session work", "base_importance": 0.9}'
+    )
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+        await process_job(queue, mock_anthropic, mock_voyage)
+
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
+    item = result.scalar_one()
+    assert item.base_importance <= 0.4
+
+
+@pytest.mark.asyncio
+async def test_process_job_does_not_cap_importance_for_other_sources(async_session):
+    """process_job() does NOT cap base_importance for non-claude-code sources.
+
+    Intentional memories from Discord, CLI, or MCP get their full Claude-assigned
+    importance score.
+    """
+    raw = RawMemory(source="discord", raw_text="haircut on 2026-03-25")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = (
+        '{"type": "task", "content": "get haircut", "base_importance": 0.85}'
+    )
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+        await process_job(queue, mock_anthropic, mock_voyage)
+
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
+    item = result.scalar_one()
+    assert float(item.base_importance) == pytest.approx(0.85)
+
+
+@pytest.mark.asyncio
+async def test_process_job_does_not_cap_when_importance_already_below_ceiling(async_session):
+    """process_job() leaves importance unchanged when it's already below ceiling.
+
+    A claude-code session with base_importance=0.3 should stay at 0.3, not be
+    raised or altered.
+    """
+    raw = RawMemory(source="claude-code", raw_text="trivial session")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = (
+        '{"type": "memory", "content": "trivial work", "base_importance": 0.3}'
+    )
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+        await process_job(queue, mock_anthropic, mock_voyage)
+
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
+    item = result.scalar_one()
+    assert float(item.base_importance) == pytest.approx(0.3)
+
+
 # ── store_memory_item tests ───────────────────────────────────────────────
 
 

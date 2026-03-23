@@ -23,7 +23,7 @@ def _get_api_key() -> str:
 
     if config.settings is None:
         config.settings = config.Settings()
-    return config.settings.api_key
+    return config.settings.api_key.get_secret_value()
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):

@@ -6,10 +6,10 @@ Embeds the query via Voyage AI, runs hybrid_search (vector + FTS + ranking),
 logs retrieval events (FIX-3), and returns ranked results.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,11 +24,29 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+_MAX_DATE_RANGE_DAYS = 730  # 2 years
+
+
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     """Attach UTC timezone to naive datetimes; pass through None and aware datetimes."""
     if dt is None:
         return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _validate_date_range(date_from: datetime | None, date_to: datetime | None) -> None:
+    """Raise 422 if date range is invalid or exceeds 2 years."""
+    if date_from is not None and date_to is not None:
+        if date_from > date_to:
+            raise HTTPException(
+                status_code=422,
+                detail="date_from must not be later than date_to",
+            )
+        if (date_to - date_from) > timedelta(days=_MAX_DATE_RANGE_DAYS):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Date range must not exceed {_MAX_DATE_RANGE_DAYS} days",
+            )
 
 
 class SearchResultItem(BaseModel):
@@ -64,7 +82,7 @@ class ContextResponse(BaseModel):
 @limiter.limit(search_limit)
 async def search_memories(
     request: Request,
-    q: str = Query(..., description="Search query text"),
+    q: str = Query(..., min_length=1, max_length=2000, description="Search query text"),
     limit: int = Query(default=10, ge=1, le=100, description="Maximum results to return"),
     type_filter: str | None = Query(
         default=None, description="Filter by type: memory, decision, task"
@@ -86,7 +104,7 @@ async def search_memories(
     combined scoring, logs retrieval events, and returns ranked results.
 
     Raises:
-        422: missing required 'q' parameter, or unparseable date_from/date_to
+        422: missing required 'q' parameter, query too long, or invalid date range
         401: missing or invalid X-API-Key (handled by middleware)
     """
     from src.core import config as _config
@@ -94,6 +112,10 @@ async def search_memories(
     if _config.settings is None:
         _config.settings = _config.Settings()
     _settings = _config.settings
+
+    date_from = _ensure_utc(date_from)
+    date_to = _ensure_utc(date_to)
+    _validate_date_range(date_from, date_to)
 
     voyage = VoyageEmbeddingClient(
         api_key=_settings.voyage_api_key.get_secret_value() if _settings.voyage_api_key else "",
@@ -108,8 +130,8 @@ async def search_memories(
         limit=limit,
         type_filter=type_filter,
         entity_filter=entity_filter,
-        date_from=_ensure_utc(date_from),
-        date_to=_ensure_utc(date_to),
+        date_from=date_from,
+        date_to=date_to,
     )
 
     await session.commit()
@@ -128,7 +150,7 @@ async def search_memories(
 
     logger.info(
         "search_request",
-        query=q,
+        query_length=len(q),
         result_count=len(items),
         type_filter=type_filter,
         entity_filter=entity_filter,
@@ -142,7 +164,7 @@ async def search_memories(
 @limiter.limit(search_limit)
 async def search_context(
     request: Request,
-    q: str = Query(..., description="Search query text"),
+    q: str = Query(..., min_length=1, max_length=2000, description="Search query text"),
     limit: int = Query(
         default=10, ge=1, le=100, description="Maximum results to search before building context"
     ),
@@ -167,7 +189,7 @@ async def search_context(
     into an LLM prompt.
 
     Raises:
-        422: missing required 'q' parameter, or unparseable date_from/date_to
+        422: missing required 'q' parameter, query too long, or invalid date range
         401: missing or invalid X-API-Key (handled by middleware)
     """
     from src.core import config as _config
@@ -175,6 +197,10 @@ async def search_context(
     if _config.settings is None:
         _config.settings = _config.Settings()
     _settings = _config.settings
+
+    date_from = _ensure_utc(date_from)
+    date_to = _ensure_utc(date_to)
+    _validate_date_range(date_from, date_to)
 
     voyage = VoyageEmbeddingClient(
         api_key=_settings.voyage_api_key.get_secret_value() if _settings.voyage_api_key else "",
@@ -189,8 +215,8 @@ async def search_context(
         limit=limit,
         type_filter=type_filter,
         entity_filter=entity_filter,
-        date_from=_ensure_utc(date_from),
-        date_to=_ensure_utc(date_to),
+        date_from=date_from,
+        date_to=date_to,
     )
 
     await session.commit()
@@ -199,7 +225,7 @@ async def search_context(
 
     logger.info(
         "search_context_request",
-        query=q,
+        query_length=len(q),
         items_included=ctx.items_included,
         items_truncated=ctx.items_truncated,
         tokens_used=ctx.tokens_used,

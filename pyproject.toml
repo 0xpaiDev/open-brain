@@ -68,6 +68,9 @@ dev = [
 [project.scripts]
 ob = "cli.ob:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+
 [tool.black]
 line-length = 100
 target-version = ['py312']

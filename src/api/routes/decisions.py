@@ -8,11 +8,12 @@ import uuid as _uuid
 from datetime import datetime
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import decisions_limit, limiter
 from src.core.database import get_db
 from src.core.models import Decision, MemoryItem
 
@@ -71,7 +72,9 @@ def _decision_to_response(d: Decision) -> DecisionResponse:
 
 
 @router.get("/v1/decisions", response_model=DecisionListResponse)
+@limiter.limit(decisions_limit)
 async def list_decisions(
+    request: Request,
     memory_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -106,14 +109,18 @@ async def list_decisions(
     decisions = list(result.scalars().all())
 
     logger.info("list_decisions", total=total, returned=len(decisions))
-    return DecisionListResponse(decisions=[_decision_to_response(d) for d in decisions], total=total)
+    return DecisionListResponse(
+        decisions=[_decision_to_response(d) for d in decisions], total=total
+    )
 
 
 # ── POST /v1/decisions ─────────────────────────────────────────────────────────
 
 
 @router.post("/v1/decisions", response_model=DecisionResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(decisions_limit)
 async def create_decision(
+    request: Request,
     body: DecisionCreate,
     session: AsyncSession = Depends(get_db),
 ) -> DecisionResponse:

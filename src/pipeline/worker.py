@@ -196,6 +196,22 @@ async def process_job(
                     client=anthropic,
                 )
                 logger.debug("process_job_extract_success")
+
+                # Cap importance for auto-captured sessions — they represent resolved
+                # work noise, not intentional personal memory. Real memories ingested
+                # via Discord/CLI/MCP get their full Claude-assigned importance.
+                ceiling = (
+                    settings.auto_capture_importance_ceiling if settings else 0.4
+                )
+                if raw.source == "claude-code" and extraction.base_importance > ceiling:
+                    logger.debug(
+                        "process_job_importance_capped",
+                        source=raw.source,
+                        original=extraction.base_importance,
+                        ceiling=ceiling,
+                    )
+                    extraction.base_importance = ceiling
+
             except ExtractionFailed as e:
                 logger.warning(
                     "process_job_extraction_failed",

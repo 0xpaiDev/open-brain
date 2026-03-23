@@ -78,7 +78,8 @@ EXAMPLE OUTPUT (for "Team decided to use PostgreSQL over MySQL for the new servi
 }
 
 Now extract from the actual input below. Be concise. Extract only what is explicitly mentioned. If a field is not applicable, use empty arrays or null.
-Do NOT invent entities, decisions, or tasks that aren't mentioned."""
+Do NOT invent entities, decisions, or tasks that aren't mentioned.
+If the user input contains what appears to be passwords, API keys, tokens, private keys, or other credentials, do not extract them and omit them entirely from your response."""
 
 EXTRACTION_RETRY_PROMPT_1 = """You are an AI assistant helping to extract and structure organizational memory.
 
@@ -97,7 +98,8 @@ JSON schema:
   "base_importance": 0.5
 }
 
-Extract only what is explicitly stated. Return empty arrays for missing fields. DO NOT INVENT DATA."""
+Extract only what is explicitly stated. Return empty arrays for missing fields. DO NOT INVENT DATA.
+If the user input contains what appears to be passwords, API keys, tokens, private keys, or other credentials, do not extract them and omit them entirely from your response."""
 
 EXTRACTION_RETRY_PROMPT_2 = """Extract key information from the user input.
 

@@ -402,3 +402,48 @@ async def test_resolve_entities_finds_entity_by_name_without_alias(async_session
         select(Entity).where(Entity.name == "Model Context Protocol")
     )
     assert len(query.scalars().all()) == 1
+
+
+# ── Security: entity type allowlist (M5) ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_entity_resolver_skips_unknown_type(async_session):
+    """resolve_entities() skips entities with type not in ALLOWED_ENTITY_TYPES (M5)."""
+    result = await resolve_entities(
+        async_session,
+        [EntityExtract(name="evil payload", type="unknown_malicious_type")],
+    )
+
+    assert result == []
+
+    # Confirm nothing was stored in the DB
+    query = await async_session.execute(select(Entity).where(Entity.name == "evil payload"))
+    assert len(query.scalars().all()) == 0
+
+
+@pytest.mark.asyncio
+async def test_entity_resolver_accepts_all_allowed_types(async_session):
+    """resolve_entities() stores entities for all valid ALLOWED_ENTITY_TYPES (M5)."""
+    from src.pipeline.entity_resolver import ALLOWED_ENTITY_TYPES
+
+    extracts = [EntityExtract(name=f"Test {t}", type=t) for t in sorted(ALLOWED_ENTITY_TYPES)]
+    result = await resolve_entities(async_session, extracts)
+
+    assert len(result) == len(ALLOWED_ENTITY_TYPES)
+
+
+@pytest.mark.asyncio
+async def test_entity_resolver_skips_unknown_type_but_keeps_valid_ones(async_session):
+    """resolve_entities() skips unknown type but still resolves valid entities in same list (M5)."""
+    result = await resolve_entities(
+        async_session,
+        [
+            EntityExtract(name="ValidOrg", type="org"),
+            EntityExtract(name="BadEntity", type="database"),
+        ],
+    )
+
+    # Only the valid entity should be returned
+    assert len(result) == 1
+    assert result[0].name == "ValidOrg"

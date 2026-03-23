@@ -736,3 +736,82 @@ async def test_search_no_filters_returns_200(client, auth_headers):
     assert call_kwargs.get("entity_filter") is None
     assert call_kwargs.get("date_from") is None
     assert call_kwargs.get("date_to") is None
+
+
+# ── Security: query length + date range bounds (C4, H3) ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_fails_query_too_long(client, auth_headers):
+    """GET /v1/search with q > 2000 chars returns 422 (C4)."""
+    resp = await client.get(
+        "/v1/search",
+        params={"q": "a" * 2001},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_fails_invalid_date_range(client, auth_headers):
+    """GET /v1/search with date_from > date_to returns 422 (H3)."""
+    fake_embedding = [0.1] * 1024
+
+    with (
+        patch("src.api.routes.search.VoyageEmbeddingClient") as mock_voyage_cls,
+        patch("src.api.routes.search.hybrid_search", new_callable=AsyncMock, return_value=[]),
+    ):
+        mock_voyage = AsyncMock()
+        mock_voyage.embed.return_value = fake_embedding
+        mock_voyage_cls.return_value = mock_voyage
+
+        resp = await client.get(
+            "/v1/search",
+            params={
+                "q": "test",
+                "date_from": "2026-12-31T00:00:00Z",
+                "date_to": "2026-01-01T00:00:00Z",
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 422
+    assert "date_from" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_search_fails_date_range_too_wide(client, auth_headers):
+    """GET /v1/search with date range > 730 days returns 422 (H3)."""
+    fake_embedding = [0.1] * 1024
+
+    with (
+        patch("src.api.routes.search.VoyageEmbeddingClient") as mock_voyage_cls,
+        patch("src.api.routes.search.hybrid_search", new_callable=AsyncMock, return_value=[]),
+    ):
+        mock_voyage = AsyncMock()
+        mock_voyage.embed.return_value = fake_embedding
+        mock_voyage_cls.return_value = mock_voyage
+
+        resp = await client.get(
+            "/v1/search",
+            params={
+                "q": "test",
+                "date_from": "2020-01-01T00:00:00Z",
+                "date_to": "2026-12-31T23:59:59Z",
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 422
+    assert "730" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_context_search_fails_query_too_long(client, auth_headers):
+    """GET /v1/search/context with q > 2000 chars returns 422 (C4)."""
+    resp = await client.get(
+        "/v1/search/context",
+        params={"q": "a" * 2001},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422

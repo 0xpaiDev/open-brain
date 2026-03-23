@@ -315,3 +315,34 @@ async def test_queue_status_requires_auth(client):
     """GET /v1/queue/status without X-API-Key returns 401."""
     resp = await client.get("/v1/queue/status")
     assert resp.status_code == 401
+
+
+# ── Security: synthesis error message (H2) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_synthesis_500_returns_generic_message(client, auth_headers, monkeypatch):
+    """POST /v1/synthesis/run when LLM raises returns 500 with generic message (H2).
+
+    The response body must NOT contain raw exception details, tracebacks,
+    or Anthropic API error strings.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    with patch("src.jobs.synthesis.run_synthesis_job", new_callable=AsyncMock) as mock_run:
+        mock_run.side_effect = RuntimeError(
+            "Anthropic API error: 500 Internal Server Error — connection refused"
+        )
+
+        resp = await client.post("/v1/synthesis/run", json={"days": 7}, headers=auth_headers)
+
+    assert resp.status_code == 500
+    body = resp.json()
+    detail = body["detail"]
+    # Must be generic — no raw exception content
+    assert "Anthropic" not in detail
+    assert "connection refused" not in detail
+    assert "traceback" not in detail.lower()
+    assert "internal error" in detail.lower() or "server logs" in detail.lower()

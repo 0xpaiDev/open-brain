@@ -13,7 +13,7 @@ import uuid as _uuid
 from datetime import datetime
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
@@ -21,6 +21,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.api.middleware.rate_limit import entities_limit, limiter
 from src.core.database import get_db
 from src.core.models import Entity, EntityAlias, EntityRelation, MemoryEntityLink
 
@@ -109,7 +110,9 @@ def _entity_to_response(entity: Entity) -> EntityResponse:
 
 
 @router.get("/v1/entities", response_model=EntityListResponse)
+@limiter.limit(entities_limit)
 async def list_entities(
+    request: Request,
     q: str | None = Query(default=None, description="Name substring search (case-insensitive)"),
     type_filter: str | None = Query(default=None, description="Filter by entity type"),
     limit: int = Query(default=50, ge=1, le=500),
@@ -143,7 +146,9 @@ async def list_entities(
 
 
 @router.post("/v1/entities/merge", response_model=MergeResponse)
+@limiter.limit(entities_limit)
 async def merge_entities(
+    request: Request,
     body: MergeRequest,
     session: AsyncSession = Depends(get_db),
 ) -> MergeResponse:
@@ -310,7 +315,9 @@ async def merge_entities(
 
 
 @router.get("/v1/entities/{entity_id}", response_model=EntityResponse)
+@limiter.limit(entities_limit)
 async def get_entity(
+    request: Request,
     entity_id: str,
     session: AsyncSession = Depends(get_db),
 ) -> EntityResponse:
@@ -339,7 +346,9 @@ async def get_entity(
     status_code=status.HTTP_201_CREATED,
     response_model=AddAliasResponse,
 )
+@limiter.limit(entities_limit)
 async def add_alias(
+    request: Request,
     entity_id: str,
     body: AddAliasRequest,
     session: AsyncSession = Depends(get_db),

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.rate_limit import dead_letters_limit, limiter
+from src.api.middleware.rate_limit import dead_letters_limit, limiter, queue_limit
 from src.core.database import get_db
 from src.core.models import FailedRefinement, RefinementQueue
 
@@ -88,6 +88,7 @@ def _failed_to_response(f: FailedRefinement) -> FailedRefinementResponse:
 
 def _get_settings():
     from src.core import config
+
     if config.settings is None:
         config.settings = config.Settings()
     return config.settings
@@ -97,7 +98,9 @@ def _get_settings():
 
 
 @router.get("/v1/queue/status", response_model=QueueStatusResponse)
+@limiter.limit(queue_limit)
 async def get_queue_status(
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> QueueStatusResponse:
     """Return aggregate counts for the refinement queue by status.
@@ -141,7 +144,9 @@ async def get_queue_status(
 
 
 @router.get("/v1/dead-letters", response_model=DeadLetterListResponse)
+@limiter.limit(queue_limit)
 async def list_dead_letters(
+    request: Request,
     resolved: bool | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -307,7 +312,10 @@ async def run_synthesis(
         result: dict[str, Any] = await run_synthesis_job(session, client, days=request.days)
     except Exception as exc:
         logger.exception("synthesis_run_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"Synthesis failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Synthesis failed due to an internal error. Check server logs for details.",
+        ) from exc
 
     logger.info("synthesis_run_complete", **result)
     return SynthesisRunResponse(
@@ -316,5 +324,9 @@ async def run_synthesis(
         date_from=result["date_from"],
         date_to=result["date_to"],
         skipped=result.get("skipped", False),
-        message="Skipped — no memories found in window" if result.get("skipped") else "Synthesis complete",
+        message=(
+            "Skipped — no memories found in window"
+            if result.get("skipped")
+            else "Synthesis complete"
+        ),
     )

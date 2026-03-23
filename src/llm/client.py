@@ -23,6 +23,9 @@ from src.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
+_LLM_TIMEOUT_SECONDS = 60.0
+_EMBED_TIMEOUT_SECONDS = 30.0
+
 
 # ── Exceptions ────────────────────────────────────────────────────────────
 
@@ -79,12 +82,15 @@ class AnthropicClient:
             ExtractionFailed: If the API call fails
         """
         try:
-            response = await asyncio.to_thread(
-                self.client.messages.create,
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_content}],
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.messages.create,
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_content}],
+                ),
+                timeout=_LLM_TIMEOUT_SECONDS,
             )
             text = response.content[0].text
             logger.debug(
@@ -93,6 +99,11 @@ class AnthropicClient:
                 response_len=len(text),
             )
             return text
+        except TimeoutError:
+            logger.exception("anthropic_timeout", model=self.model, timeout=_LLM_TIMEOUT_SECONDS)
+            raise ExtractionFailed(
+                f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s"
+            ) from None
         except APIError as e:
             logger.exception("anthropic_api_error", error=str(e))
             raise ExtractionFailed(f"Anthropic API error: {e}") from e
@@ -147,10 +158,13 @@ class VoyageEmbeddingClient:
             EmbeddingFailed: If all 3 retry attempts fail
         """
         try:
-            result = await asyncio.to_thread(
-                self.client.embed,
-                [text],
-                model=self.model,
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.embed,
+                    [text],
+                    model=self.model,
+                ),
+                timeout=_EMBED_TIMEOUT_SECONDS,
             )
             embedding = result.embeddings[0]
             logger.debug(
@@ -160,6 +174,13 @@ class VoyageEmbeddingClient:
                 embedding_dims=len(embedding),
             )
             return embedding
+        except TimeoutError:
+            logger.exception(
+                "voyage_embed_timeout", model=self.model, timeout=_EMBED_TIMEOUT_SECONDS
+            )
+            raise EmbeddingFailed(
+                f"Voyage AI embedding timed out after {_EMBED_TIMEOUT_SECONDS}s"
+            ) from None
         except Exception as e:
             logger.exception(
                 "voyage_embed_error",

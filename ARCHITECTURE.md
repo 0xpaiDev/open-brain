@@ -1,8 +1,10 @@
 # Open Brain Architecture
 
-**Version**: 1.0
-**Date**: 2026-03-13
-**Status**: Design stable for Phase 1–3 execution
+**Version**: 1.1
+**Date**: 2026-03-23
+**Status**: Phase 5 complete. Phase 6 module expansion planned — see `new-feature-implementation-plan.md`
+
+> **Upcoming (Phase 6)**: Three new modules — Todo System, Morning Pulse, Discord RAG Chat — plus Discord bot refactor to cog/module architecture. New tables: `todo_items`, `todo_history`, `daily_pulse`, `rag_conversations`. New module structure: `src/integrations/modules/` with feature-flag-driven conditional loading.
 
 ---
 

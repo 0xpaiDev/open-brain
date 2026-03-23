@@ -10,6 +10,10 @@ from src.pipeline.extractor import EntityExtract
 
 logger = structlog.get_logger(__name__)
 
+ALLOWED_ENTITY_TYPES: frozenset[str] = frozenset(
+    {"person", "org", "project", "concept", "tool", "place"}
+)
+
 
 async def resolve_entities(
     session: AsyncSession,
@@ -43,11 +47,18 @@ async def resolve_entities(
             canonical_name = entity_extract.name.strip()
             entity_type = entity_extract.type
 
+            if entity_type not in ALLOWED_ENTITY_TYPES:
+                logger.warning(
+                    "entity_type_rejected",
+                    name=canonical_name,
+                    entity_type=entity_type,
+                    allowed=sorted(ALLOWED_ENTITY_TYPES),
+                )
+                continue  # skip unknown types; don't fail the entire job
+
             # Step 1: Check for exact alias match
             alias_result = await session.execute(
-                select(EntityAlias).where(
-                    EntityAlias.alias == canonical_name
-                )
+                select(EntityAlias).where(EntityAlias.alias == canonical_name)
             )
             exact_alias = alias_result.scalars().first()
 
@@ -65,9 +76,7 @@ async def resolve_entities(
                     continue
 
             # Step 1.5: Check for exact entity name match (no alias needed)
-            name_result = await session.execute(
-                select(Entity).where(Entity.name == canonical_name)
-            )
+            name_result = await session.execute(select(Entity).where(Entity.name == canonical_name))
             exact_name_entity = name_result.scalars().first()
 
             if exact_name_entity:
@@ -97,9 +106,7 @@ async def resolve_entities(
                     and_(
                         Entity.type == entity_type,
                         # pg_trgm similarity - must match exactly with the GIN index
-                        text(
-                            "similarity(name, :candidate_name) >= :threshold"
-                        ),
+                        text("similarity(name, :candidate_name) >= :threshold"),
                     )
                 )
 

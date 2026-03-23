@@ -453,3 +453,51 @@ async def test_store_memory_item_no_supersedes_when_metadata_none(async_session)
     memory_item = await store_memory_item(async_session, raw, queue, extraction, [0.1] * 1024, [])
 
     assert memory_item.supersedes_id is None
+
+
+# ── Security: input validation (C3, M4) ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_memory_fails_text_too_long(client, auth_headers):
+    """POST /v1/memory with text > 50000 chars returns 422 (C3)."""
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": "a" * 50001},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_memory_fails_empty_text(client, auth_headers):
+    """POST /v1/memory with empty text returns 422 (C3)."""
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": ""},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_memory_fails_metadata_too_large(client, auth_headers):
+    """POST /v1/memory with metadata > 8192 bytes returns 422 (M4)."""
+    big_metadata = {"key": "v" * 9000}
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": "normal text", "metadata": big_metadata},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_memory_accepts_text_at_max_length(client, auth_headers):
+    """POST /v1/memory with exactly 50000-char text returns 202 (boundary)."""
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": "a" * 50000},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 202

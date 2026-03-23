@@ -27,7 +27,7 @@ class TestSettingsLoading:
             assert settings.sqlalchemy_url == "postgresql+asyncpg://user:pass@localhost/db"
             assert str(settings.anthropic_api_key) != "sk-ant-test-key"  # SecretStr
             assert str(settings.voyage_api_key) != "pa-test-key"  # SecretStr
-            assert settings.api_key == "test-api-key"
+            assert settings.api_key.get_secret_value() == "test-api-key"  # SecretStr
 
     def test_secret_str_not_logged(self) -> None:
         """SecretStr fields should not expose raw values in string representation."""
@@ -174,3 +174,61 @@ class TestSettingsLoading:
             with pytest.raises(ValidationError) as exc_info:
                 Settings()  # type: ignore[call-arg]
             assert "sum to 1.0" in str(exc_info.value)
+
+    def test_api_key_not_in_repr(self) -> None:
+        """api_key SecretStr must not expose raw value in repr or str (C2)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "ANTHROPIC_API_KEY": "sk-ant-test",
+                "VOYAGE_API_KEY": "pa-test",
+                "API_KEY": "super-secret-api-key-12345",
+            },
+        ):
+            settings = Settings()  # type: ignore[call-arg]
+            r = repr(settings)
+            assert "super-secret-api-key-12345" not in r
+            assert str(settings.api_key) != "super-secret-api-key-12345"
+            assert settings.api_key.get_secret_value() == "super-secret-api-key-12345"
+
+    def test_fuzzy_threshold_rejects_below_range(self) -> None:
+        """entity_fuzzy_match_threshold below 0.5 should raise ValidationError (L1)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+                "ENTITY_FUZZY_MATCH_THRESHOLD": "0.3",
+            },
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                Settings(_env_file=None)  # type: ignore[call-arg]
+            assert "0.5" in str(exc_info.value)
+
+    def test_fuzzy_threshold_rejects_above_range(self) -> None:
+        """entity_fuzzy_match_threshold above 1.0 should raise ValidationError (L1)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+                "ENTITY_FUZZY_MATCH_THRESHOLD": "1.1",
+            },
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                Settings(_env_file=None)  # type: ignore[call-arg]
+            assert "1.0" in str(exc_info.value)
+
+    def test_fuzzy_threshold_accepts_valid_range(self) -> None:
+        """entity_fuzzy_match_threshold within [0.5, 1.0] should be accepted (L1)."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+                "ENTITY_FUZZY_MATCH_THRESHOLD": "0.75",
+            },
+        ):
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
+            assert settings.entity_fuzzy_match_threshold == 0.75
