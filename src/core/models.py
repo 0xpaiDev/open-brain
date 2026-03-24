@@ -25,9 +25,11 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from pgvector.sqlalchemy import Vector
@@ -355,3 +357,118 @@ class FailedRefinement(Base):
 
     # Relationships
     raw_memory = relationship("RawMemory", back_populates="failed_refinements")
+
+
+# ── Module: Todo ───────────────────────────────────────────────────────────────
+
+
+class TodoItem(Base):
+    """First-class todo item managed via Discord slash commands.
+
+    priority: "high" | "normal" | "low"
+    status: "open" | "done" | "cancelled"
+    discord_message_id/channel_id: stored to allow in-place embed edits on bot restart.
+    """
+
+    __tablename__ = "todo_items"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), default="normal")
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    discord_channel_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("ix_todo_items_status_due_date", "status", "due_date"),)
+
+    # Relationships
+    history: Mapped[list["TodoHistory"]] = relationship("TodoHistory", back_populates="todo", cascade="all, delete-orphan")
+
+
+class TodoHistory(Base):
+    """Append-only audit log for todo state changes.
+
+    event_type: "created" | "completed" | "deferred" | "cancelled" | "priority_changed"
+    old_value/new_value: JSON snapshots of changed fields
+    reason: populated on deferrals
+    """
+
+    __tablename__ = "todo_history"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    todo_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("todo_items.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    old_value: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    new_value: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    todo: Mapped["TodoItem"] = relationship("TodoItem", back_populates="history")
+
+
+# ── Module: Daily Pulse ────────────────────────────────────────────────────────
+
+
+class DailyPulse(Base):
+    """Morning check-in record — one row per calendar day.
+
+    pulse_date has a UNIQUE constraint to prevent duplicate sends.
+    status: "sent" | "replied" | "parsed" | "parse_failed" | "skipped"
+    parsed_data: full Haiku-parsed JSON blob (sleep_quality, energy_level, etc.)
+    """
+
+    __tablename__ = "daily_pulse"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    pulse_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, unique=True
+    )
+    raw_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sleep_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    energy_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wake_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    parsed_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    ai_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="sent")
+    discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ── Module: RAG Chat ───────────────────────────────────────────────────────────
+
+
+class RagConversation(Base):
+    """Persisted conversation buffer for Discord RAG chat.
+
+    One row per (channel, user) pair. Survives bot restarts.
+    messages: [{role: "user"|"assistant", content: "..."}]
+    model_name: tracks which model is active for this conversation.
+    Unique constraint on (discord_channel_id, discord_user_id).
+    """
+
+    __tablename__ = "rag_conversations"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    discord_channel_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    discord_user_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    messages: Mapped[list] = mapped_column(JSON_TYPE, nullable=False, default=list)
+    model_name: Mapped[str] = mapped_column(String(100), default="claude-haiku-4-5-20251001")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("discord_channel_id", "discord_user_id", name="uq_rag_conv_channel_user"),
+    )

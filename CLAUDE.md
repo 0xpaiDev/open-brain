@@ -93,6 +93,15 @@
 
 **After checkpoint**: Update PROGRESS.md (mark complete). Run tests. Verify gates. Commit: `feat(phase-X): checkpoint-name — description`. Report back with summary + blockers.
 
+**Mandatory smoke test for bigger features**: Any feature that adds a new API route, Discord cog, background job, or integration (i.e. touches more than one module or introduces a new Docker service interaction) MUST be smoke-tested end-to-end before the checkpoint is considered complete. Smoke test means running the feature against the live Docker stack — not just unit tests — and confirming the full flow produces the expected output (e.g. a DM is sent, a DB record is created, a route returns the expected response). Unit tests alone are not sufficient for multi-module features.
+
+Smoke test checklist:
+1. Rebuild affected container(s) with `--no-cache` if any Python source changed
+2. Apply migrations if schema changed (`docker compose --profile migrate run --rm migrate`)
+3. Run the feature end-to-end and check logs for success events, not just absence of errors
+4. Query the API or DB directly to confirm state was persisted correctly
+5. Confirm idempotency: re-running the feature produces the correct result (no duplicate records, no crash)
+
 **When blocked** (same issue 3+ times): Stop. Document blocker. Ask user via AskUserQuestion. Propose 2–3 workarounds. Wait for guidance before retry.
 
 ---
@@ -426,6 +435,21 @@ await session.commit()
 
 **Why**: Raw SQL `UPDATE` statements bypass the ORM identity map. When a parent entity is later deleted via `session.delete()`, SQLAlchemy's unit-of-work processor sees stale child objects in the identity map still referencing the parent, and attempts to SET NULL on them — which fails when those FKs are part of a composite PK. `expunge()` removes the entity from tracking entirely; Core `sa_delete()` then issues a plain DELETE with no dependency processing.
 
+### `session.refresh()` Required After flush+commit for server_default/onupdate Columns
+
+❌ **Don't**: Return the ORM object after flush+commit without refreshing — `created_at` / `updated_at` will be expired and trigger async lazy-load failure
+✅ **Do**: Call `await session.refresh(obj)` after flush+commit when the response accesses server-generated columns
+
+```python
+session.add(todo)
+await session.flush()   # expires server_default/onupdate columns
+await session.commit()
+await session.refresh(todo)  # REQUIRED — eagerly reload created_at, updated_at
+return todo  # now safe to access all columns
+```
+
+**Why**: After `session.flush()`, SQLAlchemy marks columns with `server_default` or `onupdate` as expired because their values were generated server-side. Accessing them (e.g. in `_todo_to_response(todo)`) triggers lazy loading. In an async session, lazy loading is unsupported and raises `MissingGreenlet`. This manifests as a hard-to-debug failure on the SECOND request in a test that shares a session — the first request works because the connection is fresh, but the second fails when the connection state changes after a commit. Applied in: `src/api/services/todo_service.py`.
+
 ---
 
 ## Living Document Rule
@@ -467,6 +491,7 @@ Quick reference: which module owns which task.
 | Task | Module | Key Files |
 |---|---|---|
 | Add API endpoint | `src/api/` | `routes/memory.py`, `routes/search.py`, `middleware/auth.py` |
+| Todo API (CRUD + history) | `src/api/` | `routes/todos.py`, `services/todo_service.py` |
 | Memory processing / pipeline | `src/pipeline/` | `worker.py`, `extractor.py`, `entity_resolver.py` |
 | Change ranking / hybrid search | `src/retrieval/` | `search.py`, `ranking.py`, `context_builder.py` |
 | Update prompts / LLM clients | `src/llm/` | `prompts.py`, `client.py` |
@@ -474,7 +499,12 @@ Quick reference: which module owns which task.
 | Shared config / settings | `src/core/` | `config.py` |
 | Intelligence jobs (daily/weekly) | `src/jobs/` | `importance.py`, `synthesis.py` |
 | CLI commands | `cli/` | `ob.py` |
-| Discord / external integrations | `src/integrations/` | `discord_bot.py` |
+| Discord bot loader + auto-ingest | `src/integrations/` | `discord_bot.py`, `kernel.py` |
+| Discord core commands (/search, /digest, /status) | `src/integrations/modules/` | `core_cog.py` |
+| Discord todo commands + interactive embeds | `src/integrations/modules/` | `todo_cog.py` |
+| Discord RAG chat (Phase C) | `src/integrations/modules/` | `rag_cog.py` |
+| Morning Pulse job + Discord cog (Phase D) | `src/integrations/modules/`, `src/jobs/` | `pulse_cog.py`, `pulse.py` |
+| Google Calendar integration | `src/integrations/` | `calendar.py` |
 | Tests | `tests/` | `conftest.py`, `test_*.py` |
 
 ---

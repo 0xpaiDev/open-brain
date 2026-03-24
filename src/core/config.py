@@ -74,6 +74,31 @@ class Settings(BaseSettings):
     # Open Brain API URL (used by integrations to call the local API)
     open_brain_api_url: str = "http://localhost:8000"
 
+    # ── Feature flags ──────────────────────────────────────────────────────────
+    module_todo_enabled: bool = True
+    module_pulse_enabled: bool = True
+    module_rag_chat_enabled: bool = True
+
+    # ── Todo ───────────────────────────────────────────────────────────────────
+    todo_priority_levels: list[str] = ["high", "normal", "low"]
+
+    # ── Morning Pulse ──────────────────────────────────────────────────────────
+    pulse_send_time: str = "07:00"
+    pulse_timezone: str = "UTC"
+    pulse_reply_window_minutes: int = 240
+    google_calendar_credentials_path: str = ""
+    google_calendar_token_path: str = ""
+    discord_pulse_user_id: int = 0
+
+    # ── RAG Chat ───────────────────────────────────────────────────────────────
+    rag_trigger_prefix: str = "?"
+    rag_conversation_buffer_size: int = 5
+    rag_conversation_ttl_hours: int = 24
+    rag_default_model: str = "claude-haiku-4-5-20251001"
+    rag_sonnet_model: str = "claude-sonnet-4-6"
+    rag_save_qa_as_memory: bool = False
+    discord_rag_channel_ids: list[int] = []
+
     @field_validator("sqlalchemy_url")
     @classmethod
     def validate_sqlalchemy_url(cls, v: str) -> str:

@@ -15,122 +15,33 @@ Run:
 """
 
 import asyncio
-from typing import Any
 
 import discord
 import httpx
 import structlog
 from discord import app_commands
 
+# Re-export pure helpers so existing imports from this module continue to work
+from src.integrations.kernel import (
+    _get_settings,
+    get_api_health,
+    ingest_memory,
+    require_allowed_user,
+    search_memories,
+    trigger_digest,
+)
+
 logger = structlog.get_logger()
 
-
-def _get_settings() -> Any:
-    """Lazy-load settings singleton (mirrors pattern in auth.py / ranking.py)."""
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
-
-
-# ── Pure business-logic helpers (testable without Discord objects) ─────────────
-
-
-async def ingest_memory(
-    http: httpx.AsyncClient,
-    raw_text: str,
-    author_id: str,
-    channel_id: str,
-    api_key: str,
-    api_base_url: str,
-) -> tuple[str, str]:
-    """POST /v1/memory and return (raw_id, status).
-
-    status is "queued" for newly enqueued memories, or "duplicate" when the
-    same content was already ingested within the last 24 hours.
-
-    Raises:
-        httpx.HTTPStatusError: if the API returns a non-2xx status.
-    """
-    response = await http.post(
-        f"{api_base_url}/v1/memory",
-        json={
-            "source": "discord",
-            "text": raw_text,
-            "metadata": {"channel_id": channel_id, "author_id": author_id},
-        },
-        headers={"X-API-Key": api_key},
-    )
-    response.raise_for_status()
-    body = response.json()
-    return str(body["raw_id"]), str(body.get("status", "queued"))
-
-
-async def search_memories(
-    http: httpx.AsyncClient,
-    query: str,
-    limit: int,
-    api_key: str,
-    api_base_url: str,
-) -> list[dict[str, Any]]:
-    """GET /v1/search and return the results list.
-
-    Raises:
-        httpx.HTTPStatusError: if the API returns a non-2xx status.
-    """
-    response = await http.get(
-        f"{api_base_url}/v1/search",
-        params={"q": query, "limit": limit},
-        headers={"X-API-Key": api_key},
-    )
-    response.raise_for_status()
-    data = response.json()
-    # API returns {"results": [...]} wrapper
-    if isinstance(data, dict):
-        return list(data.get("results", []))
-    return list(data)  # type: ignore[no-any-return]
-
-
-async def trigger_digest(
-    http: httpx.AsyncClient,
-    days: int,
-    api_key: str,
-    api_base_url: str,
-) -> dict[str, Any]:
-    """POST /v1/synthesis/run and return the response dict.
-
-    Args:
-        http: httpx async client
-        days: Number of days to synthesize (1–90)
-        api_key: Open Brain API key
-        api_base_url: Base URL of the Open Brain API
-
-    Returns:
-        Response dict with synthesis_id, memory_count, date_from, date_to, skipped, message
-
-    Raises:
-        httpx.HTTPStatusError: if the API returns a non-2xx status.
-    """
-    response = await http.post(
-        f"{api_base_url}/v1/synthesis/run",
-        json={"days": days},
-        headers={"X-API-Key": api_key},
-    )
-    response.raise_for_status()
-    return dict(response.json())
-
-
-async def get_api_health(
-    http: httpx.AsyncClient,
-    api_base_url: str,
-) -> bool:
-    """Return True if the API /ready endpoint returns 200."""
-    try:
-        response = await http.get(f"{api_base_url}/ready")
-        return response.status_code == 200
-    except httpx.RequestError:
-        return False
+__all__ = [
+    "_get_settings",
+    "ingest_memory",
+    "search_memories",
+    "trigger_digest",
+    "get_api_health",
+    "require_allowed_user",
+    "OpenBrainBot",
+]
 
 
 # ── Bot ────────────────────────────────────────────────────────────────────────
@@ -145,125 +56,30 @@ class OpenBrainBot(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self._http = http_client
-        self._register_commands()
-
-    def _register_commands(self) -> None:  # noqa: C901
-        """Register slash commands on the command tree."""
-
-        @self.tree.command(name="search", description="Search your Open Brain memories")
-        @app_commands.describe(query="What to search for")
-        async def search_cmd(interaction: discord.Interaction, query: str) -> None:
-            settings = _get_settings()
-            if interaction.user.id not in settings.discord_allowed_user_ids:
-                await interaction.response.send_message("Not authorised.", ephemeral=True)
-                return
-
-            await interaction.response.defer()
-
-            try:
-                results = await search_memories(
-                    self._http,
-                    query,
-                    limit=5,
-                    api_key=settings.api_key,
-                    api_base_url=settings.open_brain_api_url,
-                )
-            except httpx.HTTPStatusError as exc:
-                logger.error("discord_search_error", status=exc.response.status_code)
-                await interaction.followup.send("Search failed — API error.", ephemeral=True)
-                return
-
-            if not results:
-                await interaction.followup.send(f'No memories found for **"{query}"**.')
-                return
-
-            try:
-                embed = discord.Embed(
-                    title=f'Search: "{query}"',
-                    color=discord.Color.blurple(),
-                )
-                for i, item in enumerate(results, 1):
-                    content = item.get("content", "")
-                    preview = content[:200] + "…" if len(content) > 200 else content
-                    score = item.get("combined_score", item.get("score", 0))
-                    embed.add_field(
-                        name=f"#{i} · score {score:.3f}",
-                        value=preview or "*(empty)*",
-                        inline=False,
-                    )
-                await interaction.followup.send(embed=embed)
-            except Exception as exc:
-                logger.error("discord_search_reply_error", error=str(exc))
-                await interaction.followup.send("Search succeeded but failed to format results.", ephemeral=True)
-
-        @self.tree.command(name="digest", description="Run weekly synthesis digest")
-        @app_commands.describe(days="Number of days to synthesize (default: 7, max: 90)")
-        async def digest_cmd(interaction: discord.Interaction, days: int = 7) -> None:
-            settings = _get_settings()
-            if interaction.user.id not in settings.discord_allowed_user_ids:
-                await interaction.response.send_message("Not authorised.", ephemeral=True)
-                return
-
-            if not 1 <= days <= 90:
-                await interaction.response.send_message(
-                    "days must be between 1 and 90.", ephemeral=True
-                )
-                return
-
-            await interaction.response.defer()
-
-            try:
-                result = await trigger_digest(
-                    self._http,
-                    days=days,
-                    api_key=settings.api_key,
-                    api_base_url=settings.open_brain_api_url,
-                )
-            except httpx.HTTPStatusError as exc:
-                logger.error("discord_digest_error", status=exc.response.status_code)
-                await interaction.followup.send("Digest failed — API error.", ephemeral=True)
-                return
-            except httpx.RequestError as exc:
-                logger.error("discord_digest_request_error", error=str(exc))
-                await interaction.followup.send("Digest failed — could not reach API.", ephemeral=True)
-                return
-
-            if result.get("skipped"):
-                await interaction.followup.send(
-                    f"No memories found in the last {days} day(s). Nothing to synthesize."
-                )
-                return
-
-            try:
-                embed = discord.Embed(
-                    title=f"Weekly Digest ({result['date_from']} → {result['date_to']})",
-                    color=discord.Color.green(),
-                )
-                embed.add_field(name="Memories processed", value=str(result["memory_count"]), inline=True)
-                sid = result.get("synthesis_id") or "N/A"
-                embed.add_field(name="Report ID", value=sid[:8] + "…" if len(sid) > 8 else sid, inline=True)
-                embed.set_footer(text=result.get("message", "Synthesis complete"))
-                await interaction.followup.send(embed=embed)
-            except Exception as exc:
-                logger.error("discord_digest_reply_error", error=str(exc))
-                await interaction.followup.send(
-                    "Digest succeeded but failed to format response.", ephemeral=True
-                )
-
-        @self.tree.command(name="status", description="Show Open Brain pipeline status")
-        async def status_cmd(interaction: discord.Interaction) -> None:
-            settings = _get_settings()
-            if interaction.user.id not in settings.discord_allowed_user_ids:
-                await interaction.response.send_message("Not authorised.", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-            healthy = await get_api_health(self._http, settings.open_brain_api_url)
-            status_line = "✅ API online" if healthy else "❌ API unreachable"
-            await interaction.followup.send(status_line, ephemeral=True)
 
     async def setup_hook(self) -> None:
-        """Sync slash commands after login."""
+        """Load module cogs and sync slash commands after login."""
+        from src.integrations.modules.core_cog import register_core
+
+        register_core(self.tree, self._http)
+
+        settings = _get_settings()
+
+        if settings.module_todo_enabled:
+            from src.integrations.modules.todo_cog import TodoGroup
+
+            self.tree.add_command(TodoGroup(self._http))
+
+        if settings.module_rag_chat_enabled:
+            from src.integrations.modules.rag_cog import register_rag  # type: ignore[import]
+
+            register_rag(self, self._http, settings)
+
+        if settings.module_pulse_enabled:
+            from src.integrations.modules.pulse_cog import register_pulse  # type: ignore[import]
+
+            register_pulse(self, self._http, settings)
+
         synced = await self.tree.sync()
         logger.info("discord_commands_synced", count=len(synced))
 
@@ -282,6 +98,32 @@ class OpenBrainBot(discord.Client):
         raw_text = message.content.strip()
         if not raw_text:
             return  # ignore empty / attachment-only messages
+
+        # RAG handler owns messages with the trigger prefix in RAG channels
+        if (
+            settings.module_rag_chat_enabled
+            and message.channel.id in settings.discord_rag_channel_ids
+            and raw_text.startswith(settings.rag_trigger_prefix)
+        ):
+            from src.integrations.modules.rag_cog import _rag_handler
+
+            if _rag_handler is not None:
+                await _rag_handler(message)
+            return
+
+        # Skip: Pulse handler owns DM replies from the configured pulse user
+        if (
+            settings.module_pulse_enabled
+            and settings.discord_pulse_user_id != 0
+            and message.author.id == settings.discord_pulse_user_id
+            and message.channel.type == discord.ChannelType.private
+        ):
+            from src.integrations.modules.pulse_cog import _pulse_cog_instance
+
+            if _pulse_cog_instance is not None:
+                handled = await _pulse_cog_instance.handle_reply(message)
+                if handled:
+                    return
 
         log = logger.bind(author_id=message.author.id, channel_id=message.channel.id)
 

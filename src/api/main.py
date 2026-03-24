@@ -18,6 +18,8 @@ from src.api.routes.memory import router as memory_router
 from src.api.routes.queue import router as queue_router
 from src.api.routes.search import router as search_router
 from src.api.routes.tasks import router as tasks_router
+from src.api.routes.todos import router as todos_router
+from src.api.routes.pulse import router as pulse_router
 from src.core.database import close_db, init_db
 
 logger = structlog.get_logger(__name__)
@@ -59,7 +61,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[],  # No browser access
     allow_credentials=False,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
 
@@ -71,3 +73,5 @@ app.include_router(entities_router, tags=["Entities"])
 app.include_router(tasks_router, tags=["Tasks"])
 app.include_router(decisions_router, tags=["Decisions"])
 app.include_router(queue_router, tags=["Queue"])
+app.include_router(todos_router, tags=["Todos"])
+app.include_router(pulse_router, tags=["Pulse"])

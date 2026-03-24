@@ -111,6 +111,61 @@ class AnthropicClient:
             logger.exception("anthropic_unexpected_error", error=str(e))
             raise ExtractionFailed(f"Unexpected error calling Anthropic: {e}") from e
 
+    async def complete_with_history(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Call Claude with a multi-turn message history.
+
+        Args:
+            system_prompt: System prompt (injected memory context goes here)
+            messages: Full conversation [{role: "user"|"assistant", content: "..."}]
+            model: Model override; falls back to self.model if None
+            max_tokens: Max tokens in response
+
+        Returns:
+            Raw text response from Claude
+
+        Raises:
+            ExtractionFailed: If the API call fails
+        """
+        resolved_model = model or self.model
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.messages.create,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    messages=messages,
+                ),
+                timeout=_LLM_TIMEOUT_SECONDS,
+            )
+            text = response.content[0].text
+            logger.debug(
+                "anthropic_complete_with_history_success",
+                model=resolved_model,
+                response_len=len(text),
+                history_len=len(messages),
+            )
+            return text
+        except TimeoutError:
+            logger.exception(
+                "anthropic_timeout", model=resolved_model, timeout=_LLM_TIMEOUT_SECONDS
+            )
+            raise ExtractionFailed(
+                f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s"
+            ) from None
+        except APIError as e:
+            logger.exception("anthropic_api_error", error=str(e))
+            raise ExtractionFailed(f"Anthropic API error: {e}") from e
+        except Exception as e:
+            logger.exception("anthropic_unexpected_error", error=str(e))
+            raise ExtractionFailed(f"Unexpected error calling Anthropic: {e}") from e
+
 
 # ── Voyage AI Embedding Client ────────────────────────────────────────────
 

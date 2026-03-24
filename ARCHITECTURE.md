@@ -1,10 +1,42 @@
 # Open Brain Architecture
 
-**Version**: 1.1
-**Date**: 2026-03-23
-**Status**: Phase 5 complete. Phase 6 module expansion planned — see `new-feature-implementation-plan.md`
+**Version**: 1.2
+**Date**: 2026-03-24
+**Status**: Phase 6 complete. All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
 
-> **Upcoming (Phase 6)**: Three new modules — Todo System, Morning Pulse, Discord RAG Chat — plus Discord bot refactor to cog/module architecture. New tables: `todo_items`, `todo_history`, `daily_pulse`, `rag_conversations`. New module structure: `src/integrations/modules/` with feature-flag-driven conditional loading.
+## Phase 6 Module System (complete)
+
+Three modules added in Phase 6, each gated by a feature flag in settings:
+
+### Discord Bot Module Architecture (`src/integrations/modules/`)
+The Discord bot is refactored into a thin loader (`discord_bot.py`) + conditionally-registered cog modules:
+
+| Module | Flag | Cog File | Responsibilities |
+|---|---|---|---|
+| Core | always on | `core_cog.py` | `/search`, `/digest`, `/status` slash commands |
+| Todo | `module_todo_enabled` | `todo_cog.py` | `/todo` subcommand group + interactive buttons/modals |
+| RAG Chat | `module_rag_chat_enabled` | `rag_cog.py` | `on_message` handler for RAG-grounded LLM chat in designated channels |
+| Morning Pulse | `module_pulse_enabled` | `pulse_cog.py` | `on_message` handler for DM reply parsing + wellness tracking |
+
+**DM guard order** (in `discord_bot.py on_message`):
+1. Own messages → skip
+2. Unauthorized users → skip
+3. Empty content → skip
+4. RAG guard (trigger prefix in RAG channel) → route to RAG cog
+5. **Pulse guard** (DM from `discord_pulse_user_id` within reply window) → route to pulse cog
+6. Default → memory ingest
+
+### Morning Pulse (`src/jobs/pulse.py` + `src/integrations/calendar.py`)
+Cron-triggered morning check-in:
+1. `send_morning_pulse()` — fetches calendar events + todos, generates Haiku question, sends DM via Discord REST API (not gateway), creates `daily_pulse` record
+2. User replies in DM → `PulseCog.handle_reply()` intercepts, calls `parse_pulse_reply()`, stores structured data
+3. Calendar integration is fully optional: google libs guarded with `try/except ImportError`, empty `CalendarState` returned on any error
+
+### New Tables (Phase 6)
+- `todo_items` — todo tasks with priority/status/due_date
+- `todo_history` — append-only state change log for todos
+- `daily_pulse` — one row per calendar day; unique constraint on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped
+- `rag_conversations` — persisted conversation buffer for RAG chat; unique on (channel_id, user_id)
 
 ---
 
