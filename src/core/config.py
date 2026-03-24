@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     # ── Todo ───────────────────────────────────────────────────────────────────
     todo_priority_levels: list[str] = ["high", "normal", "low"]
+    discord_todo_channel_id: int = 0  # channel ID for prefix listener; 0 = disabled
 
     # ── Morning Pulse ──────────────────────────────────────────────────────────
     pulse_send_time: str = "07:00"

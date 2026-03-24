@@ -55,7 +55,9 @@ def _make_settings(
     s.rag_conversation_buffer_size = rag_conversation_buffer_size
     s.rag_conversation_ttl_hours = rag_conversation_ttl_hours
     s.rag_save_qa_as_memory = rag_save_qa_as_memory
-    s.api_key = api_key
+    api_key_mock = MagicMock()
+    api_key_mock.get_secret_value.return_value = api_key
+    s.api_key = api_key_mock
     s.open_brain_api_url = open_brain_api_url
     return s
 

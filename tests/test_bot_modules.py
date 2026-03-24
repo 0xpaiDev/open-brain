@@ -77,16 +77,18 @@ async def test_todo_command_present_when_flag_enabled() -> None:
     bot = OpenBrainBot(http)
     mock_settings = _make_settings(module_todo_enabled=True)
 
-    # Stub out TodoGroup so the import doesn't fail before todo_cog.py is written.
-    # In production the real TodoGroup is a discord.app_commands.Group.
     from discord import app_commands
 
     class _FakeTodoGroup(app_commands.Group):
         def __init__(self, http_client):  # type: ignore[override]
             super().__init__(name="todo", description="Manage todos")
 
+    def _fake_register_todo(b, h, s):  # type: ignore[override]
+        b.tree.add_command(_FakeTodoGroup(h))
+
     fake_cog_module = MagicMock()
     fake_cog_module.TodoGroup = _FakeTodoGroup
+    fake_cog_module.register_todo = _fake_register_todo
 
     with patch.dict(sys.modules, {"src.integrations.modules.todo_cog": fake_cog_module}):
         with patch("src.integrations.discord_bot._get_settings", return_value=mock_settings):
@@ -113,8 +115,12 @@ async def test_core_commands_present_alongside_todo() -> None:
         def __init__(self, http_client):  # type: ignore[override]
             super().__init__(name="todo", description="Manage todos")
 
+    def _fake_register_todo(b, h, s):  # type: ignore[override]
+        b.tree.add_command(_FakeTodoGroup(h))
+
     fake_cog_module = MagicMock()
     fake_cog_module.TodoGroup = _FakeTodoGroup
+    fake_cog_module.register_todo = _fake_register_todo
 
     with patch.dict(sys.modules, {"src.integrations.modules.todo_cog": fake_cog_module}):
         with patch("src.integrations.discord_bot._get_settings", return_value=mock_settings):

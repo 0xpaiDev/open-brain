@@ -68,9 +68,9 @@ class OpenBrainBot(discord.Client):
         settings = _get_settings()
 
         if settings.module_todo_enabled:
-            from src.integrations.modules.todo_cog import TodoGroup
+            from src.integrations.modules.todo_cog import register_todo
 
-            self.tree.add_command(TodoGroup(self._http))
+            register_todo(self, self._http, settings)
 
         if settings.module_rag_chat_enabled:
             from src.integrations.modules.rag_cog import register_rag  # type: ignore[import]
@@ -100,6 +100,18 @@ class OpenBrainBot(discord.Client):
         raw_text = message.content.strip()
         if not raw_text:
             return  # ignore empty / attachment-only messages
+
+        # Todo channel handler owns all messages in the designated todo channel
+        if (
+            settings.module_todo_enabled
+            and settings.discord_todo_channel_id != 0
+            and message.channel.id == settings.discord_todo_channel_id
+        ):
+            from src.integrations.modules.todo_cog import _todo_handler
+
+            if _todo_handler is not None:
+                await _todo_handler(message)
+            return  # todo channel owns all messages here
 
         # RAG handler owns messages with the trigger prefix in RAG channels
         if (

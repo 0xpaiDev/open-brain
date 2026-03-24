@@ -198,10 +198,14 @@ def _make_discord_message(
 
 def _make_settings(allowed_ids: list[int] = None, api_key: str = "test-key") -> MagicMock:
     """Build a minimal settings mock for on_message handler tests."""
+    api_key_mock = MagicMock()
+    api_key_mock.get_secret_value.return_value = api_key
     return MagicMock(
         discord_allowed_user_ids=allowed_ids or [42],
-        api_key=api_key,
+        api_key=api_key_mock,
         open_brain_api_url="http://localhost:8000",
+        discord_todo_channel_id=0,
+        module_todo_enabled=False,
     )
 
 
