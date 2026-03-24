@@ -421,8 +421,10 @@ class DailyPulse(Base):
     """Morning check-in record — one row per calendar day.
 
     pulse_date has a UNIQUE constraint to prevent duplicate sends.
-    status: "sent" | "replied" | "parsed" | "parse_failed" | "skipped"
+    status: "sent" | "replied" | "parsed" | "parse_failed" | "skipped" | "completed"
     parsed_data: full Haiku-parsed JSON blob (sleep_quality, energy_level, etc.)
+    ai_question_response: user's answer to the AI-generated question (modal field 4)
+    notes: free-text mood / notes from the modal
     """
 
     __tablename__ = "daily_pulse"
@@ -437,6 +439,8 @@ class DailyPulse(Base):
     wake_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
     parsed_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     ai_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_question_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="sent")
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

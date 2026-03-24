@@ -30,7 +30,7 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
-_VALID_STATUSES = {"sent", "replied", "parsed", "parse_failed", "skipped", "expired"}
+_VALID_STATUSES = {"sent", "replied", "parsed", "parse_failed", "skipped", "expired", "completed"}
 
 
 # ── Settings helper ────────────────────────────────────────────────────────────
@@ -60,6 +60,8 @@ class PulseUpdate(BaseModel):
     energy_level: int | None = None
     wake_time: str | None = None
     parsed_data: dict | None = None
+    ai_question_response: str | None = None
+    notes: str | None = None
     status: str | None = None
 
     @field_validator("sleep_quality", "energy_level")
@@ -86,6 +88,8 @@ class PulseResponse(BaseModel):
     wake_time: str | None
     parsed_data: dict | None
     ai_question: str | None
+    ai_question_response: str | None
+    notes: str | None
     status: str
     discord_message_id: str | None
     created_at: datetime
@@ -110,6 +114,8 @@ def _pulse_to_response(pulse: DailyPulse) -> PulseResponse:
         wake_time=pulse.wake_time,
         parsed_data=pulse.parsed_data,
         ai_question=pulse.ai_question,
+        ai_question_response=pulse.ai_question_response,
+        notes=pulse.notes,
         status=pulse.status,
         discord_message_id=pulse.discord_message_id,
         created_at=pulse.created_at,
@@ -249,6 +255,10 @@ async def update_today_pulse(
         pulse.wake_time = body.wake_time
     if body.parsed_data is not None:
         pulse.parsed_data = body.parsed_data
+    if body.ai_question_response is not None:
+        pulse.ai_question_response = body.ai_question_response
+    if body.notes is not None:
+        pulse.notes = body.notes
     if body.status is not None:
         pulse.status = body.status
 

@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     google_calendar_credentials_path: str = ""
     google_calendar_token_path: str = ""
     discord_pulse_user_id: int = 0
+    pulse_accept_freetext: bool = False  # gate legacy DM reply flow; modal is primary
 
     # ── RAG Chat ───────────────────────────────────────────────────────────────
     rag_trigger_prefix: str = "?"

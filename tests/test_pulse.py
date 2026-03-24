@@ -748,3 +748,573 @@ def test_pulse_guard_disabled_when_module_disabled():
 
     guard_fires = settings.module_pulse_enabled and settings.discord_pulse_user_id != 0
     assert guard_fires is False
+
+
+# ── Section 10: PulseModal ───────────────────────────────────────────────────
+
+
+def _make_modal_settings() -> MagicMock:
+    """Build settings mock for modal/view tests."""
+    s = MagicMock()
+    s.open_brain_api_url = "http://api"
+    s.api_key = MagicMock()
+    s.api_key.get_secret_value.return_value = "test-key"
+    s.module_pulse_enabled = True
+    s.pulse_accept_freetext = False
+    return s
+
+
+def _make_mock_interaction(message: MagicMock | None = None) -> MagicMock:
+    """Build a mock discord.Interaction for modal/button tests."""
+    interaction = MagicMock()
+    interaction.response = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.send_modal = AsyncMock()
+    interaction.response.edit_message = AsyncMock()
+    interaction.followup = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    interaction.message = message
+    return interaction
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_valid_submit():
+    """Modal with valid data (sleep=4, energy=3, wake=06:30) updates DailyPulse correctly."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    original_msg = MagicMock()
+    original_msg.edit = AsyncMock()
+    original_msg.add_reaction = AsyncMock()
+
+    modal = PulseModal(ai_question="What's your focus?", original_message=original_msg)
+    modal.sleep_quality._value = "4"
+    modal.energy_level._value = "3"
+    modal.wake_time._value = "06:30"
+    modal.ai_response._value = "Shipping the modal upgrade"
+    modal.notes_field._value = "Feeling good"
+
+    interaction = _make_mock_interaction()
+
+    pulse_data = _make_pulse_response(status="sent")
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_called_once()
+    call_body = mock_patch.call_args[0][1]
+    assert call_body["sleep_quality"] == 4
+    assert call_body["energy_level"] == 3
+    assert call_body["wake_time"] == "06:30"
+    assert call_body["status"] == "completed"
+    assert call_body["ai_question_response"] == "Shipping the modal upgrade"
+    assert "Feeling good" in call_body["notes"]
+
+    interaction.response.send_message.assert_called_once()
+    confirm_msg = interaction.response.send_message.call_args[0][0]
+    assert "Sleep 4" in confirm_msg
+    assert "Energy 3" in confirm_msg
+
+    original_msg.add_reaction.assert_called_once_with("✅")
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_invalid_sleep_rejected():
+    """Modal with sleep=7 sends ephemeral error, row not updated."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="", original_message=None)
+    modal.sleep_quality._value = "7"
+    modal.energy_level._value = "3"
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_not_called()
+    interaction.response.send_message.assert_called_once()
+    error_msg = interaction.response.send_message.call_args[0][0]
+    assert "1-5" in error_msg
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_invalid_energy_rejected():
+    """Modal with energy=0 sends ephemeral error, row not updated."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="", original_message=None)
+    modal.sleep_quality._value = "3"
+    modal.energy_level._value = "0"
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_not_called()
+    error_msg = interaction.response.send_message.call_args[0][0]
+    assert "1-5" in error_msg
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_non_numeric_sleep_rejected():
+    """Modal with sleep='x' sends ephemeral error."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="", original_message=None)
+    modal.sleep_quality._value = "x"
+    modal.energy_level._value = "3"
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_only_required_fields():
+    """Modal with only sleep+energy (no wake, no notes) stores correctly with nulls."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="", original_message=None)
+    modal.sleep_quality._value = "3"
+    modal.energy_level._value = "2"
+    modal.wake_time._value = ""
+    modal.notes_field._value = ""
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_called_once()
+    call_body = mock_patch.call_args[0][1]
+    assert call_body["sleep_quality"] == 3
+    assert call_body["energy_level"] == 2
+    assert call_body["status"] == "completed"
+    assert "wake_time" not in call_body
+    assert "notes" not in call_body
+    assert "ai_question_response" not in call_body
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_ai_question_response_stored():
+    """AI question response is stored in ai_question_response field."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="What drained you yesterday?", original_message=None)
+    modal.sleep_quality._value = "4"
+    modal.energy_level._value = "4"
+    modal.wake_time._value = ""
+    modal.ai_response._value = "Too many meetings"
+    modal.notes_field._value = ""
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    call_body = mock_patch.call_args[0][1]
+    assert call_body["ai_question_response"] == "Too many meetings"
+
+
+@pytest.mark.asyncio
+async def test_pulse_modal_no_ai_question_omits_field():
+    """When ai_question is empty, modal has no ai_response field."""
+    import discord as _discord
+
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    modal = PulseModal(ai_question="", original_message=None)
+    assert modal.ai_response is None
+    assert len([c for c in modal.children if isinstance(c, _discord.ui.TextInput)]) == 4
+
+
+def test_pulse_modal_with_ai_question_has_five_fields():
+    """When ai_question is provided, modal has 5 fields including dynamic label."""
+    import discord as _discord
+
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    modal = PulseModal(ai_question="What's your biggest challenge today?", original_message=None)
+    assert modal.ai_response is not None
+    assert len([c for c in modal.children if isinstance(c, _discord.ui.TextInput)]) == 5
+
+
+# ── Section 11: Skip button ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_skip_button_sets_status_skipped():
+    """Skip button → status='skipped', buttons disabled, ⏭️ reaction."""
+    from src.integrations.modules.pulse_cog import PulseView
+
+    settings = _make_modal_settings()
+    view = PulseView()
+
+    original_msg = MagicMock()
+    original_msg.add_reaction = AsyncMock()
+
+    interaction = _make_mock_interaction(message=original_msg)
+    pulse_data = _make_pulse_response(status="sent")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        skip_btn = [c for c in view.children if getattr(c, "custom_id", "") == "pulse:skip"][0]
+        await skip_btn.callback(interaction)
+
+    mock_patch.assert_called_once_with(settings, {"status": "skipped"})
+    interaction.response.edit_message.assert_called_once()
+    original_msg.add_reaction.assert_called_once_with("⏭️")
+
+
+@pytest.mark.asyncio
+async def test_skip_button_rejects_already_completed():
+    """Skip button on already-completed pulse sends ephemeral error."""
+    from src.integrations.modules.pulse_cog import PulseView
+
+    settings = _make_modal_settings()
+    view = PulseView()
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="completed")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        skip_btn = [c for c in view.children if getattr(c, "custom_id", "") == "pulse:skip"][0]
+        await skip_btn.callback(interaction)
+
+    mock_patch.assert_not_called()
+    interaction.response.send_message.assert_called_once()
+    assert "Already" in interaction.response.send_message.call_args[0][0]
+
+
+# ── Section 12: Double-submit prevention ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_modal_double_submit_rejected():
+    """Second modal submit after first is rejected."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    settings = _make_modal_settings()
+    modal = PulseModal(ai_question="", original_message=None)
+    modal.sleep_quality._value = "4"
+    modal.energy_level._value = "3"
+
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="completed")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+        patch("src.integrations.modules.pulse_cog._patch_pulse_api", new=AsyncMock(return_value=True)) as mock_patch,
+    ):
+        await modal.on_submit(interaction)
+
+    mock_patch.assert_not_called()
+    assert "Already" in interaction.response.send_message.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_log_button_rejects_already_completed():
+    """Log button on already-completed pulse sends ephemeral error instead of opening modal."""
+    from src.integrations.modules.pulse_cog import PulseView
+
+    settings = _make_modal_settings()
+    view = PulseView()
+    interaction = _make_mock_interaction()
+    pulse_data = _make_pulse_response(status="completed")
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+    ):
+        log_btn = [c for c in view.children if getattr(c, "custom_id", "") == "pulse:log"][0]
+        await log_btn.callback(interaction)
+
+    interaction.response.send_message.assert_called_once()
+    assert "Already" in interaction.response.send_message.call_args[0][0]
+    interaction.response.send_modal.assert_not_called()
+
+
+# ── Section 13: Persistent view ──────────────────────────────────────────────
+
+
+def test_pulse_view_has_no_timeout():
+    """PulseView timeout=None for persistence across restarts."""
+    from src.integrations.modules.pulse_cog import PulseView
+
+    view = PulseView()
+    assert view.timeout is None
+
+
+def test_pulse_view_has_correct_custom_ids():
+    """PulseView buttons have pulse:log and pulse:skip custom_ids."""
+    from src.integrations.modules.pulse_cog import PulseView
+
+    view = PulseView()
+    custom_ids = {getattr(c, "custom_id", None) for c in view.children}
+    assert "pulse:log" in custom_ids
+    assert "pulse:skip" in custom_ids
+
+
+def test_register_pulse_adds_persistent_view():
+    """register_pulse calls bot.add_view with a PulseView instance."""
+    from src.integrations.modules.pulse_cog import PulseView, register_pulse
+
+    bot = MagicMock()
+    bot.add_view = MagicMock()
+    http = AsyncMock()
+    settings = _make_modal_settings()
+
+    register_pulse(bot, http, settings)
+
+    bot.add_view.assert_called_once()
+    view_arg = bot.add_view.call_args[0][0]
+    assert isinstance(view_arg, PulseView)
+
+
+def test_register_pulse_skips_when_disabled():
+    """register_pulse does nothing when module_pulse_enabled is False."""
+    from src.integrations.modules.pulse_cog import register_pulse
+
+    bot = MagicMock()
+    bot.add_view = MagicMock()
+    http = AsyncMock()
+    settings = _make_modal_settings()
+    settings.module_pulse_enabled = False
+
+    register_pulse(bot, http, settings)
+
+    bot.add_view.assert_not_called()
+
+
+# ── Section 14: Log button opens modal ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_log_button_opens_modal():
+    """Log button on active pulse opens PulseModal with ai_question."""
+    from src.integrations.modules.pulse_cog import PulseModal, PulseView
+
+    settings = _make_modal_settings()
+    view = PulseView()
+    interaction = _make_mock_interaction(message=MagicMock())
+    pulse_data = _make_pulse_response(status="sent")
+    pulse_data["ai_question"] = "What's your biggest challenge?"
+
+    with (
+        patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings),
+        patch("src.integrations.modules.pulse_cog._get_today_pulse_api", new=AsyncMock(return_value=pulse_data)),
+    ):
+        log_btn = [c for c in view.children if getattr(c, "custom_id", "") == "pulse:log"][0]
+        await log_btn.callback(interaction)
+
+    interaction.response.send_modal.assert_called_once()
+    modal_arg = interaction.response.send_modal.call_args[0][0]
+    assert isinstance(modal_arg, PulseModal)
+    assert modal_arg._ai_question == "What's your biggest challenge?"
+
+
+# ── Section 15: AI question prompt alternation ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ai_question_prompt_includes_yesterday_context():
+    """When yesterday had an operational question, prompt requests reflective."""
+    from src.jobs.pulse import _generate_ai_question
+
+    llm = _make_mock_llm("What gave you energy yesterday?")
+    result = await _generate_ai_question(
+        llm,
+        open_todos=[{"description": "Ship modal upgrade"}],
+        yesterday_question="You deferred the API spec — what's blocking it?",
+    )
+
+    assert result == "What gave you energy yesterday?"
+    call_args = llm.complete.call_args
+    user_content = call_args.kwargs.get("user_content", call_args.args[0] if call_args.args else "")
+    assert "deferred the API spec" in user_content
+    assert "reflective" in user_content.lower() or "Type B" in user_content
+
+
+@pytest.mark.asyncio
+async def test_ai_question_prompt_defaults_to_reflective_without_yesterday():
+    """When no yesterday question exists, defaults to reflective (Type B)."""
+    from src.jobs.pulse import _generate_ai_question
+
+    llm = _make_mock_llm("What would make today great?")
+    await _generate_ai_question(llm, open_todos=[], yesterday_question=None)
+
+    call_args = llm.complete.call_args
+    user_content = call_args.kwargs.get("user_content", "")
+    assert "Type B" in user_content or "reflective" in user_content.lower()
+
+
+@pytest.mark.asyncio
+async def test_ai_question_falls_back_on_llm_failure():
+    """Falls back to default question when LLM raises."""
+    from src.jobs.pulse import _generate_ai_question
+
+    llm = AsyncMock()
+    llm.complete = AsyncMock(side_effect=ValueError("API down"))
+    result = await _generate_ai_question(llm)
+
+    assert result == "What's one thing you want to accomplish today?"
+
+
+# ── Section 16: Free-text path gating ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_freetext_path_disabled_by_default():
+    """handle_reply returns False when pulse_accept_freetext is False."""
+    from src.integrations.modules.pulse_cog import PulseCog
+
+    http = _make_mock_http()
+    cog = PulseCog(http)
+    settings = _make_cog_settings()
+    settings.pulse_accept_freetext = False
+
+    with patch("src.integrations.modules.pulse_cog._get_settings", return_value=settings):
+        msg = _make_discord_message()
+        result = await cog.handle_reply(msg)
+
+    assert result is False
+
+
+# ── Section 17: REST components ───────────────────────────────────────────────
+
+
+def test_build_pulse_components_structure():
+    """_build_pulse_components returns valid Discord component JSON."""
+    from src.jobs.pulse import _build_pulse_components
+
+    components = _build_pulse_components()
+    assert len(components) == 1
+    action_row = components[0]
+    assert action_row["type"] == 1
+    buttons = action_row["components"]
+    assert len(buttons) == 2
+    assert buttons[0]["custom_id"] == "pulse:log"
+    assert buttons[0]["style"] == 1
+    assert buttons[1]["custom_id"] == "pulse:skip"
+    assert buttons[1]["style"] == 2
+
+
+def test_embed_shows_ai_question_prominently():
+    """Embed description starts with the AI question in bold."""
+    from src.jobs.pulse import _build_morning_embed
+
+    embed = _build_morning_embed(
+        date_str="2026-03-24",
+        events=[],
+        tomorrow_preview=[],
+        open_todos=[],
+        ai_question="What's draining your energy?",
+    )
+
+    assert "What's draining your energy?" in embed["description"]
+    assert "**" in embed["description"]
+
+
+def test_embed_no_reply_instructions():
+    """Embed no longer contains 'Reply within' instructions."""
+    from src.jobs.pulse import _build_morning_embed
+
+    embed = _build_morning_embed("2026-03-24", [], [], [], "Question?")
+
+    assert "Reply within" not in embed.get("description", "")
+    assert "Reply within" not in embed.get("footer", {}).get("text", "")
+
+
+# ── Section 18: API schema changes ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_patch_pulse_stores_ai_question_response(test_client, api_key_headers):
+    """PATCH stores ai_question_response field."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch(
+        "/v1/pulse/today",
+        json={"ai_question_response": "Too many meetings", "status": "completed"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ai_question_response"] == "Too many meetings"
+    assert data["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_patch_pulse_stores_notes(test_client, api_key_headers):
+    """PATCH stores notes field."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch(
+        "/v1/pulse/today",
+        json={"notes": "Feeling productive today"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "Feeling productive today"
+
+
+@pytest.mark.asyncio
+async def test_completed_status_accepted(test_client, api_key_headers):
+    """Status 'completed' is accepted by the validator."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch(
+        "/v1/pulse/today",
+        json={"status": "completed"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"

@@ -2,8 +2,28 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: ✅ Phase 6 complete. All modules (Foundation, Todo, RAG Chat, Morning Pulse) implemented and tested.
-**Overall Progress**: All phases complete (2026-03-24, 641 tests passing)
+**Current Phase**: ✅ Phase 6 complete. Morning Pulse modal upgrade applied.
+**Overall Progress**: All phases complete (2026-03-24, 666 tests passing)
+
+---
+
+## Morning Pulse Modal Upgrade ✅ COMPLETE (2026-03-24)
+
+Replaced free-text DM reply flow with Discord interactive modals for structured input.
+
+- [x] `PulseView` (persistent, `timeout=None`) with "Log my morning" + "Skip" buttons
+- [x] `PulseModal` with 5 structured fields: sleep (1-5), energy (1-5), wake time, AI question response (dynamic label), notes
+- [x] Validation (1-5 range), double-submit prevention, button disabling after submit
+- [x] Buttons sent via REST components JSON; persistent view re-registered on bot restart
+- [x] AI question prompt upgraded: operational/reflective alternation based on yesterday's question type
+- [x] Embed redesigned: AI question displayed prominently, "Log my morning" CTA replaces "Reply within 2 hours"
+- [x] Free-text DM reply path gated behind `pulse_accept_freetext=False` (disabled by default)
+- [x] Schema: added `ai_question_response` (Text) and `notes` (Text) columns to `daily_pulse`
+- [x] Migration: `0004_pulse_modal_columns.py`
+- [x] API: added `ai_question_response`, `notes` to PulseUpdate/PulseResponse, added "completed" status
+- [x] 27 new tests (69 total pulse tests, 666 total suite)
+
+**Deploy note**: Run `alembic upgrade head` to apply migration 0004 before deploying.
 
 ---
 
