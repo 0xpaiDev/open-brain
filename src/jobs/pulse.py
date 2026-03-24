@@ -347,18 +347,36 @@ async def _fetch_yesterday_question(http: httpx.AsyncClient, settings: Any) -> s
 
 
 async def _fetch_open_todos(http: httpx.AsyncClient, settings: Any) -> list[dict[str, Any]]:
-    """Return up to 5 open todos from the API."""
+    """Return up to 5 open todos relevant for today's pulse.
+
+    Fetches all open todos and filters client-side to include:
+      - Todos due today or earlier (overdue)
+      - Todos with no due date (always relevant)
+    Excludes future-dated todos so the pulse stays focused.
+    """
     try:
         resp = await http.get(
             f"{settings.open_brain_api_url}/v1/todos",
-            params={"status": "open", "limit": 5},
+            params={"status": "open", "limit": 25},
             headers={"X-API-Key": settings.api_key.get_secret_value()},
         )
-        if resp.status_code == 200:
-            return resp.json().get("todos", [])
+        if resp.status_code != 200:
+            return []
+        all_open = resp.json().get("todos", [])
     except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError) as exc:
         logger.exception("pulse_todos_fetch_failed", error=str(exc))
-    return []
+        return []
+
+    today_str = datetime.now(UTC).date().isoformat()
+    relevant: list[dict[str, Any]] = []
+    for t in all_open:
+        due = t.get("due_date")
+        if due is None:
+            relevant.append(t)  # undated → always show
+        elif due[:10] <= today_str:
+            relevant.append(t)  # due today or overdue
+        # else: future-dated → skip
+    return relevant[:5]
 
 
 async def _send_pulse_dm(
