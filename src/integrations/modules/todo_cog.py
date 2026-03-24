@@ -1,7 +1,7 @@
 """Discord slash commands and channel listener for the Todo module.
 
 Provides:
-  - /todo list   — tabbed embed (Today / This Week / All) with per-todo buttons
+  - /todo list   — select-menu embed (Today / This Week / All) with dropdown + action buttons
   - /todo add    — create a todo via slash command
   - /todo done   — mark done via slash command
   - /todo defer  — defer via slash command
@@ -23,8 +23,11 @@ from src.integrations.kernel import _get_settings, require_allowed_user
 
 logger = structlog.get_logger(__name__)
 
-_TODOS_PER_PAGE = 5
-_VIEW_TIMEOUT = 900  # 15 minutes
+_VIEW_TIMEOUT = 840   # 14 minutes (under Discord's 15-min limit)
+_MAX_SELECT = 25      # Discord select menu hard limit
+
+_COLOR_OK = 0x5865F2       # blurple — all clear
+_COLOR_OVERDUE = 0xFAA61A  # amber — has overdue items
 
 
 # ── Pure helpers ───────────────────────────────────────────────────────────────
@@ -50,7 +53,6 @@ def parse_natural_date(token: str, today: date) -> date | None:
         return today + timedelta(days=1)
 
     if raw == "next-week":
-        # Monday of the next calendar week
         days_until_monday = (7 - today.weekday()) % 7
         if days_until_monday == 0:
             days_until_monday = 7
@@ -61,10 +63,9 @@ def parse_natural_date(token: str, today: date) -> date | None:
         target_weekday = _day_names.index(raw)
         days_ahead = (target_weekday - today.weekday()) % 7
         if days_ahead == 0:
-            days_ahead = 7  # next occurrence, not today
+            days_ahead = 7
         return today + timedelta(days=days_ahead)
 
-    # ISO date: @YYYY-MM-DD
     try:
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError:
@@ -92,7 +93,7 @@ def _filter_today(todos: list[dict[str, Any]], today: date) -> list[dict[str, An
 
 def _filter_week(todos: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
     """Return todos due this week (through Sunday) or earlier, or with no due date."""
-    days_to_sunday = 6 - today.weekday()  # weekday: Mon=0, Sun=6
+    days_to_sunday = 6 - today.weekday()
     end_of_week = today + timedelta(days=days_to_sunday)
     result = []
     for t in todos:
@@ -106,81 +107,106 @@ def _filter_week(todos: list[dict[str, Any]], today: date) -> list[dict[str, Any
     return result
 
 
-def _build_tabbed_embed(
-    todos: list[dict[str, Any]],
-    tab: str,
-    page: int,
-    total_in_tab: int,
-    today: date,
-) -> discord.Embed:
-    """Build a rich embed for a tab view with pagination.
+# ── Display helpers ────────────────────────────────────────────────────────────
 
-    Each todo is a separate embed field:
-      ☐ [N] 🟡 Description
-          Created 2d ago · due Fri Mar 28 ⚠️ (if overdue)
 
-    Footer includes page indicator and button expiry note.
+def _parse_iso_date(iso_str: str | None) -> date | None:
+    """Parse an ISO 8601 datetime string to a date, or None on failure."""
+    if not iso_str:
+        return None
+    try:
+        return datetime.fromisoformat(iso_str.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _humanize_age(created_at: str | None) -> str:
+    """Return a human-readable age string for a created_at ISO timestamp."""
+    if not created_at:
+        return "unknown"
+    try:
+        created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        age_days = (datetime.now(tz=created_dt.tzinfo) - created_dt).days
+        if age_days == 0:
+            return "created today"
+        elif age_days == 1:
+            return "created 1d ago"
+        else:
+            return f"created {age_days}d ago"
+    except ValueError:
+        return "unknown"
+
+
+def format_todo_line(index: int, todo: dict[str, Any], today: date) -> str:
+    """Format a single todo as two monospace lines for the code-block embed.
+
+    Line 1: │ N. Description  [⚠ marker] [priority]
+    Line 2: │    created Xd ago
     """
-    tab_titles = {"today": "Today", "week": "This Week", "all": "All Todos"}
-    tab_empty = {
-        "today": "Nothing due today. Add one with `+ task text` or the Add button.",
+    description = str(todo.get("description", ""))[:78]
+    line1 = f"\u2502 {index}. {description}"
+
+    markers: list[str] = []
+    due = _parse_iso_date(todo.get("due_date"))
+    if due is not None:
+        if due == today:
+            markers.append("\u26a0 due today")
+        elif due < today:
+            markers.append("\u26a0 overdue")
+
+    priority = todo.get("priority", "normal")
+    if priority not in (None, "normal"):
+        markers.append(str(priority))
+
+    if markers:
+        line1 += "  " + " \u00b7 ".join(markers)
+
+    line2 = f"\u2502    {_humanize_age(todo.get('created_at'))}"
+    return f"{line1}\n{line2}"
+
+
+def build_embed(todos: list[dict[str, Any]], tab: str, today: date) -> discord.Embed:
+    """Build a Discord embed with a monospace code-block todo list.
+
+    Uses a triple-backtick code block for visual containment and monospace alignment.
+    Embed color reflects overall status: blurple (ok) or amber (has overdue items).
+    """
+    _TAB_TITLES = {"today": "Today", "week": "This Week", "all": "All Todos"}
+    _TAB_EMPTY = {
+        "today": "No tasks for today. Use + Add or type: `+ fix the bug @friday`",
         "week": "Clear week ahead.",
         "all": "No active todos.",
     }
 
-    title = tab_titles.get(tab, "Todos")
-    embed = discord.Embed(title=title, color=discord.Color.blue())
+    n = len(todos)
+    task_word = "task" if n == 1 else "tasks"
+    title = f"\U0001f4cb {_TAB_TITLES.get(tab, 'Todos')} \u00b7 {n} {task_word}"
+
+    has_overdue = any(
+        (d := _parse_iso_date(t.get("due_date"))) is not None and d < today
+        for t in todos
+    )
+    color = _COLOR_OVERDUE if has_overdue else _COLOR_OK
+
+    embed = discord.Embed(title=title, color=color)
 
     if not todos:
-        embed.description = tab_empty.get(tab, "No todos.")
-        return embed
-
-    start = page * _TODOS_PER_PAGE
-    page_todos = todos[start : start + _TODOS_PER_PAGE]
-    total_pages = max(1, (total_in_tab + _TODOS_PER_PAGE - 1) // _TODOS_PER_PAGE)
-
-    for i, t in enumerate(page_todos, start=start + 1):
-        priority_icon = {"high": "🔴", "normal": "🟡", "low": "🟢"}.get(
-            t.get("priority", "normal"), "🟡"
-        )
-
-        due = t.get("due_date")
-        is_overdue = False
-        due_str = ""
-        if due:
-            due_date = datetime.fromisoformat(due.replace("Z", "+00:00")).date()
-            due_str = f" · due {due_date.strftime('%a %b %d')}"
-            is_overdue = due_date < today
-
-        warning = " ⚠️" if is_overdue else ""
-
-        created_str = ""
-        created = t.get("created_at")
-        if created:
-            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-            age_days = (datetime.now(tz=created_dt.tzinfo) - created_dt).days
-            if age_days == 0:
-                created_str = " · today"
-            elif age_days == 1:
-                created_str = " · 1d ago"
-            else:
-                created_str = f" · {age_days}d ago"
-
-        embed.add_field(
-            name=f"☐ [{i}] {priority_icon} {t['description'][:80]}",
-            value=f"Created{created_str}{due_str}{warning}",
-            inline=False,
-        )
-
-    if total_pages > 1:
-        embed.set_footer(
-            text=(
-                f"Page {page + 1}/{total_pages} · "
-                "Buttons expire after 15 min. Use /todo list to refresh."
-            )
-        )
+        embed.description = _TAB_EMPTY.get(tab, "No todos.")
     else:
-        embed.set_footer(text="Buttons expire after 15 min. Use /todo list to refresh.")
+        lines = ["\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+                 "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+                 "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"]
+        for i, t in enumerate(todos, 1):
+            lines.append(format_todo_line(i, t, today))
+            if i < len(todos):
+                lines.append("\u2502")
+        lines.append("\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+                     "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+                     "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+        embed.description = "```\n" + "\n".join(lines) + "\n```"
+
+    hint = "\u2705 done 1,3  \u00b7  \u23ed\ufe0f defer 2 tomorrow reason  \u00b7  + task @fri"
+    embed.set_footer(text=f"{hint}\nButtons expire after 15 min. Use /todo list to refresh.")
 
     return embed
 
@@ -242,17 +268,19 @@ async def _fetch_all_open_todos(http: httpx.AsyncClient, settings: Any) -> list[
     return data.get("todos", [])
 
 
-# ── UI helpers ─────────────────────────────────────────────────────────────────
+# ── UI helper ──────────────────────────────────────────────────────────────────
 
 
-def _build_tab_view(
+def _build_todo_view(
     http: httpx.AsyncClient,
     all_todos: list[dict[str, Any]],
     tab: str,
-    page: int,
     today: date,
-) -> tuple[discord.Embed, "TabView"]:
-    """Build (embed, view) for the given tab and page."""
+) -> tuple[discord.Embed, "TodoView"]:
+    """Build (embed, view) for the given tab. Single source of truth for rendering.
+
+    Every code path — /todo list, tab switch, done, defer, add — calls this.
+    """
     if tab == "today":
         filtered = _filter_today(all_todos, today)
     elif tab == "week":
@@ -260,9 +288,8 @@ def _build_tab_view(
     else:
         filtered = list(all_todos)
 
-    total = len(filtered)
-    embed = _build_tabbed_embed(filtered, tab, page, total, today)
-    view = TabView(http, all_todos, tab, page, today, filtered)
+    embed = build_embed(filtered, tab, today)
+    view = TodoView(http, all_todos, tab, filtered)
     return embed, view
 
 
@@ -279,22 +306,21 @@ class AddTodoModal(discord.ui.Modal, title="Add Todo"):
         max_length=200,
     )
 
-    def __init__(self, http: httpx.AsyncClient, current_tab: str, today: date) -> None:
+    def __init__(self, http: httpx.AsyncClient, current_tab: str) -> None:
         super().__init__()
         self._http = http
         self._current_tab = current_tab
-        self._today = today
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         settings = _get_settings()
+        today = date.today()
         text = str(self.task.value)
 
-        # Extract @date token if present
         due_date: str | None = None
         match = re.search(r"@(\S+)", text)
         if match:
             token = f"@{match.group(1)}"
-            parsed = parse_natural_date(token, self._today)
+            parsed = parse_natural_date(token, today)
             if parsed:
                 due_date = parsed.isoformat() + "T00:00:00Z"
                 text = text[: match.start()].strip()
@@ -306,8 +332,10 @@ class AddTodoModal(discord.ui.Modal, title="Add Todo"):
         try:
             await _api_post(self._http, "/v1/todos", body, settings)
             all_todos = await _fetch_all_open_todos(self._http, settings)
-            embed, view = _build_tab_view(self._http, all_todos, self._current_tab, 0, self._today)
+            embed, view = _build_todo_view(self._http, all_todos, self._current_tab, today)
             await interaction.response.edit_message(embed=embed, view=view)
+            due_str = f" \u00b7 due {due_date[:10]}" if due_date else ""
+            await interaction.followup.send(f"\u2713 Added \u2014 {text}{due_str}", ephemeral=True)
         except httpx.HTTPError as exc:
             logger.error("add_todo_modal_error", error=str(exc))
             await interaction.response.send_message("Failed to create todo.", ephemeral=True)
@@ -328,22 +356,20 @@ class DeferModal(discord.ui.Modal, title="Defer Todo"):
         max_length=200,
     )
 
-    def __init__(
-        self, todo_id: str, http: httpx.AsyncClient, current_tab: str, today: date
-    ) -> None:
+    def __init__(self, todo_id: str, http: httpx.AsyncClient, current_tab: str) -> None:
         super().__init__()
         self._todo_id = todo_id
         self._http = http
         self._current_tab = current_tab
-        self._today = today
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         settings = _get_settings()
-        parsed = parse_natural_date(str(self.new_date.value), self._today)
+        today = date.today()
+        parsed = parse_natural_date(str(self.new_date.value), today)
         if parsed is None:
             await interaction.response.send_message(
                 f"Could not parse date `{self.new_date.value}`. "
-                "Use @tomorrow, @monday–@sunday, @next-week, or @YYYY-MM-DD.",
+                "Use @tomorrow, @monday\u2013@sunday, @next-week, or @YYYY-MM-DD.",
                 ephemeral=True,
             )
             return
@@ -355,20 +381,123 @@ class DeferModal(discord.ui.Modal, title="Defer Todo"):
         try:
             await _api_patch(self._http, f"/v1/todos/{self._todo_id}", body, settings)
             all_todos = await _fetch_all_open_todos(self._http, settings)
-            embed, view = _build_tab_view(
-                self._http, all_todos, self._current_tab, 0, self._today
-            )
+            embed, view = _build_todo_view(self._http, all_todos, self._current_tab, today)
             await interaction.response.edit_message(embed=embed, view=view)
+            reason_str = f" ({self.reason.value})" if self.reason.value else ""
+            await interaction.followup.send(
+                f"\u23ed\ufe0f Deferred to {parsed.isoformat()}{reason_str}", ephemeral=True
+            )
         except httpx.HTTPError as exc:
             logger.error("defer_modal_error", error=str(exc))
             await interaction.response.send_message("Failed to defer todo.", ephemeral=True)
 
 
-# ── Button classes ─────────────────────────────────────────────────────────────
+# ── UI components ──────────────────────────────────────────────────────────────
 
 
-class _TabButton(discord.ui.Button):
-    """Switch to a tab and refresh the embed in-place."""
+class TodoSelect(discord.ui.Select):
+    """Dropdown for selecting which todo to act on. Value = todo UUID."""
+
+    def __init__(self, todos: list[dict[str, Any]]) -> None:
+        options = []
+        for i, t in enumerate(todos[:_MAX_SELECT], 1):
+            due = _parse_iso_date(t.get("due_date"))
+            today = date.today()
+            if due and due < today:
+                meta = "overdue"
+            elif due and due == today:
+                meta = "due today"
+            else:
+                meta = _humanize_age(t.get("created_at"))
+            options.append(
+                discord.SelectOption(
+                    label=f"{i}. {str(t.get('description', ''))[:95]}",
+                    value=str(t["id"]),
+                    description=meta[:100],
+                )
+            )
+        super().__init__(
+            placeholder="Select a task...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Acknowledge selection silently — action happens via Done/Defer buttons
+        await interaction.response.defer()
+
+
+class DoneButton(discord.ui.Button):
+    """Mark the selected todo as done and refresh the embed."""
+
+    def __init__(self, select: TodoSelect, http: httpx.AsyncClient, tab: str) -> None:
+        super().__init__(
+            label="\u2705 Done",
+            style=discord.ButtonStyle.success,
+            row=1,
+        )
+        self._select = select
+        self._http = http
+        self._tab = tab
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        settings = _get_settings()
+        if not require_allowed_user(interaction, settings):
+            await interaction.response.send_message("Not authorised.", ephemeral=True)
+            return
+        if not self._select.values:
+            await interaction.response.send_message("Pick a task first.", ephemeral=True)
+            return
+
+        todo_id = self._select.values[0]
+        desc = next(
+            (opt.label.split(". ", 1)[-1] for opt in self._select.options if opt.value == todo_id),
+            todo_id[:8],
+        )
+        today = date.today()
+        try:
+            await _api_patch(self._http, f"/v1/todos/{todo_id}", {"status": "done"}, settings)
+            all_todos = await _fetch_all_open_todos(self._http, settings)
+            embed, view = _build_todo_view(self._http, all_todos, self._tab, today)
+            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.followup.send(f"\u2705 Done: {desc}", ephemeral=True)
+        except httpx.HTTPError as exc:
+            logger.error("done_button_error", error=str(exc))
+            await interaction.response.send_message("Failed to mark todo as done.", ephemeral=True)
+
+
+class DeferButton(discord.ui.Button):
+    """Open the DeferModal for the selected todo."""
+
+    def __init__(self, select: TodoSelect, http: httpx.AsyncClient, tab: str) -> None:
+        super().__init__(
+            label="\u23ed\ufe0f Defer",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        self._select = select
+        self._http = http
+        self._tab = tab
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        settings = _get_settings()
+        if not require_allowed_user(interaction, settings):
+            await interaction.response.send_message("Not authorised.", ephemeral=True)
+            return
+        if not self._select.values:
+            await interaction.response.send_message("Pick a task first.", ephemeral=True)
+            return
+
+        todo_id = self._select.values[0]
+        await interaction.response.send_modal(
+            DeferModal(todo_id, self._http, self._tab)
+        )
+
+
+class TabButton(discord.ui.Button):
+    """Switch to a different tab and refresh the embed in-place."""
 
     def __init__(
         self,
@@ -376,155 +505,58 @@ class _TabButton(discord.ui.Button):
         tab: str,
         active: bool,
         http: httpx.AsyncClient,
-        all_todos: list[dict[str, Any]],
-        today: date,
+        *,
         row: int,
     ) -> None:
         style = discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary
         super().__init__(label=label, style=style, row=row)
         self._tab = tab
         self._http = http
-        self._all_todos = all_todos
-        self._today = today
 
     async def callback(self, interaction: discord.Interaction) -> None:
         settings = _get_settings()
         if not require_allowed_user(interaction, settings):
             await interaction.response.send_message("Not authorised.", ephemeral=True)
             return
-        embed, view = _build_tab_view(self._http, self._all_todos, self._tab, 0, self._today)
-        await interaction.response.edit_message(embed=embed, view=view)
+        today = date.today()
+        try:
+            all_todos = await _fetch_all_open_todos(self._http, settings)
+            embed, view = _build_todo_view(self._http, all_todos, self._tab, today)
+            await interaction.response.edit_message(embed=embed, view=view)
+        except httpx.HTTPError as exc:
+            logger.error("tab_button_error", error=str(exc))
+            await interaction.response.send_message("Failed to fetch todos.", ephemeral=True)
 
 
-class _AddButton(discord.ui.Button):
+class AddButton(discord.ui.Button):
     """Open the AddTodoModal."""
 
-    def __init__(self, http: httpx.AsyncClient, tab: str, today: date, row: int) -> None:
+    def __init__(self, http: httpx.AsyncClient, tab: str, *, row: int) -> None:
         super().__init__(label="+ Add", style=discord.ButtonStyle.success, row=row)
         self._http = http
         self._tab = tab
-        self._today = today
 
     async def callback(self, interaction: discord.Interaction) -> None:
         settings = _get_settings()
         if not require_allowed_user(interaction, settings):
             await interaction.response.send_message("Not authorised.", ephemeral=True)
             return
-        await interaction.response.send_modal(AddTodoModal(self._http, self._tab, self._today))
-
-
-class DoneButton(discord.ui.Button):
-    """Mark a todo as done and refresh the embed."""
-
-    def __init__(
-        self,
-        index: int,
-        todo_id: str,
-        http: httpx.AsyncClient,
-        tab: str,
-        today: date,
-        row: int,
-    ) -> None:
-        super().__init__(
-            label=f"✅ {index}",
-            style=discord.ButtonStyle.success,
-            custom_id=f"todo_done_{todo_id}",
-            row=row,
-        )
-        self._todo_id = todo_id
-        self._http = http
-        self._tab = tab
-        self._today = today
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        settings = _get_settings()
-        if not require_allowed_user(interaction, settings):
-            await interaction.response.send_message("Not authorised.", ephemeral=True)
-            return
-        try:
-            await _api_patch(self._http, f"/v1/todos/{self._todo_id}", {"status": "done"}, settings)
-            all_todos = await _fetch_all_open_todos(self._http, settings)
-            embed, view = _build_tab_view(self._http, all_todos, self._tab, 0, self._today)
-            await interaction.response.edit_message(embed=embed, view=view)
-        except httpx.HTTPError as exc:
-            logger.error("done_button_error", error=str(exc))
-            await interaction.response.send_message("Failed to mark todo as done.", ephemeral=True)
-
-
-class DeferButton(discord.ui.Button):
-    """Open the DeferModal for this todo."""
-
-    def __init__(
-        self,
-        index: int,
-        todo_id: str,
-        http: httpx.AsyncClient,
-        tab: str,
-        today: date,
-        row: int,
-    ) -> None:
-        super().__init__(
-            label=f"📅 {index}",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"todo_defer_{todo_id}",
-            row=row,
-        )
-        self._todo_id = todo_id
-        self._http = http
-        self._tab = tab
-        self._today = today
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        settings = _get_settings()
-        if not require_allowed_user(interaction, settings):
-            await interaction.response.send_message("Not authorised.", ephemeral=True)
-            return
-        await interaction.response.send_modal(
-            DeferModal(self._todo_id, self._http, self._tab, self._today)
-        )
-
-
-class _ShowMoreButton(discord.ui.Button):
-    """Advance to the next page of todos."""
-
-    def __init__(
-        self,
-        http: httpx.AsyncClient,
-        all_todos: list[dict[str, Any]],
-        tab: str,
-        next_page: int,
-        today: date,
-        row: int,
-    ) -> None:
-        super().__init__(label="▼ More", style=discord.ButtonStyle.secondary, row=row)
-        self._http = http
-        self._all_todos = all_todos
-        self._tab = tab
-        self._next_page = next_page
-        self._today = today
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        settings = _get_settings()
-        if not require_allowed_user(interaction, settings):
-            await interaction.response.send_message("Not authorised.", ephemeral=True)
-            return
-        embed, view = _build_tab_view(
-            self._http, self._all_todos, self._tab, self._next_page, self._today
-        )
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.send_modal(AddTodoModal(self._http, self._tab))
 
 
 # ── Main view ──────────────────────────────────────────────────────────────────
 
 
-class TabView(discord.ui.View):
-    """Rich embed view with tab switchers and per-todo Done/Defer buttons.
+class TodoView(discord.ui.View):
+    """Select-menu + action buttons view for the todo embed.
 
-    Button layout (max 5 ActionRows × 5 buttons):
-      Row 0: [Today] [This Week] [All] [+ Add]         — tab controls
-      Row 1: [✅ 1] [✅ 2] [✅ 3] [✅ 4] [✅ 5]          — done buttons
-      Row 2: [📅 1] [📅 2] [📅 3] [📅 4] [📅 5]          — defer buttons
-      Row 3: [▼ More]                                   — pagination (if needed)
+    Button layout (max 5 ActionRows):
+      When todos exist:
+        Row 0: Select menu (dropdown — takes a full row)
+        Row 1: [✅ Done]  [⏭️ Defer]
+        Row 2: [Today] [This Week] [All] [+ Add]
+      When empty:
+        Row 0: [Today] [This Week] [All] [+ Add]
     """
 
     def __init__(
@@ -532,62 +564,26 @@ class TabView(discord.ui.View):
         http: httpx.AsyncClient,
         all_todos: list[dict[str, Any]],
         tab: str,
-        page: int,
-        today: date,
-        filtered_todos: list[dict[str, Any]] | None = None,
+        filtered_todos: list[dict[str, Any]],
     ) -> None:
         super().__init__(timeout=_VIEW_TIMEOUT)
         self._http = http
-        self._all_todos = all_todos
         self._tab = tab
-        self._page = page
-        self._today = today
 
-        if filtered_todos is None:
-            if tab == "today":
-                filtered_todos = _filter_today(all_todos, today)
-            elif tab == "week":
-                filtered_todos = _filter_week(all_todos, today)
-            else:
-                filtered_todos = list(all_todos)
+        tab_row = 2 if filtered_todos else 0
 
-        self._filtered = filtered_todos
-        self._page_todos = filtered_todos[page * _TODOS_PER_PAGE : (page + 1) * _TODOS_PER_PAGE]
+        if filtered_todos:
+            self.todo_select: TodoSelect | None = TodoSelect(filtered_todos)
+            self.add_item(self.todo_select)
+            self.add_item(DoneButton(self.todo_select, http, tab))
+            self.add_item(DeferButton(self.todo_select, http, tab))
+        else:
+            self.todo_select = None
 
-        self._build_buttons()
-
-    def _build_buttons(self) -> None:
-        # Row 0: tab switchers + add
-        self.add_item(
-            _TabButton("Today", "today", self._tab == "today", self._http, self._all_todos, self._today, row=0)
-        )
-        self.add_item(
-            _TabButton("This Week", "week", self._tab == "week", self._http, self._all_todos, self._today, row=0)
-        )
-        self.add_item(
-            _TabButton("All", "all", self._tab == "all", self._http, self._all_todos, self._today, row=0)
-        )
-        self.add_item(_AddButton(self._http, self._tab, self._today, row=0))
-
-        if not self._page_todos:
-            return
-
-        # Row 1: Done buttons for each todo on this page
-        for i, t in enumerate(self._page_todos, start=self._page * _TODOS_PER_PAGE + 1):
-            self.add_item(DoneButton(i, t["id"], self._http, self._tab, self._today, row=1))
-
-        # Row 2: Defer buttons for each todo on this page
-        for i, t in enumerate(self._page_todos, start=self._page * _TODOS_PER_PAGE + 1):
-            self.add_item(DeferButton(i, t["id"], self._http, self._tab, self._today, row=2))
-
-        # Row 3: Show More (if there are more pages)
-        total = len(self._filtered)
-        if (self._page + 1) * _TODOS_PER_PAGE < total:
-            self.add_item(
-                _ShowMoreButton(
-                    self._http, self._all_todos, self._tab, self._page + 1, self._today, row=3
-                )
-            )
+        self.add_item(TabButton("Today", "today", tab == "today", http, row=tab_row))
+        self.add_item(TabButton("This Week", "week", tab == "week", http, row=tab_row))
+        self.add_item(TabButton("All", "all", tab == "all", http, row=tab_row))
+        self.add_item(AddButton(http, tab, row=tab_row))
 
 
 # ── on_message handler ─────────────────────────────────────────────────────────
@@ -638,9 +634,9 @@ async def _handle_todo_message(
 
         try:
             todo = await _api_post(http, "/v1/todos", body, settings)
-            due_str = f" · due {todo['due_date'][:10]}" if todo.get("due_date") else ""
-            await message.add_reaction("✅")
-            await message.reply(f"✓ Added — {text_part}{due_str}")
+            due_str = f" \u00b7 due {todo['due_date'][:10]}" if todo.get("due_date") else ""
+            await message.add_reaction("\u2705")
+            await message.reply(f"\u2713 Added \u2014 {text_part}{due_str}")
         except httpx.HTTPError as exc:
             logger.error("prefix_add_error", error=str(exc))
             await message.reply("Failed to create todo.")
@@ -659,9 +655,9 @@ async def _handle_todo_message(
                 return
             for t in today_todos:
                 await _api_patch(http, f"/v1/todos/{t['id']}", {"status": "done"}, settings)
-            await message.add_reaction("✅")
+            await message.add_reaction("\u2705")
             names = ", ".join(t["description"][:40] for t in today_todos)
-            await message.reply(f"✓ Done: {names}")
+            await message.reply(f"\u2713 Done: {names}")
         except httpx.HTTPError as exc:
             logger.error("prefix_done_all_error", error=str(exc))
             await message.reply("Failed to mark todos done.")
@@ -683,8 +679,8 @@ async def _handle_todo_message(
                     await _api_patch(http, f"/v1/todos/{t['id']}", {"status": "done"}, settings)
                     completed.append(t["description"][:40])
             if completed:
-                await message.add_reaction("✅")
-                await message.reply(f"✓ Done: {', '.join(completed)}")
+                await message.add_reaction("\u2705")
+                await message.reply(f"\u2713 Done: {', '.join(completed)}")
             else:
                 await message.reply(
                     "No matching todos. Use `/todo list` to see current indices."
@@ -724,9 +720,9 @@ async def _handle_todo_message(
                 defer_body["reason"] = reason
             await _api_patch(http, f"/v1/todos/{t['id']}", defer_body, settings)
             reason_str = f" ({reason})" if reason else ""
-            await message.add_reaction("✅")
+            await message.add_reaction("\u2705")
             await message.reply(
-                f"✓ Deferred '{t['description'][:40]}' to {parsed_defer.isoformat()}{reason_str}"
+                f"\u2713 Deferred '{t['description'][:40]}' to {parsed_defer.isoformat()}{reason_str}"
             )
         except httpx.HTTPError as exc:
             logger.error("prefix_defer_error", error=str(exc))
@@ -736,10 +732,10 @@ async def _handle_todo_message(
     # ── No pattern matched — send hint ────────────────────────────────────────
     await message.reply(
         "Didn't catch that. Try:\n"
-        "`+ task text @friday` — add todo\n"
-        "`done 1,3` — mark done by index\n"
-        "`done all` — mark all today's todos done\n"
-        "`defer 2 tomorrow reason` — defer todo"
+        "`+ task text @friday` \u2014 add todo\n"
+        "`done 1,3` \u2014 mark done by index\n"
+        "`done all` \u2014 mark all today's todos done\n"
+        "`defer 2 tomorrow reason` \u2014 defer todo"
     )
 
 
@@ -775,7 +771,7 @@ class TodoGroup(app_commands.Group):
 
     @app_commands.command(name="list", description="Show todos with Today / This Week / All tabs")
     async def list_todos(self, interaction: discord.Interaction) -> None:
-        """Show a rich tabbed embed of open todos.
+        """Show a select-menu embed of open todos with action buttons.
 
         Raises:
             Ephemeral error if API is unreachable.
@@ -794,13 +790,13 @@ class TodoGroup(app_commands.Group):
             return
 
         today = date.today()
-        embed, view = _build_tab_view(self._http, all_todos, "today", 0, today)
+        embed, view = _build_todo_view(self._http, all_todos, "today", today)
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="add", description="Add a new todo")
     @app_commands.describe(
         text="Todo description",
-        due="Due date (@tomorrow, @monday–@sunday, @next-week, @YYYY-MM-DD)",
+        due="Due date (@tomorrow, @monday\u2013@sunday, @next-week, @YYYY-MM-DD)",
         priority="Priority: high, normal (default), low",
     )
     async def add_todo(
@@ -826,7 +822,7 @@ class TodoGroup(app_commands.Group):
             if parsed is None:
                 await interaction.response.send_message(
                     f"Could not parse due date `{due}`. "
-                    "Use @tomorrow, @monday–@sunday, @next-week, or @YYYY-MM-DD.",
+                    "Use @tomorrow, @monday\u2013@sunday, @next-week, or @YYYY-MM-DD.",
                     ephemeral=True,
                 )
                 return
@@ -845,8 +841,10 @@ class TodoGroup(app_commands.Group):
             return
 
         short_id = str(todo["id"])[:8]
-        priority_icon = {"high": "🔴", "normal": "🟡", "low": "🟢"}.get(priority, "🟡")
-        due_str = f" · due {todo['due_date'][:10]}" if todo.get("due_date") else ""
+        priority_icon = {"high": "\U0001f534", "normal": "\U0001f7e1", "low": "\U0001f7e2"}.get(
+            priority, "\U0001f7e1"
+        )
+        due_str = f" \u00b7 due {todo['due_date'][:10]}" if todo.get("due_date") else ""
         await interaction.followup.send(
             f"{priority_icon} Created `{short_id}`: **{text}**{due_str}"
         )
@@ -867,7 +865,7 @@ class TodoGroup(app_commands.Group):
         await interaction.response.defer(ephemeral=True)
         try:
             await _api_patch(self._http, f"/v1/todos/{todo_id}", {"status": "done"}, settings)
-            await interaction.followup.send(f"✅ Todo `{todo_id[:8]}` marked done.", ephemeral=True)
+            await interaction.followup.send(f"\u2705 Todo `{todo_id[:8]}` marked done.", ephemeral=True)
         except httpx.HTTPError as exc:
             logger.error("todo_done_error", error=str(exc))
             await interaction.followup.send("Failed to mark todo done.", ephemeral=True)
@@ -875,7 +873,7 @@ class TodoGroup(app_commands.Group):
     @app_commands.command(name="defer", description="Defer a todo to a new date")
     @app_commands.describe(
         todo_id="Todo ID (first 8 characters or full UUID)",
-        due="New due date (@tomorrow, @monday–@sunday, @next-week, @YYYY-MM-DD)",
+        due="New due date (@tomorrow, @monday\u2013@sunday, @next-week, @YYYY-MM-DD)",
         reason="Optional reason for deferring",
     )
     async def defer_todo(
@@ -899,7 +897,7 @@ class TodoGroup(app_commands.Group):
         if parsed is None:
             await interaction.response.send_message(
                 f"Could not parse date `{due}`. "
-                "Use @tomorrow, @monday–@sunday, @next-week, or @YYYY-MM-DD.",
+                "Use @tomorrow, @monday\u2013@sunday, @next-week, or @YYYY-MM-DD.",
                 ephemeral=True,
             )
             return
@@ -912,7 +910,7 @@ class TodoGroup(app_commands.Group):
         try:
             await _api_patch(self._http, f"/v1/todos/{todo_id}", body, settings)
             await interaction.followup.send(
-                f"📅 Todo `{todo_id[:8]}` deferred to {parsed.isoformat()}.", ephemeral=True
+                f"\U0001f4c5 Todo `{todo_id[:8]}` deferred to {parsed.isoformat()}.", ephemeral=True
             )
         except httpx.HTTPError as exc:
             logger.error("todo_defer_error", error=str(exc))

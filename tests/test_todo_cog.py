@@ -1,25 +1,35 @@
 """Tests for the Todo Discord cog.
 
-Covers parse_natural_date, filter helpers, embed builder, slash commands,
-button callbacks, and the on_message prefix listener.
+Covers parse_natural_date, filter helpers, embed builder, select-menu components,
+slash commands, button callbacks, modals, and the on_message prefix listener.
 All httpx calls are mocked — no real API is hit.
 """
 
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import httpx
 import pytest
 
 from src.integrations.modules.todo_cog import (
-    DoneButton,
+    AddButton,
+    AddTodoModal,
     DeferButton,
+    DeferModal,
+    DoneButton,
+    TabButton,
     TodoGroup,
-    _build_tabbed_embed,
+    TodoSelect,
+    TodoView,
     _filter_today,
     _filter_week,
     _handle_todo_message,
+    _humanize_age,
     _parse_date_bare,
+    _parse_iso_date,
+    build_embed,
+    format_todo_line,
     parse_natural_date,
 )
 
@@ -105,6 +115,35 @@ def test_parse_date_bare_invalid() -> None:
 def test_parse_date_bare_iso() -> None:
     today = date(2026, 3, 23)
     assert _parse_date_bare("2026-12-25", today) == date(2026, 12, 25)
+
+
+# ── _parse_iso_date ───────────────────────────────────────────────────────────
+
+
+def test_parse_iso_date_valid() -> None:
+    assert _parse_iso_date("2026-03-23T00:00:00Z") == date(2026, 3, 23)
+
+
+def test_parse_iso_date_none() -> None:
+    assert _parse_iso_date(None) is None
+
+
+def test_parse_iso_date_invalid() -> None:
+    assert _parse_iso_date("not-a-date") is None
+
+
+# ── _humanize_age ─────────────────────────────────────────────────────────────
+
+
+def test_humanize_age_none() -> None:
+    assert _humanize_age(None) == "unknown"
+
+
+def test_humanize_age_today() -> None:
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert _humanize_age(now_iso) == "created today"
 
 
 # ── _filter_today ─────────────────────────────────────────────────────────────
@@ -200,103 +239,151 @@ def test_filter_week_includes_overdue() -> None:
     assert _filter_week(todos, today) == todos
 
 
-# ── _build_tabbed_embed ───────────────────────────────────────────────────────
+# ── format_todo_line ──────────────────────────────────────────────────────────
 
 
-def test_build_tabbed_embed_today_title() -> None:
+def test_format_todo_line_basic() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "smoke test")
+    line = format_todo_line(1, todo, today)
+    assert "1. smoke test" in line
+    assert "created" in line  # age line
+
+
+def test_format_todo_line_overdue_marker() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "old task", due_date="2026-03-20T00:00:00Z")
+    line = format_todo_line(1, todo, today)
+    assert "overdue" in line
+
+
+def test_format_todo_line_due_today_marker() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "today task", due_date="2026-03-23T00:00:00Z")
+    line = format_todo_line(1, todo, today)
+    assert "due today" in line
+
+
+def test_format_todo_line_no_marker_for_future() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "future task", due_date="2026-03-30T00:00:00Z")
+    line = format_todo_line(1, todo, today)
+    assert "overdue" not in line
+    assert "due today" not in line
+
+
+def test_format_todo_line_high_priority_shown() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "urgent", priority="high")
+    line = format_todo_line(1, todo, today)
+    assert "high" in line
+
+
+def test_format_todo_line_normal_priority_not_shown() -> None:
+    today = date(2026, 3, 23)
+    todo = _make_todo("1", "write tests", priority="normal")
+    line = format_todo_line(1, todo, today)
+    # Normal priority adds no priority marker — check no " · normal" marker appended
+    assert " · normal" not in line
+
+
+# ── build_embed ───────────────────────────────────────────────────────────────
+
+
+def test_build_embed_today_title() -> None:
     today = date(2026, 3, 23)
     todos = [_make_todo("1", "Task A")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
-    assert embed.title == "Today"
+    embed = build_embed(todos, "today", today)
+    assert "Today" in embed.title
 
 
-def test_build_tabbed_embed_week_title() -> None:
+def test_build_embed_week_title() -> None:
     today = date(2026, 3, 23)
-    embed = _build_tabbed_embed([], "week", 0, 0, today)
-    assert embed.title == "This Week"
+    embed = build_embed([], "week", today)
+    assert "This Week" in embed.title
 
 
-def test_build_tabbed_embed_all_title() -> None:
+def test_build_embed_all_title() -> None:
     today = date(2026, 3, 23)
-    embed = _build_tabbed_embed([], "all", 0, 0, today)
-    assert embed.title == "All Todos"
+    embed = build_embed([], "all", today)
+    assert "All Todos" in embed.title
 
 
-def test_build_tabbed_embed_empty_today() -> None:
+def test_build_embed_title_shows_count() -> None:
     today = date(2026, 3, 23)
-    embed = _build_tabbed_embed([], "today", 0, 0, today)
-    assert "Nothing due today" in embed.description
+    todos = [_make_todo("1", "A"), _make_todo("2", "B"), _make_todo("3", "C")]
+    embed = build_embed(todos, "today", today)
+    assert "3" in embed.title
 
 
-def test_build_tabbed_embed_empty_week() -> None:
+def test_build_embed_empty_today() -> None:
     today = date(2026, 3, 23)
-    embed = _build_tabbed_embed([], "week", 0, 0, today)
+    embed = build_embed([], "today", today)
+    assert "No tasks for today" in embed.description
+
+
+def test_build_embed_empty_week() -> None:
+    today = date(2026, 3, 23)
+    embed = build_embed([], "week", today)
     assert "Clear week ahead" in embed.description
 
 
-def test_build_tabbed_embed_empty_all() -> None:
+def test_build_embed_empty_all() -> None:
     today = date(2026, 3, 23)
-    embed = _build_tabbed_embed([], "all", 0, 0, today)
+    embed = build_embed([], "all", today)
     assert "No active todos" in embed.description
 
 
-def test_build_tabbed_embed_shows_field_per_todo() -> None:
-    today = date(2026, 3, 23)
-    todos = [_make_todo("1", "Task A"), _make_todo("2", "Task B")]
-    embed = _build_tabbed_embed(todos, "today", 0, 2, today)
-    assert len(embed.fields) == 2
-
-
-def test_build_tabbed_embed_field_names_include_index() -> None:
+def test_build_embed_description_is_code_block() -> None:
     today = date(2026, 3, 23)
     todos = [_make_todo("1", "Task A")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
-    assert "[1]" in embed.fields[0].name
+    embed = build_embed(todos, "today", today)
+    assert embed.description.startswith("```")
+    assert embed.description.strip().endswith("```")
 
 
-def test_build_tabbed_embed_overdue_shows_warning() -> None:
+def test_build_embed_description_contains_todo_text() -> None:
     today = date(2026, 3, 23)
-    todos = [_make_todo("1", "Overdue task", due_date="2026-03-20T00:00:00Z")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
-    assert "⚠️" in embed.fields[0].value
+    todos = [_make_todo("1", "smoke test")]
+    embed = build_embed(todos, "today", today)
+    assert "smoke test" in embed.description
 
 
-def test_build_tabbed_embed_not_overdue_no_warning() -> None:
+def test_build_embed_color_ok_when_no_overdue() -> None:
     today = date(2026, 3, 23)
-    todos = [_make_todo("1", "Today task", due_date="2026-03-23T00:00:00Z")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
-    assert "⚠️" not in embed.fields[0].value
+    todos = [_make_todo("1", "no due")]
+    embed = build_embed(todos, "today", today)
+    assert embed.color.value == 0x5865F2  # blurple
 
 
-def test_build_tabbed_embed_pagination_footer() -> None:
+def test_build_embed_color_amber_when_overdue() -> None:
     today = date(2026, 3, 23)
-    # 6 total todos, page 0 shows 5
-    todos = [_make_todo(str(i), f"Task {i}") for i in range(5)]
-    embed = _build_tabbed_embed(todos, "all", 0, 6, today)
-    assert "Page 1/2" in embed.footer.text
+    todos = [_make_todo("1", "overdue", due_date="2026-03-20T00:00:00Z")]
+    embed = build_embed(todos, "today", today)
+    assert embed.color.value == 0xFAA61A  # amber
 
 
-def test_build_tabbed_embed_single_page_no_page_number() -> None:
-    today = date(2026, 3, 23)
-    todos = [_make_todo("1", "Task A")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
-    assert "Page" not in embed.footer.text
-
-
-def test_build_tabbed_embed_footer_has_expiry_note() -> None:
+def test_build_embed_footer_has_expiry_note() -> None:
     today = date(2026, 3, 23)
     todos = [_make_todo("1", "Task A")]
-    embed = _build_tabbed_embed(todos, "today", 0, 1, today)
+    embed = build_embed(todos, "today", today)
     assert "15 min" in embed.footer.text
 
 
-def test_build_tabbed_embed_page_2_shows_correct_todos() -> None:
+def test_build_embed_footer_has_hint() -> None:
     today = date(2026, 3, 23)
-    todos = [_make_todo(str(i), f"Task {i}") for i in range(7)]
-    # page 1 should show todos at index 5-6 (0-based)
-    embed = _build_tabbed_embed(todos, "all", 1, 7, today)
-    assert len(embed.fields) == 2  # only 2 remaining
-    assert "[6]" in embed.fields[0].name
+    embed = build_embed([], "today", today)
+    assert "done" in embed.footer.text.lower() or "defer" in embed.footer.text.lower()
+
+
+def test_build_embed_renumbers_after_todos_list() -> None:
+    """Items appear with sequential 1-based index in embed description."""
+    today = date(2026, 3, 23)
+    todos = [_make_todo("1", "A"), _make_todo("2", "B"), _make_todo("3", "C")]
+    embed = build_embed(todos, "today", today)
+    assert "1. A" in embed.description
+    assert "2. B" in embed.description
+    assert "3. C" in embed.description
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -351,6 +438,7 @@ def _make_interaction(user_id: int = 42) -> MagicMock:
     interaction = MagicMock()
     interaction.user.id = user_id
     interaction.response.send_message = AsyncMock()
+    interaction.response.send_modal = AsyncMock()
     interaction.response.defer = AsyncMock()
     interaction.response.edit_message = AsyncMock()
     interaction.followup.send = AsyncMock()
@@ -369,6 +457,371 @@ def _make_message(content: str, channel_id: int = 100, author_id: int = 42) -> M
 
 def _make_todo_list_response(todos: list[dict]) -> MagicMock:
     return _mock_response(200, {"todos": todos, "total": len(todos)})
+
+
+def _make_select(todo_id: str = "aaa", label: str = "1. smoke test") -> MagicMock:
+    """Create a mock TodoSelect with a pre-selected value."""
+    select = MagicMock(spec=TodoSelect)
+    select.values = [todo_id]
+    opt = MagicMock()
+    opt.value = todo_id
+    opt.label = label
+    select.options = [opt]
+    return select
+
+
+# ── TodoSelect ────────────────────────────────────────────────────────────────
+
+
+def test_select_menu_options_count() -> None:
+    todos = [_make_todo("id-1", "smoke test"), _make_todo("id-2", "Review PR")]
+    select = TodoSelect(todos)
+    assert len(select.options) == 2
+
+
+def test_select_menu_option_values_are_todo_ids() -> None:
+    todos = [_make_todo("id-1", "smoke test"), _make_todo("id-2", "Review PR")]
+    select = TodoSelect(todos)
+    assert select.options[0].value == "id-1"
+    assert select.options[1].value == "id-2"
+
+
+def test_select_menu_option_labels_have_index() -> None:
+    todos = [_make_todo("id-1", "smoke test"), _make_todo("id-2", "Review PR")]
+    select = TodoSelect(todos)
+    assert "1. smoke test" in select.options[0].label
+    assert "2. Review PR" in select.options[1].label
+
+
+def test_select_menu_caps_at_25() -> None:
+    todos = [_make_todo(str(i), f"Task {i}") for i in range(30)]
+    select = TodoSelect(todos)
+    assert len(select.options) == 25
+
+
+# ── DoneButton ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_done_button_completes_todo(monkeypatch) -> None:
+    """DoneButton PATCHes status=done and edits the embed with an ephemeral confirmation."""
+    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    todo_body = _make_todo(todo_id, "smoke test")
+    http = _make_http(
+        patch_response=_mock_response(200, {**todo_body, "status": "done"}),
+        get_response=_make_todo_list_response([]),
+    )
+    select = _make_select(todo_id, "1. smoke test")
+    button = DoneButton(select, http, "today")
+    interaction = _make_interaction(user_id=42)
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await button.callback(interaction)
+
+    http.patch.assert_awaited_once()
+    patch_url = http.patch.call_args.args[0]
+    assert todo_id in patch_url
+    assert http.patch.call_args.kwargs["json"]["status"] == "done"
+    interaction.response.edit_message.assert_awaited_once()
+    call_kwargs = interaction.response.edit_message.call_args.kwargs
+    assert "embed" in call_kwargs
+    assert "view" in call_kwargs
+    interaction.followup.send.assert_awaited_once()
+    confirm_text = interaction.followup.send.call_args.args[0]
+    assert "Done" in confirm_text
+
+
+@pytest.mark.asyncio
+async def test_done_button_no_selection_sends_ephemeral(monkeypatch) -> None:
+    """DoneButton with no selection replies ephemerally and makes no API call."""
+    http = _make_http()
+    select = MagicMock(spec=TodoSelect)
+    select.values = []
+    button = DoneButton(select, http, "today")
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    await button.callback(interaction)
+
+    http.patch.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+    msg_text = interaction.response.send_message.call_args.args[0]
+    assert "Pick" in msg_text or "task" in msg_text.lower()
+
+
+@pytest.mark.asyncio
+async def test_done_button_api_error_sends_ephemeral(monkeypatch) -> None:
+    """DoneButton sends ephemeral error on API failure without editing the message."""
+    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    http = _make_http(patch_response=_mock_response(500, {"detail": "error"}))
+    select = _make_select(todo_id)
+    button = DoneButton(select, http, "today")
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    await button.callback(interaction)
+
+    interaction.response.edit_message.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+
+# ── DeferButton ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_defer_button_opens_modal(monkeypatch) -> None:
+    """DeferButton sends the DeferModal when a todo is selected."""
+    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    http = _make_http()
+    select = _make_select(todo_id)
+    button = DeferButton(select, http, "today")
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    await button.callback(interaction)
+
+    interaction.response.send_modal.assert_awaited_once()
+    modal = interaction.response.send_modal.call_args.args[0]
+    assert isinstance(modal, DeferModal)
+
+
+@pytest.mark.asyncio
+async def test_defer_button_no_selection_sends_ephemeral(monkeypatch) -> None:
+    """DeferButton with no selection replies ephemerally and doesn't open modal."""
+    http = _make_http()
+    select = MagicMock(spec=TodoSelect)
+    select.values = []
+    button = DeferButton(select, http, "today")
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    await button.callback(interaction)
+
+    interaction.response.send_modal.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+
+
+# ── DeferModal ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_defer_modal_submits(monkeypatch) -> None:
+    """DeferModal PATCHes due_date and reason, edits embed, sends confirmation."""
+    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    todo_body = _make_todo(todo_id, "Review PR")
+    http = _make_http(
+        patch_response=_mock_response(200, {**todo_body, "due_date": "2026-03-24T00:00:00Z"}),
+        get_response=_make_todo_list_response([]),
+    )
+    modal = DeferModal(todo_id, http, "today")
+    modal.new_date = MagicMock()
+    modal.new_date.value = "@tomorrow"
+    modal.reason = MagicMock()
+    modal.reason.value = "low energy"
+
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await modal.on_submit(interaction)
+
+    http.patch.assert_awaited_once()
+    patch_url = http.patch.call_args.args[0]
+    assert todo_id in patch_url
+    patch_body = http.patch.call_args.kwargs["json"]
+    assert "2026-03-24" in patch_body["due_date"]
+    assert patch_body.get("reason") == "low energy"
+    interaction.response.edit_message.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_defer_modal_bad_date_sends_ephemeral(monkeypatch) -> None:
+    """DeferModal with unparseable date sends ephemeral error and makes no API call."""
+    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
+    http = _make_http()
+    modal = DeferModal(todo_id, http, "today")
+    modal.new_date = MagicMock()
+    modal.new_date.value = "@notadate"
+    modal.reason = MagicMock()
+    modal.reason.value = ""
+
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await modal.on_submit(interaction)
+
+    http.patch.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+
+# ── AddTodoModal ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_add_modal_creates_todo(monkeypatch) -> None:
+    """AddTodoModal POSTs the task, edits embed, sends confirmation."""
+    todo_body = _make_todo("new-id", "fix DNS")
+    http = _make_http(
+        post_response=_mock_response(201, todo_body),
+        get_response=_make_todo_list_response([todo_body]),
+    )
+    modal = AddTodoModal(http, "today")
+    modal.task = MagicMock()
+    modal.task.value = "fix DNS"
+
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await modal.on_submit(interaction)
+
+    http.post.assert_awaited_once()
+    assert http.post.call_args.kwargs["json"]["description"] == "fix DNS"
+    interaction.response.edit_message.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_modal_with_date(monkeypatch) -> None:
+    """'task @friday' in AddTodoModal parses the date and strips it from description."""
+    todo_body = _make_todo("new-id", "fix DNS", due_date="2026-03-27T00:00:00Z")
+    http = _make_http(
+        post_response=_mock_response(201, todo_body),
+        get_response=_make_todo_list_response([todo_body]),
+    )
+    modal = AddTodoModal(http, "today")
+    modal.task = MagicMock()
+    modal.task.value = "fix DNS @friday"
+
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)  # Monday
+        await modal.on_submit(interaction)
+
+    call_kwargs = http.post.call_args.kwargs["json"]
+    assert call_kwargs["description"] == "fix DNS"
+    assert "2026-03-27" in call_kwargs["due_date"]
+
+
+# ── TabButton ─────────────────────────────────────────────────────────────────
+
+
+def test_tab_button_active_style() -> None:
+    """Active tab button uses ButtonStyle.primary; inactive uses secondary."""
+    http = AsyncMock(spec=httpx.AsyncClient)
+    active = TabButton("Today", "today", active=True, http=http, row=0)
+    inactive = TabButton("All", "all", active=False, http=http, row=0)
+    assert active.style == discord.ButtonStyle.primary
+    assert inactive.style == discord.ButtonStyle.secondary
+
+
+@pytest.mark.asyncio
+async def test_tab_button_week_fetches_and_edits_embed(monkeypatch) -> None:
+    """Clicking This Week tab fetches todos, edits message with new embed+view."""
+    todos = [_make_todo("1", "week task", due_date="2026-03-27T00:00:00Z")]
+    http = _make_http(get_response=_make_todo_list_response(todos))
+    button = TabButton("This Week", "week", active=False, http=http, row=2)
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await button.callback(interaction)
+
+    interaction.response.edit_message.assert_awaited_once()
+    call_kwargs = interaction.response.edit_message.call_args.kwargs
+    assert "embed" in call_kwargs
+    assert "view" in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_tab_button_switches_to_all(monkeypatch) -> None:
+    """All tab button shows all todos regardless of due date."""
+    future_todo = _make_todo("1", "next month", due_date="2026-04-30T00:00:00Z")
+    http = _make_http(get_response=_make_todo_list_response([future_todo]))
+    button = TabButton("All", "all", active=False, http=http, row=2)
+    interaction = _make_interaction()
+    monkeypatch.setattr("src.integrations.modules.todo_cog._get_settings", lambda: _make_settings())
+
+    with patch("src.integrations.modules.todo_cog.date") as mock_date:
+        mock_date.today.return_value = date(2026, 3, 23)
+        await button.callback(interaction)
+
+    interaction.response.edit_message.assert_awaited_once()
+    embed = interaction.response.edit_message.call_args.kwargs["embed"]
+    assert "next month" in embed.description
+
+
+# ── TodoView ──────────────────────────────────────────────────────────────────
+
+
+def test_todo_view_has_select_and_buttons_when_todos_exist() -> None:
+    """TodoView with todos includes select menu, Done, Defer, tabs, and Add."""
+    todos = [_make_todo("1", "Task A")]
+    http = AsyncMock(spec=httpx.AsyncClient)
+    view = TodoView(http, todos, "today", todos)
+
+    item_types = {type(item) for item in view.children}
+    assert TodoSelect in item_types
+    assert DoneButton in item_types
+    assert DeferButton in item_types
+    assert TabButton in item_types
+    assert AddButton in item_types
+
+
+def test_todo_view_empty_state_hides_select_and_action_buttons() -> None:
+    """TodoView with no todos hides select, Done, and Defer but keeps tabs and Add."""
+    http = AsyncMock(spec=httpx.AsyncClient)
+    view = TodoView(http, [], "today", [])
+
+    item_types = {type(item) for item in view.children}
+    assert TodoSelect not in item_types
+    assert DoneButton not in item_types
+    assert DeferButton not in item_types
+    assert TabButton in item_types
+    assert AddButton in item_types
+
+
+def test_todo_view_active_tab_button_is_primary() -> None:
+    """The button for the current tab is ButtonStyle.primary."""
+    http = AsyncMock(spec=httpx.AsyncClient)
+    view = TodoView(http, [], "week", [])
+
+    tab_buttons = [item for item in view.children if isinstance(item, TabButton)]
+    week_btn = next(b for b in tab_buttons if b._tab == "week")
+    other_btns = [b for b in tab_buttons if b._tab != "week"]
+
+    assert week_btn.style == discord.ButtonStyle.primary
+    assert all(b.style == discord.ButtonStyle.secondary for b in other_btns)
+
+
+def test_todo_view_renumber_after_done() -> None:
+    """After completing item 2 of 4, remaining items are numbered 1, 2, 3."""
+    todos = [
+        _make_todo("1", "A"),
+        _make_todo("3", "C"),
+        _make_todo("4", "D"),
+    ]  # item 2 ("B") already removed
+    http = AsyncMock(spec=httpx.AsyncClient)
+    view = TodoView(http, todos, "today", todos)
+
+    select = view.todo_select
+    assert select is not None
+    labels = [opt.label for opt in select.options]
+    assert any("1. A" in l for l in labels)
+    assert any("2. C" in l for l in labels)
+    assert any("3. D" in l for l in labels)
 
 
 # ── TodoGroup.add_todo ────────────────────────────────────────────────────────
@@ -494,55 +947,6 @@ async def test_todo_done_unauthorized(monkeypatch) -> None:
     interaction.response.send_message.assert_awaited_once_with("Not authorised.", ephemeral=True)
 
 
-# ── DoneButton ────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_done_button_calls_patch_and_edits_message(monkeypatch) -> None:
-    """DoneButton.callback PATCHes the API and edits the original message with fresh embed."""
-    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
-    todo_body = _make_todo(todo_id, "done", status="done")
-    # patch returns done todo; get returns empty list (todo is now gone)
-    http = _make_http(
-        patch_response=_mock_response(200, todo_body),
-        get_response=_make_todo_list_response([]),
-    )
-    button = DoneButton(1, todo_id, http, "today", date(2026, 3, 23), row=1)
-    interaction = _make_interaction(user_id=42)
-    monkeypatch.setattr(
-        "src.integrations.modules.todo_cog._get_settings",
-        lambda: _make_settings(),
-    )
-
-    await button.callback(interaction)
-
-    http.patch.assert_awaited_once()
-    interaction.response.edit_message.assert_awaited_once()
-    # embed and view should be passed (not content only)
-    call_kwargs = interaction.response.edit_message.call_args.kwargs
-    assert "embed" in call_kwargs
-    assert "view" in call_kwargs
-
-
-@pytest.mark.asyncio
-async def test_done_button_api_error_sends_ephemeral(monkeypatch) -> None:
-    """DoneButton sends ephemeral error message on API failure."""
-    todo_id = "aaaaaaaa-0000-0000-0000-000000000001"
-    http = _make_http(patch_response=_mock_response(500, {"detail": "error"}))
-    button = DoneButton(1, todo_id, http, "today", date(2026, 3, 23), row=1)
-    interaction = _make_interaction(user_id=42)
-    monkeypatch.setattr(
-        "src.integrations.modules.todo_cog._get_settings",
-        lambda: _make_settings(),
-    )
-
-    await button.callback(interaction)
-
-    interaction.response.edit_message.assert_not_awaited()
-    interaction.response.send_message.assert_awaited_once()
-    assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
-
-
 # ── on_message prefix listener ────────────────────────────────────────────────
 
 
@@ -561,10 +965,10 @@ async def test_prefix_add(monkeypatch) -> None:
     http.post.assert_awaited_once()
     call_kwargs = http.post.call_args.kwargs
     assert call_kwargs["json"]["description"] == "fix DNS"
-    message.add_reaction.assert_awaited_once_with("✅")
+    message.add_reaction.assert_awaited_once_with("\u2705")
     message.reply.assert_awaited_once()
     reply_text = message.reply.call_args.args[0]
-    assert "✓ Added" in reply_text
+    assert "Added" in reply_text
 
 
 @pytest.mark.asyncio
@@ -604,7 +1008,7 @@ async def test_prefix_done_single(monkeypatch) -> None:
     http.patch.assert_awaited_once()
     patch_url = http.patch.call_args.args[0]
     assert "id-1" in patch_url
-    message.add_reaction.assert_awaited_once_with("✅")
+    message.add_reaction.assert_awaited_once_with("\u2705")
     reply_text = message.reply.call_args.args[0]
     assert "First task" in reply_text
 
@@ -653,7 +1057,7 @@ async def test_prefix_done_all(monkeypatch) -> None:
         await _handle_todo_message(message, http, settings)
 
     assert http.patch.await_count == 2
-    message.add_reaction.assert_awaited_once_with("✅")
+    message.add_reaction.assert_awaited_once_with("\u2705")
 
 
 @pytest.mark.asyncio
@@ -678,7 +1082,7 @@ async def test_prefix_defer(monkeypatch) -> None:
     patch_body = http.patch.call_args.kwargs["json"]
     assert "2026-03-24" in patch_body["due_date"]
     assert patch_body.get("reason") == "low energy"
-    message.add_reaction.assert_awaited_once_with("✅")
+    message.add_reaction.assert_awaited_once_with("\u2705")
     reply_text = message.reply.call_args.args[0]
     assert "Task 2" in reply_text
     assert "low energy" in reply_text
