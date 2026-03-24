@@ -83,13 +83,20 @@ docker compose --profile api --profile discord down
 
 When a new phase is deployed, check if new env vars are needed. Only `DISCORD_PULSE_USER_ID` has no default and must be set manually.
 
+### Todo UX overhaul — add to .env if missing
+
+```bash
+# Optional — set to your #todos channel ID to enable prefix listener
+# Leave at 0 (or omit) to use slash commands only
+DISCORD_TODO_CHANNEL_ID=0
+```
+
 ### Phase D (Morning Pulse) — add to .env if missing
 
 ```bash
 # Required
 DISCORD_PULSE_USER_ID=513082913521401856
 
-# Optional — these have defaults but worth setting explicitly
 MODULE_PULSE_ENABLED=true
 MODULE_TODO_ENABLED=true
 MODULE_RAG_CHAT_ENABLED=true
