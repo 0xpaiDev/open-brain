@@ -59,8 +59,10 @@ class OpenBrainBot(discord.Client):
 
     async def setup_hook(self) -> None:
         """Load module cogs and sync slash commands after login."""
+        from src.core.database import init_db
         from src.integrations.modules.core_cog import register_core
 
+        await init_db()
         register_core(self.tree, self._http)
 
         settings = _get_settings()
@@ -133,7 +135,7 @@ class OpenBrainBot(discord.Client):
                 raw_text=raw_text,
                 author_id=str(message.author.id),
                 channel_id=str(message.channel.id),
-                api_key=settings.api_key,
+                api_key=settings.api_key.get_secret_value(),
                 api_base_url=settings.open_brain_api_url,
             )
             log.info("discord_memory_ingested", raw_id=raw_id, status=ingest_status)

@@ -40,7 +40,7 @@ def register_core(tree: app_commands.CommandTree, http: httpx.AsyncClient) -> No
                 http,
                 query,
                 limit=5,
-                api_key=settings.api_key,
+                api_key=settings.api_key.get_secret_value(),
                 api_base_url=settings.open_brain_api_url,
             )
         except httpx.HTTPStatusError as exc:
@@ -93,7 +93,7 @@ def register_core(tree: app_commands.CommandTree, http: httpx.AsyncClient) -> No
             result = await trigger_digest(
                 http,
                 days=days,
-                api_key=settings.api_key,
+                api_key=settings.api_key.get_secret_value(),
                 api_base_url=settings.open_brain_api_url,
             )
         except httpx.HTTPStatusError as exc:

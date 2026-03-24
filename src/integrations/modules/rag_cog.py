@@ -20,7 +20,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_db
+from src.core.database import get_db_context as get_db
 from src.core.models import RagConversation
 from src.integrations.kernel import _get_settings, ingest_memory, search_memories
 
@@ -75,13 +75,15 @@ def _build_system_prompt(context: str) -> str:
             "You are a knowledgeable assistant with access to the user's personal memory system. "
             "Answer questions using the provided memory context when relevant. "
             "Be concise and accurate. If the context doesn't contain relevant information, "
-            "say so honestly — do not invent or extrapolate.\n\n"
+            "say so honestly — do not invent or extrapolate. "
+            "Always respond in English, regardless of the language of the memory context.\n\n"
             f"Memory context:\n<context>\n{context}\n</context>"
         )
     return (
         "You are a knowledgeable assistant. "
         "No relevant memories were found for this query. "
-        "Answer honestly based on what you know, or tell the user you don't have that information."
+        "Answer honestly based on what you know, or tell the user you don't have that information. "
+        "Always respond in English."
     )
 
 
@@ -261,7 +263,7 @@ async def _handle_rag_message(
                     http,
                     query=query,
                     limit=5,
-                    api_key=settings.api_key,
+                    api_key=settings.api_key.get_secret_value(),
                     api_base_url=settings.open_brain_api_url,
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
@@ -330,7 +332,7 @@ async def _handle_rag_message(
                     raw_text=qa_text,
                     author_id=user_id,
                     channel_id=channel_id,
-                    api_key=settings.api_key,
+                    api_key=settings.api_key.get_secret_value(),
                     api_base_url=settings.open_brain_api_url,
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
