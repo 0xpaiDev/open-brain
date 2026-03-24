@@ -66,6 +66,18 @@ def _get_queue_rate() -> str:
     return "30/minute"
 
 
+def _get_todos_rate() -> str:
+    return "60/minute"
+
+
+def _get_tasks_rate() -> str:
+    return "60/minute"
+
+
+def _get_pulse_rate() -> str:
+    return "60/minute"
+
+
 # Module-level limiter — shared across all routes that import it.
 # key_func=get_remote_address uses the client IP (or X-Forwarded-For when
 # --proxy-headers is active, which we enable in docker-compose.yml).
@@ -78,3 +90,6 @@ dead_letters_limit = _get_dead_letters_rate
 entities_limit = _get_entities_rate
 decisions_limit = _get_decisions_rate
 queue_limit = _get_queue_rate
+todos_limit = _get_todos_rate
+tasks_limit = _get_tasks_rate
+pulse_limit = _get_pulse_rate

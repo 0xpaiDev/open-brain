@@ -11,6 +11,7 @@ Conversation state is DB-persisted in rag_conversations (survives bot restarts).
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -340,15 +341,15 @@ async def _handle_rag_message(
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 log.warning("rag_ingest_qa_failed", error=str(exc))
 
-    except Exception as exc:
+    except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError, ValueError, KeyError) as exc:
         log.exception("rag_pipeline_error", error=str(exc))
         try:
             await message.reply(
                 "Something went wrong processing your query. Please try again.",
                 mention_author=False,
             )
-        except Exception:
-            pass
+        except (discord.HTTPException, httpx.RequestError):
+            log.debug("rag_error_reply_failed")
 
 
 # ── Registration ───────────────────────────────────────────────────────────────

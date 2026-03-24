@@ -99,7 +99,7 @@ async def test_parse_pulse_reply_returns_none_on_llm_error():
     from src.jobs.pulse import parse_pulse_reply
 
     llm = AsyncMock()
-    llm.complete = AsyncMock(side_effect=Exception("API down"))
+    llm.complete = AsyncMock(side_effect=ValueError("API down"))
     result = await parse_pulse_reply("slept ok", llm)
 
     assert result is None

@@ -92,6 +92,8 @@ class AnthropicClient:
                 ),
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
+            if not response.content:
+                raise ExtractionFailed("Anthropic returned empty content array")
             text = response.content[0].text
             logger.debug(
                 "anthropic_complete_success",
@@ -144,6 +146,8 @@ class AnthropicClient:
                 ),
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
+            if not response.content:
+                raise ExtractionFailed("Anthropic returned empty content array")
             text = response.content[0].text
             logger.debug(
                 "anthropic_complete_with_history_success",
@@ -221,6 +225,8 @@ class VoyageEmbeddingClient:
                 ),
                 timeout=_EMBED_TIMEOUT_SECONDS,
             )
+            if not result.embeddings:
+                raise EmbeddingFailed("Voyage AI returned empty embeddings array")
             embedding = result.embeddings[0]
             logger.debug(
                 "voyage_embed_success",

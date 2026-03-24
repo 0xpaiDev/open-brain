@@ -9,11 +9,12 @@ import uuid as _uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import limiter, tasks_limit
 from src.core.database import get_db
 from src.core.models import MemoryItem, Task
 
@@ -29,8 +30,8 @@ _VALID_STATUSES = {"open", "done", "cancelled"}
 
 class TaskCreate(BaseModel):
     memory_id: str
-    description: str
-    owner: str | None = None
+    description: str = Field(..., min_length=1, max_length=2000)
+    owner: str | None = Field(None, max_length=200)
     due_date: datetime | None = None
     status: str = "open"
 
@@ -71,14 +72,6 @@ class TaskListResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _parse_uuid(value: str, field: str = "id") -> _uuid.UUID:
-    """Parse UUID string, raise 422 on failure."""
-    try:
-        return _uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{field} is not a valid UUID") from None
-
-
 def _task_to_response(task: Task) -> TaskResponse:
     return TaskResponse(
         id=str(task.id),
@@ -95,7 +88,9 @@ def _task_to_response(task: Task) -> TaskResponse:
 
 
 @router.get("/v1/tasks", response_model=TaskListResponse)
+@limiter.limit(tasks_limit)
 async def list_tasks(
+    request: Request,
     status: str | None = Query(default=None),
     owner: str | None = Query(default=None),
     due_before: datetime | None = Query(default=None),
@@ -149,7 +144,9 @@ async def list_tasks(
 
 
 @router.post("/v1/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(tasks_limit)
 async def create_task(
+    request: Request,
     body: TaskCreate,
     session: AsyncSession = Depends(get_db),
 ) -> TaskResponse:
@@ -165,7 +162,10 @@ async def create_task(
         404: If memory_id does not match any MemoryItem.
         422: If memory_id is not a valid UUID or status is invalid.
     """
-    memory_uuid = _parse_uuid(body.memory_id, "memory_id")
+    try:
+        memory_uuid = _uuid.UUID(body.memory_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="memory_id is not a valid UUID") from None
 
     memory_item = await session.get(MemoryItem, memory_uuid)
     if memory_item is None:
@@ -190,8 +190,10 @@ async def create_task(
 
 
 @router.patch("/v1/tasks/{task_id}", response_model=TaskResponse)
+@limiter.limit(tasks_limit)
 async def update_task_status(
-    task_id: str,
+    request: Request,
+    task_id: _uuid.UUID,
     body: TaskStatusUpdate,
     session: AsyncSession = Depends(get_db),
 ) -> TaskResponse:
@@ -208,9 +210,7 @@ async def update_task_status(
         404: If task_id does not match any Task.
         422: If task_id is not a valid UUID or status is invalid.
     """
-    task_uuid = _parse_uuid(task_id, "task_id")
-
-    task = await session.get(Task, task_uuid)
+    task = await session.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -218,5 +218,5 @@ async def update_task_status(
     await session.flush()
     await session.commit()
 
-    logger.info("update_task_status", task_id=task_id, status=body.status)
+    logger.info("update_task_status", task_id=str(task_id), status=body.status)
     return _task_to_response(task)

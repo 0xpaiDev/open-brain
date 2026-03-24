@@ -12,6 +12,7 @@ Flow:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -134,8 +135,8 @@ class PulseCog:
             return None
         try:
             return await parse_pulse_reply(raw_reply, llm)
-        except Exception:
-            logger.exception("pulse_cog_parse_failed")
+        except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError, ValueError) as exc:
+            logger.exception("pulse_cog_parse_failed", error=str(exc))
             return None
 
     async def handle_reply(self, message: discord.Message) -> bool:
@@ -219,8 +220,8 @@ def _build_llm_client(settings: Any) -> Any | None:
         if not secret:
             return None
         return AnthropicClient(api_key=secret)
-    except Exception:
-        logger.exception("pulse_cog_llm_client_build_failed")
+    except (ImportError, ValueError, httpx.RequestError) as exc:
+        logger.exception("pulse_cog_llm_client_build_failed", error=str(exc))
         return None
 
 

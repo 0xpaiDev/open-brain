@@ -583,6 +583,32 @@ async def test_merge_entities_target_not_found_returns_404(client, auth_headers,
 
 
 @pytest.mark.asyncio
+async def test_merge_entity_with_zero_aliases(client, auth_headers, entity_b, entity_a):
+    """Merge succeeds when source has zero aliases (empty alias set should not crash)."""
+    # entity_b has no aliases by default
+    resp = await client.post(
+        "/v1/entities/merge",
+        json={"source_entity_id": str(entity_b.id), "target_entity_id": str(entity_a.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["aliases_moved"] == 0
+
+
+@pytest.mark.asyncio
+async def test_merge_entity_with_zero_memory_links(client, auth_headers, entity_b, entity_a):
+    """Merge succeeds when source has zero memory links (no MemoryEntityLink rows)."""
+    # entity_b has no memory links by default
+    resp = await client.post(
+        "/v1/entities/merge",
+        json={"source_entity_id": str(entity_b.id), "target_entity_id": str(entity_a.id)},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["memory_links_moved"] == 0
+
+
+@pytest.mark.asyncio
 async def test_merge_entities_requires_auth(client, entity_a, entity_b):
     resp = await client.post(
         "/v1/entities/merge",

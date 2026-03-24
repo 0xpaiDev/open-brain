@@ -16,12 +16,13 @@ from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import limiter, pulse_limit
 from src.core.database import get_db
 from src.core.models import DailyPulse
 
@@ -132,7 +133,9 @@ def _today_midnight_utc() -> datetime:
 
 
 @router.post("/v1/pulse", response_model=PulseResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(pulse_limit)
 async def create_pulse(
+    request: Request,
     body: PulseCreate,
     session: AsyncSession = Depends(get_db),
 ) -> PulseResponse:
@@ -172,7 +175,9 @@ async def create_pulse(
 
 
 @router.get("/v1/pulse/today", response_model=PulseResponse)
+@limiter.limit(pulse_limit)
 async def get_today_pulse(
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> PulseResponse:
     """Return today's pulse record.
@@ -203,7 +208,9 @@ async def get_today_pulse(
 
 
 @router.patch("/v1/pulse/today", response_model=PulseResponse)
+@limiter.limit(pulse_limit)
 async def update_today_pulse(
+    request: Request,
     body: PulseUpdate,
     session: AsyncSession = Depends(get_db),
 ) -> PulseResponse:
@@ -256,7 +263,9 @@ async def update_today_pulse(
 
 
 @router.get("/v1/pulse", response_model=PulseListResponse)
+@limiter.limit(pulse_limit)
 async def list_pulses(
+    request: Request,
     limit: int = Query(default=30, ge=1, le=365),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
@@ -287,7 +296,9 @@ async def list_pulses(
 
 
 @router.get("/v1/pulse/{pulse_date}", response_model=PulseResponse)
+@limiter.limit(pulse_limit)
 async def get_pulse_by_date(
+    request: Request,
     pulse_date: str,
     session: AsyncSession = Depends(get_db),
 ) -> PulseResponse:

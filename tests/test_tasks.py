@@ -345,3 +345,35 @@ async def test_update_task_invalid_status_value_returns_422(client, auth_headers
 async def test_update_task_requires_auth(client, open_task):
     resp = await client.patch(f"/v1/tasks/{open_task.id}", json={"status": "done"})
     assert resp.status_code == 401
+
+
+# ── Input Validation (Security) ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_task_fails_description_too_long(client, auth_headers, memory_item):
+    """POST /v1/tasks rejects description exceeding 2000 chars with 422 (N1)."""
+    resp = await client.post(
+        "/v1/tasks",
+        json={
+            "memory_id": str(memory_item.id),
+            "description": "x" * 2001,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_task_fails_owner_too_long(client, auth_headers, memory_item):
+    """POST /v1/tasks rejects owner exceeding 200 chars with 422 (N1)."""
+    resp = await client.post(
+        "/v1/tasks",
+        json={
+            "memory_id": str(memory_item.id),
+            "description": "valid task",
+            "owner": "o" * 201,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422

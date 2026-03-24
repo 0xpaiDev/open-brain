@@ -222,8 +222,8 @@ async def _generate_ai_question(llm: Any) -> str:
             max_tokens=50,
         )
         return question.strip().rstrip("?") + "?" if question.strip() and not question.strip().endswith("?") else question.strip()
-    except Exception:
-        logger.exception("pulse_question_generation_failed")
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+        logger.exception("pulse_question_generation_failed", error=str(exc))
         return default_question
 
 
@@ -257,8 +257,8 @@ async def _fetch_open_todos(http: httpx.AsyncClient, settings: Any) -> list[dict
         )
         if resp.status_code == 200:
             return resp.json().get("todos", [])
-    except Exception:
-        logger.exception("pulse_todos_fetch_failed")
+    except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError) as exc:
+        logger.exception("pulse_todos_fetch_failed", error=str(exc))
     return []
 
 
@@ -301,8 +301,8 @@ async def _create_pulse_record(
         )
         resp.raise_for_status()
         logger.info("pulse_record_created", pulse_id=resp.json().get("id"))
-    except Exception:
-        logger.exception("pulse_record_create_failed")
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        logger.exception("pulse_record_create_failed", error=str(exc))
 
 
 # ── Main job: send_morning_pulse ───────────────────────────────────────────────
@@ -338,8 +338,8 @@ async def send_morning_pulse(
 
     try:
         cal_state = await fetch_today_events(settings)
-    except Exception:
-        logger.exception("pulse_calendar_fetch_failed")
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, FileNotFoundError) as exc:
+        logger.exception("pulse_calendar_fetch_failed", error=str(exc))
         cal_state = _empty_calendar_state()
 
     open_todos = await _fetch_open_todos(http, settings)
@@ -424,8 +424,8 @@ async def parse_pulse_reply(raw_reply: str, llm: Any) -> dict[str, Any] | None:
             user_content=user_content,
             max_tokens=256,
         )
-    except Exception:
-        logger.exception("pulse_parse_llm_failed")
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+        logger.exception("pulse_parse_llm_failed", error=str(exc))
         return None
 
     parsed = _extract_json_from_llm_output(raw_output)
@@ -462,8 +462,8 @@ async def _main() -> None:
         key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
         if key:
             llm = AnthropicClient(api_key=key, model=settings.anthropic_model)
-    except Exception:
-        logger.exception("pulse_llm_init_failed")
+    except (ImportError, ValueError, httpx.RequestError) as exc:
+        logger.exception("pulse_llm_init_failed", error=str(exc))
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         await send_morning_pulse(http, llm)

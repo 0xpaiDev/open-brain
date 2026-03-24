@@ -11,11 +11,12 @@ import uuid as _uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import asc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.rate_limit import limiter, todos_limit
 from src.api.services.todo_service import create_todo, update_todo
 from src.core.database import get_db
 from src.core.models import TodoHistory, TodoItem
@@ -32,7 +33,7 @@ _VALID_PRIORITIES = {"high", "normal", "low"}
 
 
 class TodoCreate(BaseModel):
-    description: str
+    description: str = Field(..., min_length=1, max_length=500)
     priority: str = "normal"
     due_date: datetime | None = None
 
@@ -45,11 +46,11 @@ class TodoCreate(BaseModel):
 
 
 class TodoUpdate(BaseModel):
-    description: str | None = None
+    description: str | None = Field(None, max_length=500)
     priority: str | None = None
     due_date: datetime | None = None
     status: str | None = None
-    reason: str | None = None  # stored in history only
+    reason: str | None = Field(None, max_length=500)  # stored in history only
 
     @field_validator("priority")
     @classmethod
@@ -96,14 +97,6 @@ class TodoHistoryResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _parse_uuid(value: str, field: str = "id") -> _uuid.UUID:
-    """Parse UUID string; raise 422 on failure."""
-    try:
-        return _uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{field} is not a valid UUID") from None
-
-
 def _todo_to_response(todo: TodoItem) -> TodoResponse:
     return TodoResponse(
         id=str(todo.id),
@@ -134,7 +127,9 @@ def _history_to_response(h: TodoHistory) -> TodoHistoryResponse:
 
 
 @router.post("/v1/todos", response_model=TodoResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(todos_limit)
 async def create_todo_route(
+    request: Request,
     body: TodoCreate,
     session: AsyncSession = Depends(get_db),
 ) -> TodoResponse:
@@ -163,7 +158,9 @@ async def create_todo_route(
 
 
 @router.get("/v1/todos", response_model=TodoListResponse)
+@limiter.limit(todos_limit)
 async def list_todos(
+    request: Request,
     status: str | None = Query(default=None),
     priority: str | None = Query(default=None),
     due_before: datetime | None = Query(default=None),
@@ -213,8 +210,10 @@ async def list_todos(
 
 
 @router.get("/v1/todos/{todo_id}", response_model=TodoResponse)
+@limiter.limit(todos_limit)
 async def get_todo(
-    todo_id: str,
+    request: Request,
+    todo_id: _uuid.UUID,
     session: AsyncSession = Depends(get_db),
 ) -> TodoResponse:
     """Fetch a single todo by ID.
@@ -226,8 +225,7 @@ async def get_todo(
         404: If no todo with that ID exists.
         422: If todo_id is not a valid UUID.
     """
-    todo_uuid = _parse_uuid(todo_id, "todo_id")
-    todo = await session.get(TodoItem, todo_uuid)
+    todo = await session.get(TodoItem, todo_id)
     if todo is None:
         raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
     return _todo_to_response(todo)
@@ -237,8 +235,10 @@ async def get_todo(
 
 
 @router.patch("/v1/todos/{todo_id}", response_model=TodoResponse)
+@limiter.limit(todos_limit)
 async def update_todo_route(
-    todo_id: str,
+    request: Request,
+    todo_id: _uuid.UUID,
     body: TodoUpdate,
     session: AsyncSession = Depends(get_db),
 ) -> TodoResponse:
@@ -253,8 +253,7 @@ async def update_todo_route(
         404: If no todo with that ID exists.
         422: If todo_id is invalid UUID or field values are invalid.
     """
-    todo_uuid = _parse_uuid(todo_id, "todo_id")
-    todo = await session.get(TodoItem, todo_uuid)
+    todo = await session.get(TodoItem, todo_id)
     if todo is None:
         raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
 
@@ -267,7 +266,7 @@ async def update_todo_route(
         status=body.status,
         reason=body.reason,
     )
-    logger.info("update_todo_route", todo_id=todo_id)
+    logger.info("update_todo_route", todo_id=str(todo_id))
     return _todo_to_response(todo)
 
 
@@ -275,8 +274,10 @@ async def update_todo_route(
 
 
 @router.get("/v1/todos/{todo_id}/history", response_model=list[TodoHistoryResponse])
+@limiter.limit(todos_limit)
 async def get_todo_history(
-    todo_id: str,
+    request: Request,
+    todo_id: _uuid.UUID,
     session: AsyncSession = Depends(get_db),
 ) -> list[TodoHistoryResponse]:
     """Return the full state-change history for a todo, oldest first.
@@ -288,14 +289,13 @@ async def get_todo_history(
         404: If no todo with that ID exists.
         422: If todo_id is not a valid UUID.
     """
-    todo_uuid = _parse_uuid(todo_id, "todo_id")
-    todo = await session.get(TodoItem, todo_uuid)
+    todo = await session.get(TodoItem, todo_id)
     if todo is None:
         raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
 
     stmt = (
         select(TodoHistory)
-        .where(TodoHistory.todo_id == todo_uuid)
+        .where(TodoHistory.todo_id == todo_id)
         .order_by(asc(TodoHistory.created_at))
     )
     result = await session.execute(stmt)

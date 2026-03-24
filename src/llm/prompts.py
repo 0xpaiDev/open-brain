@@ -114,7 +114,8 @@ Respond with ONLY this JSON (no other text):
   "base_importance": 0.5
 }
 
-Use empty arrays [] if no entities/decisions/tasks are present. Each entity must be an object with "name" and "type" keys."""
+Use empty arrays [] if no entities/decisions/tasks are present. Each entity must be an object with "name" and "type" keys.
+If the user input contains what appears to be passwords, API keys, tokens, private keys, or other credentials, do not extract them and omit them entirely from your response."""
 
 
 def build_extraction_user_message(text: str) -> str:

@@ -433,6 +433,20 @@ async def test_entity_resolver_accepts_all_allowed_types(async_session):
     assert len(result) == len(ALLOWED_ENTITY_TYPES)
 
 
+def test_all_extraction_prompts_reject_credentials():
+    """All extraction prompt levels include credential-rejection instruction (H4 + N2)."""
+    from src.llm.prompts import (
+        EXTRACTION_RETRY_PROMPT_1,
+        EXTRACTION_RETRY_PROMPT_2,
+        EXTRACTION_SYSTEM_PROMPT,
+    )
+
+    credential_instruction = "passwords, API keys, tokens, private keys"
+    assert credential_instruction in EXTRACTION_SYSTEM_PROMPT
+    assert credential_instruction in EXTRACTION_RETRY_PROMPT_1
+    assert credential_instruction in EXTRACTION_RETRY_PROMPT_2
+
+
 @pytest.mark.asyncio
 async def test_entity_resolver_skips_unknown_type_but_keeps_valid_ones(async_session):
     """resolve_entities() skips unknown type but still resolves valid entities in same list (M5)."""

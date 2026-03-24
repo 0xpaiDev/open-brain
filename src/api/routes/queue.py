@@ -64,14 +64,6 @@ class QueueStatusResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _parse_uuid(value: str, field: str = "id") -> _uuid.UUID:
-    """Parse UUID string, raise 422 on failure."""
-    try:
-        return _uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{field} is not a valid UUID") from None
-
-
 def _failed_to_response(f: FailedRefinement) -> FailedRefinementResponse:
     return FailedRefinementResponse(
         id=str(f.id),
@@ -193,7 +185,7 @@ async def list_dead_letters(
 @limiter.limit(dead_letters_limit)
 async def retry_dead_letter(
     request: Request,
-    failed_id: str,
+    failed_id: _uuid.UUID,
     session: AsyncSession = Depends(get_db),
 ) -> RetryResponse:
     """Re-enqueue a dead-letter job for processing.
@@ -212,9 +204,7 @@ async def retry_dead_letter(
         409: If retry_count has reached dead_letter_retry_limit.
         422: If failed_id is not a valid UUID.
     """
-    failed_uuid = _parse_uuid(failed_id, "failed_id")
-
-    failed = await session.get(FailedRefinement, failed_uuid)
+    failed = await session.get(FailedRefinement, failed_id)
     if failed is None:
         raise HTTPException(status_code=404, detail=f"FailedRefinement {failed_id} not found")
 
@@ -222,7 +212,7 @@ async def retry_dead_letter(
     if failed.retry_count >= _settings.dead_letter_retry_limit:
         raise HTTPException(
             status_code=409,
-            detail=f"Retry limit of {_settings.dead_letter_retry_limit} reached for dead-letter {failed_id}",
+            detail=f"Retry limit of {_settings.dead_letter_retry_limit} reached for dead-letter {str(failed_id)}",
         )
 
     # Fetch the associated queue row (no ORM relationship — must fetch separately)
@@ -243,7 +233,7 @@ async def retry_dead_letter(
 
     logger.info(
         "dead_letter_retry_enqueued",
-        failed_id=failed_id,
+        failed_id=str(failed_id),
         retry_count=failed.retry_count,
         queue_id=str(failed.queue_id),
     )
@@ -272,8 +262,10 @@ class SynthesisRunResponse(BaseModel):
 
 
 @router.post("/v1/synthesis/run", response_model=SynthesisRunResponse)
+@limiter.limit(queue_limit)
 async def run_synthesis(
-    request: SynthesisRunRequest = Body(default=SynthesisRunRequest()),
+    request: Request,
+    body: SynthesisRunRequest = Body(default=SynthesisRunRequest()),
     session: AsyncSession = Depends(get_db),
 ) -> SynthesisRunResponse:
     """Trigger a weekly synthesis job for recent memories.
@@ -309,7 +301,7 @@ async def run_synthesis(
     )
 
     try:
-        result: dict[str, Any] = await run_synthesis_job(session, client, days=request.days)
+        result: dict[str, Any] = await run_synthesis_job(session, client, days=body.days)
     except Exception as exc:
         logger.exception("synthesis_run_failed", error=str(exc))
         raise HTTPException(

@@ -168,7 +168,9 @@ async def ingest_memory(
 
 
 @router.get("/v1/memory/{memory_id}", response_model=MemoryItemResponse)
+@limiter.limit(memory_limit)
 async def get_memory_item(
+    request: Request,
     memory_id: str,
     session: AsyncSession = Depends(get_db),
 ) -> MemoryItemResponse:

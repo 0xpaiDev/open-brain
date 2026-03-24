@@ -67,7 +67,7 @@ def register_core(tree: app_commands.CommandTree, http: httpx.AsyncClient) -> No
                     inline=False,
                 )
             await interaction.followup.send(embed=embed)
-        except Exception as exc:
+        except (discord.HTTPException, httpx.HTTPStatusError, ValueError, KeyError) as exc:
             logger.error("discord_search_reply_error", error=str(exc))
             await interaction.followup.send(
                 "Search succeeded but failed to format results.", ephemeral=True
@@ -125,7 +125,7 @@ def register_core(tree: app_commands.CommandTree, http: httpx.AsyncClient) -> No
             )
             embed.set_footer(text=result.get("message", "Synthesis complete"))
             await interaction.followup.send(embed=embed)
-        except Exception as exc:
+        except (discord.HTTPException, httpx.HTTPStatusError, ValueError, KeyError) as exc:
             logger.error("discord_digest_reply_error", error=str(exc))
             await interaction.followup.send(
                 "Digest succeeded but failed to format response.", ephemeral=True

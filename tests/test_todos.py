@@ -334,3 +334,47 @@ async def test_create_todo_no_auth(test_client) -> None:
     """POST /v1/todos without auth header returns 401."""
     resp = await test_client.post("/v1/todos", json={"description": "test"})
     assert resp.status_code == 401
+
+
+# ── Input Validation (Security) ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_todo_fails_description_too_long(test_client, api_key_headers) -> None:
+    """POST /v1/todos rejects description exceeding 500 chars with 422 (N1)."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "x" * 501},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_todo_fails_empty_description(test_client, api_key_headers) -> None:
+    """POST /v1/todos rejects empty description with 422 (N1)."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": ""},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_todo_fails_reason_too_long(test_client, api_key_headers) -> None:
+    """PATCH /v1/todos/{id} rejects reason exceeding 500 chars with 422 (N1)."""
+    # Create a todo first
+    create_resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "test todo"},
+        headers=api_key_headers,
+    )
+    todo_id = create_resp.json()["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"reason": "r" * 501},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422

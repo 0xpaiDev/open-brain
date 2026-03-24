@@ -212,7 +212,7 @@ async def extract(
                 "extraction_schema_validation_failed",
                 attempt=attempt,
                 error=str(e),
-                json_data=json_data,
+                json_keys=list(json_data.keys()),
             )
             raise ExtractionFailed(f"Claude response does not match schema: {e}") from e
 

@@ -1,6 +1,6 @@
 # Claude Code Collaboration Guidelines
 
-**Project**: Open Brain | **Owner**: Shu | **Last Updated**: 2026-03-15
+**Project**: Open Brain | **Owner**: Shu | **Last Updated**: 2026-03-24
 
 ---
 
@@ -450,6 +450,23 @@ return todo  # now safe to access all columns
 
 **Why**: After `session.flush()`, SQLAlchemy marks columns with `server_default` or `onupdate` as expired because their values were generated server-side. Accessing them (e.g. in `_todo_to_response(todo)`) triggers lazy loading. In an async session, lazy loading is unsupported and raises `MissingGreenlet`. This manifests as a hard-to-debug failure on the SECOND request in a test that shares a session — the first request works because the connection is fresh, but the second fails when the connection state changes after a commit. Applied in: `src/api/services/todo_service.py`.
 
+### Optional Google Dependencies in `calendar.py`
+
+❌ **Don't**: Import `google.auth` / `googleapiclient` at module level without guard
+✅ **Do**: Wrap in `try/except ImportError` and set a `_GOOGLE_AVAILABLE` flag
+
+```python
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    _GOOGLE_AVAILABLE = True
+except ImportError:
+    _GOOGLE_AVAILABLE = False
+```
+
+**Why**: Google Calendar deps are optional — the pulse job runs without them (falls back to `_empty_calendar_state()`). If the imports are unconditional, deploying without `google-api-python-client` installed crashes the entire module. The sync `GoogleCalendarClient` class is wrapped in `asyncio.to_thread()` at the public API boundary (`fetch_today_events()`), so the event loop is never blocked.
+
 ---
 
 ## Living Document Rule
@@ -473,6 +490,16 @@ Add a new subsection under Common Pitfalls, or edit existing sections. This file
 4. **Context**: Keep topics concise — goal is a "lookup list" for independent study
 
 This maintains a personal knowledge graph of what you've learned and what still needs deeper study.
+
+---
+
+## Deferred
+
+Items intentionally deferred — revisit when thresholds are reached.
+
+- **L3** — Hardcoded LIMIT 100 in search CTEs (`src/retrieval/search.py:61, 68, 125, 135`). Revisit when corpus exceeds 10k memories.
+- **L4** — `merge_entities()` is 162 lines (`src/api/routes/entities.py:150–311`). Revisit if function exceeds 200 lines.
+- **S1** — Narrow `--forwarded-allow-ips=172.0.0.0/8` to exact Docker subnet after Caddy reverse proxy is deployed (`docker network inspect openbrain`).
 
 ---
 

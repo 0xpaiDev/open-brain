@@ -80,14 +80,6 @@ class MergeResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _parse_uuid(value: str, field: str = "id") -> _uuid.UUID:
-    """Parse UUID string, raise 422 on failure."""
-    try:
-        return _uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{field} is not a valid UUID") from None
-
-
 def _entity_to_response(entity: Entity) -> EntityResponse:
     return EntityResponse(
         id=str(entity.id),
@@ -170,8 +162,14 @@ async def merge_entities(
         404: Either entity not found.
         401: Missing or invalid X-API-Key (handled by middleware).
     """
-    source_uuid = _parse_uuid(body.source_entity_id, "source_entity_id")
-    target_uuid = _parse_uuid(body.target_entity_id, "target_entity_id")
+    try:
+        source_uuid = _uuid.UUID(body.source_entity_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="source_entity_id is not a valid UUID") from None
+    try:
+        target_uuid = _uuid.UUID(body.target_entity_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="target_entity_id is not a valid UUID") from None
 
     if source_uuid == target_uuid:
         raise HTTPException(status_code=422, detail="Cannot merge entity with itself")
@@ -318,7 +316,7 @@ async def merge_entities(
 @limiter.limit(entities_limit)
 async def get_entity(
     request: Request,
-    entity_id: str,
+    entity_id: _uuid.UUID,
     session: AsyncSession = Depends(get_db),
 ) -> EntityResponse:
     """Get a single entity with all its aliases.
@@ -328,9 +326,8 @@ async def get_entity(
         404: Entity not found.
         401: Missing or invalid X-API-Key (handled by middleware).
     """
-    entity_uuid = _parse_uuid(entity_id)
     result = await session.execute(
-        select(Entity).options(selectinload(Entity.aliases)).where(Entity.id == entity_uuid)
+        select(Entity).options(selectinload(Entity.aliases)).where(Entity.id == entity_id)
     )
     entity = result.scalar_one_or_none()
     if entity is None:
@@ -349,7 +346,7 @@ async def get_entity(
 @limiter.limit(entities_limit)
 async def add_alias(
     request: Request,
-    entity_id: str,
+    entity_id: _uuid.UUID,
     body: AddAliasRequest,
     session: AsyncSession = Depends(get_db),
 ) -> AddAliasResponse:
@@ -364,8 +361,7 @@ async def add_alias(
         409: Alias already exists (on this or another entity).
         401: Missing or invalid X-API-Key (handled by middleware).
     """
-    entity_uuid = _parse_uuid(entity_id)
-    entity = await session.get(Entity, entity_uuid)
+    entity = await session.get(Entity, entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
 
@@ -373,10 +369,10 @@ async def add_alias(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Alias already taken")
 
-    alias_obj = EntityAlias(entity_id=entity_uuid, alias=body.alias, source=body.source)
+    alias_obj = EntityAlias(entity_id=entity_id, alias=body.alias, source=body.source)
     session.add(alias_obj)
     await session.flush()
     await session.commit()
 
-    logger.info("entity_alias_added", entity_id=str(entity_uuid), alias=body.alias)
-    return AddAliasResponse(entity_id=str(entity_uuid), alias=body.alias, source=body.source)
+    logger.info("entity_alias_added", entity_id=str(entity_id), alias=body.alias)
+    return AddAliasResponse(entity_id=str(entity_id), alias=body.alias, source=body.source)

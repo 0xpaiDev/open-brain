@@ -33,6 +33,22 @@ _COLOR_OVERDUE = 0xFAA61A  # amber — has overdue items
 # ── Pure helpers ───────────────────────────────────────────────────────────────
 
 
+def _days_until_next(target_weekday: int, today: date) -> int:
+    """Return the number of days until the next occurrence of target_weekday.
+
+    If today is already that weekday, returns 7 (skip to next week).
+
+    Args:
+        target_weekday: 0=Monday … 6=Sunday.
+        today: Reference date.
+
+    Returns:
+        Days ahead (1–7).
+    """
+    days = (target_weekday - today.weekday()) % 7
+    return days if days > 0 else 7
+
+
 def parse_natural_date(token: str, today: date) -> date | None:
     """Parse a natural-language date token (prefixed with @) into a date.
 
@@ -53,18 +69,12 @@ def parse_natural_date(token: str, today: date) -> date | None:
         return today + timedelta(days=1)
 
     if raw == "next-week":
-        days_until_monday = (7 - today.weekday()) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7
-        return today + timedelta(days=days_until_monday)
+        return today + timedelta(days=_days_until_next(0, today))
 
     _day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
     if raw in _day_names:
         target_weekday = _day_names.index(raw)
-        days_ahead = (target_weekday - today.weekday()) % 7
-        if days_ahead == 0:
-            days_ahead = 7
-        return today + timedelta(days=days_ahead)
+        return today + timedelta(days=_days_until_next(target_weekday, today))
 
     try:
         return datetime.strptime(raw, "%Y-%m-%d").date()

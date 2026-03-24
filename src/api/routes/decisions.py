@@ -49,14 +49,6 @@ class DecisionListResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _parse_uuid(value: str, field: str = "id") -> _uuid.UUID:
-    """Parse UUID string, raise 422 on failure."""
-    try:
-        return _uuid.UUID(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{field} is not a valid UUID") from None
-
-
 def _decision_to_response(d: Decision) -> DecisionResponse:
     return DecisionResponse(
         id=str(d.id),
@@ -97,7 +89,10 @@ async def list_decisions(
     count_stmt = select(func.count()).select_from(Decision)
 
     if memory_id is not None:
-        memory_uuid = _parse_uuid(memory_id, "memory_id")
+        try:
+            memory_uuid = _uuid.UUID(memory_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="memory_id is not a valid UUID") from None
         stmt = stmt.where(Decision.memory_id == memory_uuid)
         count_stmt = count_stmt.where(Decision.memory_id == memory_uuid)
 
@@ -136,7 +131,10 @@ async def create_decision(
         404: If memory_id does not match any MemoryItem.
         422: If memory_id is not a valid UUID.
     """
-    memory_uuid = _parse_uuid(body.memory_id, "memory_id")
+    try:
+        memory_uuid = _uuid.UUID(body.memory_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="memory_id is not a valid UUID") from None
 
     memory_item = await session.get(MemoryItem, memory_uuid)
     if memory_item is None:
