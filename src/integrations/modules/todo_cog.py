@@ -73,7 +73,7 @@ async def _api_post(
     resp = await http.post(
         f"{settings.open_brain_api_url}{path}",
         json=body,
-        headers={"X-API-Key": settings.api_key},
+        headers={"X-API-Key": settings.api_key.get_secret_value()},
     )
     resp.raise_for_status()
     return dict(resp.json())
@@ -89,7 +89,7 @@ async def _api_patch(
     resp = await http.patch(
         f"{settings.open_brain_api_url}{path}",
         json=body,
-        headers={"X-API-Key": settings.api_key},
+        headers={"X-API-Key": settings.api_key.get_secret_value()},
     )
     resp.raise_for_status()
     return dict(resp.json())
@@ -105,7 +105,7 @@ async def _api_get(
     resp = await http.get(
         f"{settings.open_brain_api_url}{path}",
         params=params,
-        headers={"X-API-Key": settings.api_key},
+        headers={"X-API-Key": settings.api_key.get_secret_value()},
     )
     resp.raise_for_status()
     return resp.json()
@@ -153,8 +153,8 @@ class DoneButton(discord.ui.Button):
                 embed=None,
                 view=None,
             )
-        except httpx.HTTPStatusError as exc:
-            logger.error("done_button_error", status=exc.response.status_code)
+        except httpx.HTTPError as exc:
+            logger.error("done_button_error", error=str(exc))
             await interaction.response.send_message("Failed to mark todo as done.", ephemeral=True)
 
 
@@ -200,8 +200,8 @@ class DeferModal(discord.ui.Modal, title="Defer Todo"):
                 embed=None,
                 view=None,
             )
-        except httpx.HTTPStatusError as exc:
-            logger.error("defer_modal_error", status=exc.response.status_code)
+        except httpx.HTTPError as exc:
+            logger.error("defer_modal_error", error=str(exc))
             await interaction.response.send_message("Failed to defer todo.", ephemeral=True)
 
 
@@ -256,8 +256,8 @@ class TodoGroup(app_commands.Group):
         try:
             data = await _api_get(self._http, "/v1/todos", {"status": "open", "limit": 10}, settings)
             todos = data.get("todos", [])
-        except httpx.HTTPStatusError as exc:
-            logger.error("todo_list_error", status=exc.response.status_code)
+        except httpx.HTTPError as exc:
+            logger.error("todo_list_error", error=str(exc))
             await interaction.followup.send("Failed to fetch todos.", ephemeral=True)
             return
 
@@ -312,8 +312,8 @@ class TodoGroup(app_commands.Group):
 
         try:
             todo = await _api_post(self._http, "/v1/todos", body, settings)
-        except httpx.HTTPStatusError as exc:
-            logger.error("todo_add_error", status=exc.response.status_code)
+        except httpx.HTTPError as exc:
+            logger.error("todo_add_error", error=str(exc))
             await interaction.followup.send("Failed to create todo.", ephemeral=True)
             return
 
@@ -343,11 +343,9 @@ class TodoGroup(app_commands.Group):
         try:
             await _api_patch(self._http, f"/v1/todos/{todo_id}", {"status": "done"}, settings)
             await interaction.followup.send(f"✅ Todo `{todo_id[:8]}` marked done.", ephemeral=True)
-        except httpx.HTTPStatusError as exc:
-            logger.error("todo_done_error", status=exc.response.status_code)
-            await interaction.followup.send(
-                f"Failed to mark todo done (HTTP {exc.response.status_code}).", ephemeral=True
-            )
+        except httpx.HTTPError as exc:
+            logger.error("todo_done_error", error=str(exc))
+            await interaction.followup.send("Failed to mark todo done.", ephemeral=True)
 
     @app_commands.command(name="defer", description="Defer a todo to a new date")
     @app_commands.describe(
@@ -391,8 +389,6 @@ class TodoGroup(app_commands.Group):
             await interaction.followup.send(
                 f"📅 Todo `{todo_id[:8]}` deferred to {parsed.isoformat()}.", ephemeral=True
             )
-        except httpx.HTTPStatusError as exc:
-            logger.error("todo_defer_error", status=exc.response.status_code)
-            await interaction.followup.send(
-                f"Failed to defer todo (HTTP {exc.response.status_code}).", ephemeral=True
-            )
+        except httpx.HTTPError as exc:
+            logger.error("todo_defer_error", error=str(exc))
+            await interaction.followup.send("Failed to defer todo.", ephemeral=True)
