@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import tiktoken
 
+from src.core.config import get_settings
 from src.retrieval.search import SearchResult
 
 _ENCODER = tiktoken.get_encoding("cl100k_base")
@@ -29,19 +30,6 @@ class ContextResult:
     items_truncated: int
 
 
-def _get_settings():
-    """Return the settings singleton, instantiating it on-demand if needed.
-
-    The module-level `settings` object in config.py is `None` when env vars
-    are not set at import time (e.g., during pytest collection). This helper
-    creates a fresh Settings() when needed so context builder functions work
-    correctly once the test fixtures have set the required env vars.
-    """
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
 
 
 def _format_item(index: int, result: SearchResult) -> str:
@@ -107,7 +95,7 @@ def build_context(
     Returns:
         ContextResult with the formatted context string and metadata.
     """
-    budget = token_budget if token_budget is not None else _get_settings().context_token_budget
+    budget = token_budget if token_budget is not None else get_settings().context_token_budget
 
     if not results:
         return ContextResult(

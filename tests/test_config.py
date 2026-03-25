@@ -92,8 +92,7 @@ class TestSettingsLoading:
             settings = Settings()  # type: ignore[call-arg]
             assert settings.embedding_dimensions == 1024
             assert settings.log_level == "info"
-            assert settings.environment == "development"
-            assert settings.api_port == 8000
+            assert settings.db_ssl_mode == "require"
 
     def test_sqlalchemy_url_is_required(self) -> None:
         """Settings should raise ValidationError when SQLALCHEMY_URL is missing."""

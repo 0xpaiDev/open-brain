@@ -19,7 +19,7 @@ from tenacity import (
 )
 from voyageai import Client as VoyageClient
 
-from src.core.config import settings
+from src.core.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -256,13 +256,12 @@ class VoyageEmbeddingClient:
 
 def _create_anthropic_client() -> AnthropicClient | None:
     """Create Anthropic client if API key is present."""
-    if settings is None:
-        return None
-    if settings.anthropic_api_key and settings.anthropic_api_key.get_secret_value().strip():
+    s = get_settings()
+    if s.anthropic_api_key and s.anthropic_api_key.get_secret_value().strip():
         try:
             return AnthropicClient(
-                api_key=settings.anthropic_api_key.get_secret_value(),
-                model=settings.anthropic_model,
+                api_key=s.anthropic_api_key.get_secret_value(),
+                model=s.anthropic_model,
             )
         except Exception as e:
             logger.exception("failed_to_create_anthropic_client", error=str(e))
@@ -272,13 +271,12 @@ def _create_anthropic_client() -> AnthropicClient | None:
 
 def _create_voyage_client() -> VoyageEmbeddingClient | None:
     """Create Voyage AI client if API key is present."""
-    if settings is None:
-        return None
-    if settings.voyage_api_key and settings.voyage_api_key.get_secret_value().strip():
+    s = get_settings()
+    if s.voyage_api_key and s.voyage_api_key.get_secret_value().strip():
         try:
             return VoyageEmbeddingClient(
-                api_key=settings.voyage_api_key.get_secret_value(),
-                model=settings.voyage_model,
+                api_key=s.voyage_api_key.get_secret_value(),
+                model=s.voyage_model,
             )
         except Exception as e:
             logger.exception("failed_to_create_voyage_client", error=str(e))

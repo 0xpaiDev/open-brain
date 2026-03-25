@@ -145,6 +145,18 @@ All endpoints require `X-API-Key` header (except `/health` and `/ready`). All en
 - `GET /health` — Liveness check (always 200 while running)
 - `GET /ready` — Readiness check (200 if DB reachable, 503 otherwise)
 
+### Rate Limiting
+
+All `/v1/*` endpoints are rate-limited per IP address. 3 environment variables control limits:
+
+| Variable | Default | Endpoint(s) |
+|---|---|---|
+| `RATE_LIMIT_MEMORY_PER_MINUTE` | `50` | `POST /v1/memory` |
+| `RATE_LIMIT_SEARCH_PER_MINUTE` | `100` | `GET /v1/search`, `GET /v1/search/context` |
+| `RATE_LIMIT_DEAD_LETTERS_PER_MINUTE` | `5` | `POST /v1/dead-letters/{id}/retry` |
+
+Other endpoints (`/v1/entities`, `/v1/tasks`, `/v1/todos`, `/v1/pulse`, `/v1/queue`) have hardcoded limits (60 req/min for most, 30 req/min for `/v1/queue`). When rate limited, the API returns `429 Too Many Requests` with a `Retry-After: 60` header.
+
 ---
 
 ## CLI Commands
@@ -171,9 +183,8 @@ All configuration is via environment variables. Copy `.env.example` → `.env` a
 | Variable | Default | Description |
 |---|---|---|
 | `SQLALCHEMY_URL` | *(required)* | Postgres direct connection URL (port 5432, not 6543) |
+| `DB_SSL_MODE` | `require` | SSL mode for database connection (`require` for prod, `disable` for local dev) |
 | `API_KEY` | *(required)* | X-API-Key header value for auth |
-| `API_HOST` | `localhost` | Bind address (use `0.0.0.0` behind a proxy) |
-| `API_PORT` | `8000` | Port to bind |
 | `ANTHROPIC_API_KEY` | *(required)* | Claude API key for extraction + synthesis |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model for pulse job (Haiku for cost; set to `claude-opus-4-6` in production) |
 | `SYNTHESIS_MODEL` | `claude-haiku-4-5-20251001` | Synthesis model — **set to `claude-opus-4-6` in production** |
@@ -181,12 +192,9 @@ All configuration is via environment variables. Copy `.env.example` → `.env` a
 | `VOYAGE_MODEL` | `voyage-3` | Embedding model |
 | `EMBEDDING_DIMENSIONS` | `1024` | Must match voyage-3 output (do not change after deploy) |
 | `LOG_LEVEL` | `info` | Structlog level: debug, info, warning, error |
-| `ENVIRONMENT` | `development` | Environment tag (development, production) |
 | `WORKER_POLL_INTERVAL` | `5` | Seconds between queue polls |
 | `WORKER_LOCK_TTL_SECONDS` | `300` | Stale lock reclaim threshold (5 minutes) |
-| `IMPORTANCE_BASE_DEFAULT` | `0.5` | Default base_importance when not assigned by LLM |
 | `IMPORTANCE_RECENCY_HALF_LIFE_DAYS` | `30` | Recency decay half-life in days |
-| `SEARCH_DEFAULT_LIMIT` | `10` | Default search result count |
 | `SEARCH_VECTOR_WEIGHT` | `0.5` | Weight for vector similarity score |
 | `SEARCH_KEYWORD_WEIGHT` | `0.2` | Weight for full-text search score |
 | `SEARCH_IMPORTANCE_WEIGHT` | `0.2` | Weight for importance score |

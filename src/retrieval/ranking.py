@@ -7,20 +7,9 @@ code changes.
 
 import math
 
+from src.core.config import get_settings
 
-def _get_settings():
-    """Return the settings singleton, instantiating it on-demand if needed.
 
-    The module-level `settings` object in config.py is `None` when env vars
-    are not set at import time (e.g., during pytest collection). This helper
-    creates a fresh Settings() when needed so ranking functions work correctly
-    once the test fixtures have set the required env vars.
-    """
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
 
 
 def recency_score(age_days: float) -> float:
@@ -35,7 +24,7 @@ def recency_score(age_days: float) -> float:
     Returns:
         Float in [0, 1].
     """
-    s = _get_settings()
+    s = get_settings()
     return math.exp(-age_days / s.importance_recency_half_life_days)
 
 
@@ -59,7 +48,7 @@ def combined_score(
     Returns:
         Combined float score in [0, 1].
     """
-    s = _get_settings()
+    s = get_settings()
     return (
         s.search_vector_weight * vector_score
         + s.search_keyword_weight * keyword_score

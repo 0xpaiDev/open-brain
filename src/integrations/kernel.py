@@ -10,16 +10,12 @@ import httpx
 import structlog
 from discord import Interaction
 
+from src.core.config import get_settings
+
 logger = structlog.get_logger()
 
-
-def _get_settings() -> Any:
-    """Lazy-load settings singleton (mirrors pattern in auth.py / ranking.py)."""
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
+# Re-export get_settings for convenience in Discord cogs
+_get_settings = get_settings
 
 
 def require_allowed_user(interaction: Interaction, settings: Any) -> bool:

@@ -37,6 +37,12 @@ fi
 # e.g. postgresql+asyncpg://user:pass@host/db  →  postgresql://user:pass@host/db
 PG_URL="${SQLALCHEMY_URL/+asyncpg/}"
 
+# Validate that the URL conversion succeeded
+if [[ ! "$PG_URL" == postgresql://* ]]; then
+    echo "ERROR: unexpected database URL format after conversion: $PG_URL" >&2
+    exit 1
+fi
+
 # ── Backup ────────────────────────────────────────────────────────────────────
 mkdir -p "${BACKUP_DIR}"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting backup → ${BACKUP_FILE}"

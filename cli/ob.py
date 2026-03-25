@@ -333,8 +333,8 @@ def _fetch_ob_context(query: str) -> str:
         )
         if resp.status_code == 200:
             return resp.json().get("context", "")
-    except Exception:
-        pass
+    except Exception as e:
+        typer.echo(f"[ob] context fetch failed: {e}", err=True)
     return ""
 
 
@@ -403,7 +403,7 @@ async def _call_llm_for_chat(model: str, system: str, messages: list[dict[str, s
 
 
 def _post_to_ob(text: str, source: str) -> None:
-    """Post text to Open Brain for async pipeline ingestion. Silently ignores errors."""
+    """Post text to Open Brain for async pipeline ingestion."""
     try:
         httpx.post(
             f"{_OB_API_URL}/v1/memory",
@@ -411,8 +411,8 @@ def _post_to_ob(text: str, source: str) -> None:
             headers={"X-API-Key": _OB_API_KEY, "Content-Type": "application/json"},
             timeout=_OB_TIMEOUT,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        typer.echo(f"[ob] warning: failed to save chat to memory: {e}", err=True)
 
 
 @app.command()

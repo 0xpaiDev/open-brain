@@ -21,7 +21,7 @@ import structlog
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
+from src.core.config import get_settings
 from src.core.database import get_db_context as get_db
 from src.core.models import (
     Entity,
@@ -85,11 +85,7 @@ async def claim_batch(session: AsyncSession, batch_size: int = 1) -> list[Refine
     Returns:
         List of claimed RefinementQueue rows with status='processing'
     """
-    if settings is None:
-        logger.warning("settings_not_initialized")
-        ttl_seconds = 300  # fallback default
-    else:
-        ttl_seconds = settings.worker_lock_ttl_seconds
+    ttl_seconds = get_settings().worker_lock_ttl_seconds
 
     # SELECT FOR UPDATE SKIP LOCKED: pick pending or stale-processing jobs
     # Stale lock reclaim: WHERE locked_at < now() - interval
@@ -200,9 +196,7 @@ async def process_job(
                 # Cap importance for auto-captured sessions — they represent resolved
                 # work noise, not intentional personal memory. Real memories ingested
                 # via Discord/CLI/MCP get their full Claude-assigned importance.
-                ceiling = (
-                    settings.auto_capture_importance_ceiling if settings else 0.4
-                )
+                ceiling = get_settings().auto_capture_importance_ceiling
                 if raw.source == "claude-code" and extraction.base_importance > ceiling:
                     logger.debug(
                         "process_job_importance_capped",
@@ -473,7 +467,7 @@ async def move_to_dead_letter(
         raw_id=str(queue_row.raw_id),
         attempts=queue_row.attempts,
         error_reason=error_reason,
-        max_attempts=settings.dead_letter_retry_limit if settings else 3,
+        max_attempts=get_settings().dead_letter_retry_limit,
     )
 
 
@@ -515,7 +509,7 @@ async def run(
     # Polling loop
     while not _shutdown.is_set():
         try:
-            poll_interval = settings.worker_poll_interval if settings else 5
+            poll_interval = get_settings().worker_poll_interval
             depth: dict[str, int] = {"pending": 0, "processing": 0}
             async with get_db() as session:
                 # Emit heartbeat with current queue depth before claiming

@@ -31,19 +31,12 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.models import MemoryItem, RetrievalEvent
 
 logger = structlog.get_logger(__name__)
 
 NORMALIZATION_FACTOR = 5.0  # 5 recent accesses → dynamic_importance = 1.0
-
-
-def _get_settings():
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
 
 
 def _compute_weighted_score(
@@ -85,7 +78,7 @@ async def run_importance_job(session: AsyncSession) -> dict[str, int]:
         Dict with keys "updated" (memories with events) and "decayed"
         (memories whose score was reduced due to zero events).
     """
-    settings = _get_settings()
+    settings = get_settings()
     half_life_days: int = settings.importance_recency_half_life_days
     now = datetime.now(UTC)
 

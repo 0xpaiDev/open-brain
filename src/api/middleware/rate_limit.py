@@ -19,7 +19,13 @@ from slowapi.util import get_remote_address
 
 
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    """Return 429 with Retry-After header and JSON error body."""
+    """Return 429 with Retry-After header and JSON error body.
+
+    NOTE: Retry-After is hardcoded to 60 seconds as a conservative upper bound.
+    Clients should use the actual rate limit window from their endpoint config
+    for more precise backoff timing. Future enhancement: parse limit string
+    to calculate dynamic retry window per endpoint.
+    """
     return JSONResponse(
         status_code=429,
         content={"detail": f"Rate limit exceeded: {exc.detail}"},
@@ -28,29 +34,23 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 
 
 def _get_memory_rate() -> str:
-    from src.core import config
+    from src.core.config import get_settings
 
-    s = config.settings
-    if s is None:
-        return "50/minute"
+    s = get_settings()
     return f"{s.rate_limit_memory_per_minute}/minute"
 
 
 def _get_search_rate() -> str:
-    from src.core import config
+    from src.core.config import get_settings
 
-    s = config.settings
-    if s is None:
-        return "100/minute"
+    s = get_settings()
     return f"{s.rate_limit_search_per_minute}/minute"
 
 
 def _get_dead_letters_rate() -> str:
-    from src.core import config
+    from src.core.config import get_settings
 
-    s = config.settings
-    if s is None:
-        return "5/minute"
+    s = get_settings()
     return f"{s.rate_limit_dead_letters_per_minute}/minute"
 
 

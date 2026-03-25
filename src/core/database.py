@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 #   from src.core.database import get_db_context
 #   async with get_db_context() as session: ...
 
-from src.core.config import settings
+from src.core.config import get_settings
 
 async_engine: AsyncEngine | None = None
 AsyncSessionLocal: sessionmaker[AsyncSession] | None = None
@@ -21,6 +21,7 @@ async def init_db() -> None:
     """Initialize database engine and session factory."""
     global async_engine, AsyncSessionLocal
 
+    settings = get_settings()
     async_engine = create_async_engine(
         settings.sqlalchemy_url,
         echo=settings.log_level == "debug",
@@ -28,7 +29,7 @@ async def init_db() -> None:
         pool_size=3,
         max_overflow=2,
         connect_args={
-            "ssl": "require",  # Supabase requires SSL
+            "ssl": settings.db_ssl_mode,
             "statement_cache_size": 0,  # Required for Supabase Supavisor compatibility (prevents prepared statement conflicts)
         },
     )

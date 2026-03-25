@@ -164,6 +164,9 @@ Smoke test checklist:
 ❌ **Don't**: Use `Base.metadata.create_all()` against Supabase to create schema
 ✅ **Do**: Always use `alembic upgrade head`. The embedding column is created as JSONB by SQLAlchemy (placeholder type), but the actual DDL (via Alembic) converts it to `vector(1024)` at runtime. Using `create_all()` leaves embeddings as JSONB, breaking vector operations.
 
+❌ **Don't**: Add a new route to `src/api/routes/` without `@limiter.limit()` decorator
+✅ **Do**: Every endpoint in `/v1/*` must have an explicit rate limit decorator (e.g., `@limiter.limit("60/minute")`). There is no global fallback limiter — undecorated routes are completely unprotected and can be abused.
+
 ---
 
 ## CP4-6 Implementation Gotchas

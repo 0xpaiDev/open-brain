@@ -12,11 +12,10 @@ class Settings(BaseSettings):
     # Database — Supabase direct connection, port 5432. Required.
     # Set SQLALCHEMY_URL in .env (copy from .env.example)
     sqlalchemy_url: str
+    db_ssl_mode: str = "require"
 
     # API
     api_key: SecretStr
-    api_host: str = "localhost"
-    api_port: int = 8000
 
     # LLM
     anthropic_api_key: SecretStr | None = None
@@ -29,7 +28,6 @@ class Settings(BaseSettings):
 
     # Application
     log_level: str = "info"
-    environment: str = "development"
 
     # Worker
     worker_poll_interval: int = 5
@@ -37,14 +35,12 @@ class Settings(BaseSettings):
     dead_letter_retry_limit: int = 3
 
     # Importance scoring
-    importance_base_default: float = 0.5
     importance_recency_half_life_days: int = 30
     # Auto-captured sessions (source="claude-code") are background work noise.
     # Cap their base_importance so real intentional memories always rank higher.
     auto_capture_importance_ceiling: float = 0.4
 
     # Search
-    search_default_limit: int = 10
     search_vector_weight: float = 0.5
     search_keyword_weight: float = 0.2
     search_importance_weight: float = 0.2
@@ -175,3 +171,16 @@ try:
     settings = Settings()
 except Exception:
     settings = None  # type: ignore[assignment]
+
+
+def get_settings() -> Settings:
+    """Return the canonical Settings instance, initializing lazily if needed.
+
+    This function ensures that settings are available even when imported before
+    env vars are set (e.g., during pytest collection). Modules should import and
+    call this function rather than importing settings directly at module level.
+    """
+    global settings
+    if settings is None:
+        settings = Settings()
+    return settings

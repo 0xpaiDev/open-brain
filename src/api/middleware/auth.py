@@ -19,11 +19,9 @@ def _get_api_key() -> str:
     Reading it inside the request handler ensures env vars set by test fixtures
     are available when the Settings() object is created.
     """
-    from src.core import config
+    from src.core.config import get_settings
 
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings.api_key.get_secret_value()
+    return get_settings().api_key.get_secret_value()
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):

@@ -37,19 +37,12 @@ from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.models import Entity, MemoryEntityLink, MemoryItem, RawMemory
 from src.llm.client import AnthropicClient, ExtractionFailed
 from src.llm.prompts import SYNTHESIS_SYSTEM_PROMPT, build_synthesis_user_message
 
 logger = structlog.get_logger(__name__)
-
-
-def _get_settings() -> Any:
-    from src.core import config
-
-    if config.settings is None:
-        config.settings = config.Settings()
-    return config.settings
 
 
 # ── Pydantic models for LLM output ───────────────────────────────────────────
@@ -252,7 +245,15 @@ async def run_synthesis_job(
           - date_to (str): ISO date string
           - skipped (bool): True if no memories found
     """
-    settings = _get_settings()
+    settings = get_settings()
+
+    if "haiku" in settings.synthesis_model:
+        logger.warning(
+            "synthesis_running_with_haiku",
+            model=settings.synthesis_model,
+            advice="For production quality, set SYNTHESIS_MODEL=claude-opus-4-6",
+        )
+
     now = datetime.now(UTC)
     cutoff = now - timedelta(days=days)
     date_from = cutoff.strftime("%Y-%m-%d")
@@ -316,7 +317,7 @@ async def main() -> None:
     parser.add_argument("--days", type=int, default=7, help="Days to look back (default: 7)")
     args = parser.parse_args()
 
-    settings = _get_settings()
+    settings = get_settings()
     if not settings.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is required for synthesis job. Set it in .env.")
 

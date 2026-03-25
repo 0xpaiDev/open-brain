@@ -4,7 +4,7 @@ import structlog
 from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
+from src.core.config import get_settings
 from src.core.models import Entity, EntityAlias
 from src.pipeline.extractor import EntityExtract
 
@@ -92,11 +92,7 @@ async def resolve_entities(
             # Step 2: Fuzzy match with pg_trgm similarity
             # NOTE: This query uses PostgreSQL's pg_trgm extension.
             # SQLite does not have similarity() — tests must mock this query.
-            if settings is None:
-                logger.warning("settings_not_initialized_skipping_fuzzy_match")
-                threshold = 0.92  # fallback default
-            else:
-                threshold = settings.entity_fuzzy_match_threshold
+            threshold = get_settings().entity_fuzzy_match_threshold
 
             # Attempt fuzzy matching via pg_trgm (PostgreSQL only)
             # SQLite does not have the similarity() function

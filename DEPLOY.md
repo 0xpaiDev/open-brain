@@ -20,11 +20,8 @@ git pull
 
 # Rebuild and restart all running services
 docker compose --profile api --profile worker --profile discord build --no-cache
-docker compose --profile api --profile discord up -d
-docker compose --profile worker up -d
+docker compose --profile api --profile worker --profile discord up -d
 ```
-
-> The worker is typically run via cron, not as a persistent service. Skip `worker up -d` unless you run it continuously.
 
 ---
 
@@ -37,8 +34,8 @@ git pull
 docker compose --profile migrate run --rm migrate
 
 # Then rebuild and restart services
-docker compose --profile api --profile discord build --no-cache
-docker compose --profile api --profile discord up -d
+docker compose --profile api --profile worker --profile discord build --no-cache
+docker compose --profile api --profile worker --profile discord up -d
 ```
 
 **How to tell if a migration is needed**: check if there are new files in `alembic/versions/` since the last deploy.
