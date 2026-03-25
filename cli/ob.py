@@ -314,7 +314,7 @@ async def _health_async() -> None:
 _SUPPORTED_MODELS = ("claude", "openai")
 
 # Open Brain API coordinates for chat (reads env, falls back to local defaults)
-_OB_API_URL: str = os.environ.get("OPENBRAIN_API_URL", "http://localhost:8000").rstrip("/")
+_OB_API_URL: str = os.environ.get("OPEN_BRAIN_API_URL", "http://localhost:8000").rstrip("/")
 _OB_API_KEY: str = os.environ.get("OPENBRAIN_API_KEY", "")
 _OB_TIMEOUT: float = 30.0
 

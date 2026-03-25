@@ -85,10 +85,12 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (12 tables)                                    │
+│ Structured Memory (15 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
+│ - todos, todo_history (task management)                          │
+│ - daily_pulse, rag_conversations (daily synthesis + chat)        │
 │ - retrieval_events (audit trail for dynamic importance)          │
 └────────────────────┬────────────────────────────────────────────┘
                      │
@@ -238,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**12 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**15 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices

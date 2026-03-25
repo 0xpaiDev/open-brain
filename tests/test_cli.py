@@ -368,3 +368,26 @@ def test_worker_help():
     result = runner.invoke(app, ["worker", "--help"])
     assert result.exit_code == 0
     assert "--sync" in result.output
+
+
+def test_cli_reads_correct_api_url_env_var():
+    """CLI reads OPEN_BRAIN_API_URL (not OPENBRAIN_API_URL)."""
+    import os
+    import importlib
+
+    # Clear any existing env vars
+    os.environ.pop("OPEN_BRAIN_API_URL", None)
+    os.environ.pop("OPENBRAIN_API_URL", None)
+
+    # Set the correct env var
+    os.environ["OPEN_BRAIN_API_URL"] = "http://custom-api:9000"
+
+    # Re-import the module to pick up the new env var
+    import cli.ob as ob_module
+    importlib.reload(ob_module)
+
+    # Verify the correct env var was read
+    assert ob_module._OB_API_URL == "http://custom-api:9000"
+
+    # Clean up
+    os.environ.pop("OPEN_BRAIN_API_URL", None)

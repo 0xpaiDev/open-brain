@@ -80,11 +80,9 @@ class Settings(BaseSettings):
     module_rag_chat_enabled: bool = True
 
     # ── Todo ───────────────────────────────────────────────────────────────────
-    todo_priority_levels: list[str] = ["high", "normal", "low"]
     discord_todo_channel_id: int = 0  # channel ID for prefix listener; 0 = disabled
 
     # ── Morning Pulse ──────────────────────────────────────────────────────────
-    pulse_send_time: str = "07:00"
     pulse_timezone: str = "UTC"
     pulse_reply_window_minutes: int = 240
     google_calendar_credentials_path: str = ""

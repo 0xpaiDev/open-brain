@@ -12,7 +12,7 @@ Safety rules:
   - Silently ignores all network/file errors.
 
 Configuration via environment variables:
-    OPENBRAIN_API_URL  — Base URL (default: http://localhost:8000)
+    OPEN_BRAIN_API_URL  — Base URL (default: http://localhost:8000)
     OPENBRAIN_API_KEY  — X-API-Key header value
 
 Hook config (add to ~/.claude/settings.json):
@@ -31,7 +31,7 @@ from pathlib import Path
 
 import requests
 
-API_URL: str = os.environ.get("OPENBRAIN_API_URL", "http://localhost:8000").rstrip("/")
+API_URL: str = os.environ.get("OPEN_BRAIN_API_URL", "http://localhost:8000").rstrip("/")
 API_KEY: str = os.environ.get("OPENBRAIN_API_KEY", "")
 MIN_LENGTH: int = 300  # skip trivial sessions
 TIMEOUT: float = 15.0

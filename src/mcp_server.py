@@ -9,7 +9,7 @@ Tools:
     ingest_memory   — Ingest text into the pipeline.
 
 Configuration via environment variables:
-    OPENBRAIN_API_URL  — Base URL of the Open Brain API (default: http://localhost:8000)
+    OPEN_BRAIN_API_URL  — Base URL of the Open Brain API (default: http://localhost:8000)
     OPENBRAIN_API_KEY  — X-API-Key header value
 
 Run:
@@ -23,7 +23,7 @@ from fastmcp import FastMCP
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-API_URL: str = os.environ.get("OPENBRAIN_API_URL", "http://localhost:8000").rstrip("/")
+API_URL: str = os.environ.get("OPEN_BRAIN_API_URL", "http://localhost:8000").rstrip("/")
 API_KEY: str = os.environ.get("OPENBRAIN_API_KEY", "")
 TIMEOUT: float = 30.0
 

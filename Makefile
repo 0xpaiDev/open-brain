@@ -1,4 +1,4 @@
-.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker logs-bot
+.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker logs-bot check-config check-env
 
 help:
 	@echo "Open Brain Makefile"
@@ -24,6 +24,8 @@ help:
 	@echo "  make test-watch      - Run tests, stop on first failure"
 	@echo "  make lint            - ruff + black --check + mypy"
 	@echo "  make format          - Auto-format with black and ruff"
+	@echo "  make check-config    - Validate all config variables are used"
+	@echo "  make check-env       - Validate env vars are consistent"
 	@echo "  make clean           - Remove __pycache__, .pytest_cache, etc."
 
 # ── Local run (no Docker) ─────────────────────────────────────────────────────
@@ -94,4 +96,10 @@ clean:
 	find . -type d -name .mypy_cache -exec rm -rf {} +
 	find . -type d -name .ruff_cache -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
+
+check-config:
+	python3 scripts/check_config.py
+
+check-env:
+	python3 scripts/check_env_consistency.py
 

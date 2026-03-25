@@ -71,7 +71,7 @@ INTEGRATION_TEST=1 pytest tests/test_integration.py -v
 - **jobs**: Scheduled importance + synthesis jobs (via host cron)
 
 ### Database
-- **11 tables**: raw_memory, memory_items, entities, entity_aliases, entity_relations, memory_entity_links, decisions, tasks, refinement_queue, failed_refinements, retrieval_events
+- **15 tables**: raw_memory, memory_items, entities, entity_aliases, entity_relations, memory_entity_links, decisions, tasks, todo_items, todo_history, daily_pulse, rag_conversations, refinement_queue, failed_refinements, retrieval_events
 - **Immutable**: raw_memory is append-only
 - **Append-only**: Corrections supersede originals, never overwrite
 - **Vector search**: HNSW index on 1024-dim embeddings (Voyage AI)
@@ -100,33 +100,50 @@ On failure:
 
 ## API Endpoints
 
-All endpoints require `X-API-Key` header. Prefix: `/v1/`
+All endpoints require `X-API-Key` header (except `/health` and `/ready`). All endpoints use `/v1/` prefix.
 
 ### Memory
-- `POST /memory` — Ingest text
-- `GET /memory/{id}` — Get memory with entity links
+- `POST /v1/memory` — Ingest text
+- `GET /v1/memory/{memory_id}` — Get memory with entity links
 
 ### Search
-- `GET /search?q=...` — Hybrid search
-- `GET /search/context` — Search + context builder (for LLM consumption)
+- `GET /v1/search?q=...` — Hybrid search
+- `GET /v1/search/context` — Search + context builder (for LLM consumption)
 
 ### Entities
-- `GET /entities` — List entities
-- `GET /entity/{id}` — Entity with aliases
-- `POST /entity/{id}/alias` — Add alias
-- `POST /entity/merge` — Merge two entities
+- `GET /v1/entities` — List entities
+- `GET /v1/entities/{entity_id}` — Entity with aliases
+- `POST /v1/entities/{entity_id}/aliases` — Add alias
+- `POST /v1/entities/merge` — Merge two entities
 
 ### Tasks & Decisions
-- `GET /tasks` — List tasks
-- `PATCH /tasks/{id}` — Update task status
-- `GET /decisions` — List decisions
+- `GET /v1/tasks` — List tasks
+- `POST /v1/tasks` — Create task
+- `PATCH /v1/tasks/{task_id}` — Update task
+- `GET /v1/decisions` — List decisions
+- `POST /v1/decisions` — Create decision
+
+### Todos
+- `POST /v1/todos` — Create todo
+- `GET /v1/todos` — List todos
+- `GET /v1/todos/{todo_id}` — Get todo
+- `PATCH /v1/todos/{todo_id}` — Update todo
+- `GET /v1/todos/{todo_id}/history` — Get todo history
+
+### Pulse
+- `POST /v1/pulse` — Create pulse entry
+- `GET /v1/pulse/today` — Get today's pulse
+- `PATCH /v1/pulse/today` — Update today's pulse
+- `GET /v1/pulse/{pulse_date}` — Get pulse for date (ISO 8601)
+- `GET /v1/pulse` — List pulse entries
 
 ### Operations
-- `GET /queue/status` — Queue health
-- `GET /dead-letters` — Failed refinements
-- `POST /dead-letters/{id}/retry` — Reprocess
-- `GET /health` — Liveness check
-- `GET /ready` — Readiness (DB + queue)
+- `GET /v1/queue/status` — Queue health
+- `GET /v1/dead-letters` — Failed refinements
+- `POST /v1/dead-letters/{failed_id}/retry` — Reprocess failed item
+- `POST /v1/synthesis/run` — Trigger synthesis job
+- `GET /health` — Liveness check (always 200 while running)
+- `GET /ready` — Readiness check (200 if DB reachable, 503 otherwise)
 
 ---
 
@@ -135,8 +152,11 @@ All endpoints require `X-API-Key` header. Prefix: `/v1/`
 ```bash
 ob ingest "text"                                    # Ingest memory
 ob ingest "text" --source discord                   # Ingest with source label
-ob search "query"                                   # Hybrid search
-ob search "query" --type decision                   # Filter by type
+ob search "query"                                   # Hybrid search (10 results by default)
+ob search "query" --type decision                   # Filter by type (memory/decision/task)
+ob search "query" --entity "Google"                 # Filter by entity name/alias
+ob search "query" --from 2026-01-01 --to 2026-12-31 # Filter by date range (ISO 8601)
+ob search "query" --limit 20                        # Limit results
 ob context "query"                                  # Search + LLM-ready context string
 ob worker --sync                                    # Process one job inline (debug)
 ob health                                           # Check API health
@@ -155,7 +175,7 @@ All configuration is via environment variables. Copy `.env.example` → `.env` a
 | `API_HOST` | `localhost` | Bind address (use `0.0.0.0` behind a proxy) |
 | `API_PORT` | `8000` | Port to bind |
 | `ANTHROPIC_API_KEY` | *(required)* | Claude API key for extraction + synthesis |
-| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Extraction model (Haiku for cost) |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model for pulse job (Haiku for cost; set to `claude-opus-4-6` in production) |
 | `SYNTHESIS_MODEL` | `claude-haiku-4-5-20251001` | Synthesis model — **set to `claude-opus-4-6` in production** |
 | `VOYAGE_API_KEY` | *(required)* | Voyage AI key for embeddings |
 | `VOYAGE_MODEL` | `voyage-3` | Embedding model |
@@ -223,7 +243,7 @@ uvicorn src.api.main:app --reload
 python -m src.pipeline.worker
 
 # 8. Use CLI
-ob add "Hello, Open Brain!"
+ob ingest "Hello, Open Brain!"
 ```
 
 ### Testing

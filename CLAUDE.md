@@ -124,7 +124,7 @@ Smoke test checklist:
 
 | File | Why | Approval Needed? |
 |---|---|---|
-| `src/core/models.py` | All 12 tables, PKs, FKs, indexes | Yes, if schema changes |
+| `src/core/models.py` | All 15 tables, PKs, FKs, indexes | Yes, if schema changes |
 | `src/pipeline/worker.py` | SELECT FOR UPDATE SKIP LOCKED, retry logic | Yes, if polling changes |
 | `alembic/versions/0001_initial_schema.py` | HNSW/GIN indexes, type checking | Yes, always |
 | `src/retrieval/search.py` | Hybrid search formula, ranking | Yes, if ranking changes |
