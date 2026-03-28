@@ -140,20 +140,20 @@ async def run_importance_job(session: AsyncSession) -> dict[str, int]:
     return {"updated": updated, "decayed": decayed}
 
 
+async def _importance_job() -> None:
+    """Core importance job logic (DB init handled by runner)."""
+    from src.core.database import get_db_context
+
+    async with get_db_context() as session:
+        result = await run_importance_job(session)
+        logger.info("importance_job_main_complete", **result)
+
+
 async def main() -> None:
-    """Entry point for cron invocation.
+    """Entry point for cron invocation."""
+    from src.jobs.runner import run_tracked
 
-    Initializes the DB connection pool, runs one job pass, then closes.
-    """
-    from src.core.database import close_db, get_db_context, init_db
-
-    await init_db()
-    try:
-        async with get_db_context() as session:
-            result = await run_importance_job(session)
-            logger.info("importance_job_main_complete", **result)
-    finally:
-        await close_db()
+    await run_tracked("importance", _importance_job)
 
 
 if __name__ == "__main__":

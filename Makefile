@@ -12,8 +12,9 @@ help:
 	@echo "  make logs-bot        - Tail Discord bot log"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make up              - Start services via docker compose"
+	@echo "  make up              - Start services via docker compose (api, worker, discord, scheduler)"
 	@echo "  make down            - Stop docker compose services"
+	@echo "  make job-status      - Check scheduled job status (requires API_KEY env var)"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate         - Run Alembic migrations (alembic upgrade head)"
@@ -51,11 +52,14 @@ logs-bot:
 # ── Docker ────────────────────────────────────────────────────────────────────
 
 up:
-	docker compose up -d
+	docker compose --profile api --profile worker --profile discord --profile scheduler up -d
 	@echo "Services started. Run 'make migrate' to apply Alembic migrations to Supabase."
 
 down:
-	docker compose down
+	docker compose --profile api --profile worker --profile discord --profile scheduler down
+
+job-status:
+	@curl -s -H "X-API-Key: $${API_KEY}" http://localhost:8000/v1/jobs/status | python3 -m json.tool
 
 migrate:
 	@if [ -z "$$SQLALCHEMY_URL" ]; then \

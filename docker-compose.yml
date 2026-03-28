@@ -94,6 +94,28 @@ services:
           cpus: "0.5"
           memory: 256M
 
+  scheduler:
+    build: .
+    container_name: openbrain-scheduler
+    env_file: .env
+    command: ["supercronic", "-json", "crontab"]
+    environment:
+      - OPEN_BRAIN_API_URL=http://api:8000
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    networks:
+      - openbrain
+    profiles:
+      - scheduler
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
   caddy:
     image: caddy:2-alpine
     container_name: openbrain-caddy

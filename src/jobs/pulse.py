@@ -196,7 +196,10 @@ def _build_morning_embed(
     if events:
         event_lines = []
         for e in events[:5]:
-            time_str = _format_event_time(e.start if hasattr(e, "start") else e.get("start", ""), e.all_day if hasattr(e, "all_day") else e.get("all_day", False))
+            time_str = _format_event_time(
+                e.start if hasattr(e, "start") else e.get("start", ""),
+                e.all_day if hasattr(e, "all_day") else e.get("all_day", False),
+            )
             title = e.title if hasattr(e, "title") else e.get("title", "(No title)")
             event_lines.append(f"• {time_str} {title[:60]}")
         fields.append({"name": "📅 Today", "value": "\n".join(event_lines), "inline": False})
@@ -216,10 +219,7 @@ def _build_morning_embed(
 
     return {
         "title": f"Good morning — {date_str}",
-        "description": (
-            f"**💭 {ai_question}**\n\n"
-            "Tap **Log my morning** to check in."
-        ),
+        "description": (f"**💭 {ai_question}**\n\nTap **Log my morning** to check in."),
         "color": 0xFFD700,  # Gold
         "fields": fields,
         "footer": {"text": "Open Brain · Morning Pulse"},
@@ -279,7 +279,7 @@ async def _generate_ai_question(
 
     if open_todos:
         todo_lines = [f"- {t.get('description', '')[:80]}" for t in open_todos[:5]]
-        context_parts.append(f"Open todos:\n" + "\n".join(todo_lines))
+        context_parts.append("Open todos:\n" + "\n".join(todo_lines))
 
     # Determine which type to request based on yesterday's question
     if yesterday_question:
@@ -321,7 +321,11 @@ async def _pulse_already_sent_today(http: httpx.AsyncClient, settings: Any) -> b
         )
         if resp.status_code == 200:
             existing = resp.json()
-            logger.info("pulse_already_sent_today", status=existing.get("status"), pulse_id=existing.get("id"))
+            logger.info(
+                "pulse_already_sent_today",
+                status=existing.get("status"),
+                pulse_id=existing.get("id"),
+            )
             return True
         return False
     except httpx.RequestError as exc:
@@ -390,7 +394,12 @@ async def _send_pulse_dm(
     try:
         channel_id = await get_or_create_dm_channel(http, bot_token, user_id)
         return await send_dm_via_rest(
-            http, bot_token, channel_id, content="", embed=embed, components=components,
+            http,
+            bot_token,
+            channel_id,
+            content="",
+            embed=embed,
+            components=components,
         )
     except httpx.HTTPStatusError as exc:
         logger.error("pulse_send_dm_failed", status=exc.response.status_code)
@@ -465,7 +474,9 @@ async def send_morning_pulse(
     open_todos = await _fetch_open_todos(http, settings)
     yesterday_question = await _fetch_yesterday_question(http, settings)
     ai_question = await _generate_ai_question(
-        llm, open_todos=open_todos, yesterday_question=yesterday_question,
+        llm,
+        open_todos=open_todos,
+        yesterday_question=yesterday_question,
     )
 
     # Build and send
@@ -575,8 +586,8 @@ def _get_settings() -> Any:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 
-async def _main() -> None:
-    """CLI entry point for cron invocation."""
+async def _pulse_job() -> None:
+    """Core pulse job logic (no DB init — handled by runner)."""
     settings = _get_settings()
     llm = None
 
@@ -591,6 +602,13 @@ async def _main() -> None:
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         await send_morning_pulse(http, llm)
+
+
+async def _main() -> None:
+    """CLI entry point for cron invocation."""
+    from src.jobs.runner import run_tracked
+
+    await run_tracked("pulse", _pulse_job)
 
 
 if __name__ == "__main__":

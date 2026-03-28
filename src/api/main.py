@@ -14,12 +14,13 @@ from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
+from src.api.routes.jobs import router as jobs_router
 from src.api.routes.memory import router as memory_router
+from src.api.routes.pulse import router as pulse_router
 from src.api.routes.queue import router as queue_router
 from src.api.routes.search import router as search_router
 from src.api.routes.tasks import router as tasks_router
 from src.api.routes.todos import router as todos_router
-from src.api.routes.pulse import router as pulse_router
 from src.core.database import close_db, init_db
 
 logger = structlog.get_logger(__name__)
@@ -75,3 +76,4 @@ app.include_router(decisions_router, tags=["Decisions"])
 app.include_router(queue_router, tags=["Queue"])
 app.include_router(todos_router, tags=["Todos"])
 app.include_router(pulse_router, tags=["Pulse"])
+app.include_router(jobs_router, tags=["Jobs"])

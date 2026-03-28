@@ -178,7 +178,9 @@ async def _call_synthesis_llm(
     try:
         json_data = json.loads(stripped)
     except json.JSONDecodeError as e:
-        logger.exception("synthesis_json_parse_failed", error=str(e), response_text=response_text[:200])
+        logger.exception(
+            "synthesis_json_parse_failed", error=str(e), response_text=response_text[:200]
+        )
         raise ExtractionFailed(f"Failed to parse synthesis response as JSON: {e}") from e
 
     try:
@@ -304,6 +306,24 @@ async def run_synthesis_job(
     }
 
 
+async def _synthesis_job(days: int = 7) -> None:
+    """Core synthesis job logic (DB init handled by runner)."""
+    from src.core.database import get_db_context
+
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is required for synthesis job. Set it in .env.")
+
+    client = AnthropicClient(
+        api_key=settings.anthropic_api_key.get_secret_value(),
+        model=settings.synthesis_model,
+    )
+
+    async with get_db_context() as session:
+        result = await run_synthesis_job(session, client, days=days)
+        logger.info("synthesis_job_main_complete", **result)
+
+
 async def main() -> None:
     """Entry point for cron invocation.
 
@@ -313,28 +333,13 @@ async def main() -> None:
     """
     import argparse
 
+    from src.jobs.runner import run_tracked
+
     parser = argparse.ArgumentParser(description="Run weekly synthesis job")
     parser.add_argument("--days", type=int, default=7, help="Days to look back (default: 7)")
     args = parser.parse_args()
 
-    settings = get_settings()
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is required for synthesis job. Set it in .env.")
-
-    from src.core.database import close_db, get_db_context, init_db
-
-    client = AnthropicClient(
-        api_key=settings.anthropic_api_key.get_secret_value(),
-        model=settings.synthesis_model,
-    )
-
-    await init_db()
-    try:
-        async with get_db_context() as session:
-            result = await run_synthesis_job(session, client, days=args.days)
-            logger.info("synthesis_job_main_complete", **result)
-    finally:
-        await close_db()
+    await run_tracked("synthesis", _synthesis_job, days=args.days)
 
 
 if __name__ == "__main__":

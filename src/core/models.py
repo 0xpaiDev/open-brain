@@ -18,11 +18,13 @@ This is documented in IMPLEMENTATION_PLAN.md.
 from datetime import datetime
 from uuid import uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     UUID,
     Computed,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -32,7 +34,6 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -98,7 +99,9 @@ class RetrievalEvent(Base):
     memory_id: Mapped[str] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE")
     )
-    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    retrieved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 # ── Refined knowledge ─────────────────────────────────────────────────────────
@@ -140,9 +143,7 @@ class MemoryItem(Base):
     )
 
     # embedding: vector(1024) — pgvector type for PostgreSQL, JSON for SQLite tests
-    embedding: Mapped[list | None] = mapped_column(
-        VECTOR_TYPE, nullable=True
-    )
+    embedding: Mapped[list | None] = mapped_column(VECTOR_TYPE, nullable=True)
 
     supersedes_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE"), nullable=True
@@ -227,7 +228,9 @@ class EntityAlias(Base):
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     alias: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    entity_id: Mapped[str] = mapped_column(UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"))
+    entity_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE")
+    )
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -287,9 +290,7 @@ class MemoryEntityLink(Base):
     """
 
     __tablename__ = "memory_entity_links"
-    __table_args__ = (
-        Index("ix_memory_entity_links_pk", "memory_id", "entity_id", unique=True),
-    )
+    __table_args__ = (Index("ix_memory_entity_links_pk", "memory_id", "entity_id", unique=True),)
 
     memory_id: Mapped[str] = mapped_column(
         UUID(as_uuid=True), ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True
@@ -387,7 +388,9 @@ class TodoItem(Base):
     __table_args__ = (Index("ix_todo_items_status_due_date", "status", "due_date"),)
 
     # Relationships
-    history: Mapped[list["TodoHistory"]] = relationship("TodoHistory", back_populates="todo", cascade="all, delete-orphan")
+    history: Mapped[list["TodoHistory"]] = relationship(
+        "TodoHistory", back_populates="todo", cascade="all, delete-orphan"
+    )
 
 
 class TodoHistory(Base):
@@ -476,3 +479,27 @@ class RagConversation(Base):
     __table_args__ = (
         UniqueConstraint("discord_channel_id", "discord_user_id", name="uq_rag_conv_channel_user"),
     )
+
+
+# ── Job Monitoring ────────────────────────────────────────────────────────────
+
+
+class JobRun(Base):
+    """Tracks execution of scheduled jobs (pulse, importance, synthesis).
+
+    Used by the job runner wrapper to record start/finish/status of each
+    cron-triggered job, and by the /v1/jobs/status endpoint for monitoring.
+    """
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_job_runs_name_started", "job_name", started_at.desc()),)
