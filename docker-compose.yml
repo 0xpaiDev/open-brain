@@ -98,6 +98,7 @@ services:
     build: .
     container_name: openbrain-scheduler
     env_file: .env
+    init: true
     command: ["supercronic", "-json", "crontab"]
     environment:
       - OPEN_BRAIN_API_URL=http://api:8000
