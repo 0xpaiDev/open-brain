@@ -1,11 +1,11 @@
 # Open Brain scheduled jobs (supercronic format)
-# Times in UTC — adjust for your timezone offset
+# Times in UTC
 
-# Morning pulse — 05:00 UTC ≈ 08:00 Europe/Vilnius (summer)
+# Morning pulse - 05:00 UTC (08:00 Europe/Vilnius summer)
 0 5 * * * python -m src.jobs.pulse
 
-# Daily importance aggregation — 01:00 UTC
+# Daily importance aggregation - 01:00 UTC
 0 1 * * * python -m src.jobs.importance
 
-# Weekly synthesis — Sunday 00:00 UTC
+# Weekly synthesis - Sunday 00:00 UTC
 0 0 * * 0 python -m src.jobs.synthesis
