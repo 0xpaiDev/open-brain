@@ -4,9 +4,6 @@
 # Example: openbrain.yourdomain.com
 
 {$DOMAIN} {
-    # Reverse proxy to FastAPI (uvicorn)
-    reverse_proxy api:8000
-
     # Enable gzip compression
     encode gzip
 
@@ -18,6 +15,25 @@
         Referrer-Policy "strict-origin-when-cross-origin"
         # Remove server fingerprinting
         -Server
+    }
+
+    # API routes → FastAPI backend
+    handle /v1/* {
+        reverse_proxy api:8000
+    }
+
+    # Health/readiness probes → FastAPI backend
+    handle /ready {
+        reverse_proxy api:8000
+    }
+
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    # Everything else → Next.js frontend
+    handle {
+        reverse_proxy web:3000
     }
 
     # Access logs

@@ -117,6 +117,33 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: openbrain-web
+    environment:
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - openbrain
+    profiles:
+      - web
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
   caddy:
     image: caddy:2-alpine
     container_name: openbrain-caddy
