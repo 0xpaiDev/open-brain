@@ -1,0 +1,116 @@
+/* API response types matching the FastAPI backend */
+
+export interface PulseResponse {
+  id: string;
+  pulse_date: string;
+  status: string;
+  ai_question: string | null;
+  ai_question_response: string | null;
+  wake_time: string | null;
+  sleep_quality: number | null;
+  energy_level: number | null;
+  notes: string | null;
+  parsed_data: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalendarEvent {
+  title: string;
+  start: string;
+  end: string;
+  location: string | null;
+  calendar: string;
+  all_day: boolean;
+}
+
+export interface CalendarTomorrowEvent {
+  title: string;
+  start: string;
+  all_day: boolean;
+}
+
+export interface CalendarResponse {
+  status: "ok" | "unavailable";
+  date: string;
+  fetched_at: string;
+  events: CalendarEvent[];
+  tomorrow_preview: CalendarTomorrowEvent[];
+}
+
+export interface TodoItem {
+  id: string;
+  description: string;
+  priority: "high" | "normal" | "low";
+  status: "open" | "done" | "cancelled";
+  due_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TodoListResponse {
+  todos: TodoItem[];
+  total: number;
+}
+
+export interface PulseUpdate {
+  wake_time?: string;
+  sleep_quality?: number;
+  energy_level?: number;
+  ai_question_response?: string;
+  notes?: string;
+  status?: string;
+}
+
+export interface TodoCreate {
+  description: string;
+  priority?: "high" | "normal" | "low";
+  due_date?: string;
+}
+
+export interface TodoUpdate {
+  status?: "open" | "done" | "cancelled";
+  priority?: "high" | "normal" | "low";
+  due_date?: string | null;
+  description?: string;
+  reason?: string;
+}
+
+export interface MemoryItemResponse {
+  id: string;
+  raw_id: string;
+  type: string;
+  content: string;
+  summary: string | null;
+  base_importance: number | null;
+  dynamic_importance: number | null;
+  importance_score: number | null;
+  is_superseded: boolean;
+  supersedes_id: string | null;
+  created_at: string;
+}
+
+export interface MemoryRecentResponse {
+  items: MemoryItemResponse[];
+  total: number;
+}
+
+export interface MemoryIngestResponse {
+  raw_id: string;
+  status: "queued" | "duplicate";
+  supersedes_id: string | null;
+}
+
+export interface SearchResultItem {
+  id: string;
+  content: string;
+  summary: string | null;
+  type: string;
+  importance_score: number | null;
+  combined_score: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResultItem[];
+}
