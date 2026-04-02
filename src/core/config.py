@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     # Application
     log_level: str = "info"
+    dashboard_origins: str = ""  # comma-separated CORS origins for web dashboard
 
     # Worker
     worker_poll_interval: int = 5

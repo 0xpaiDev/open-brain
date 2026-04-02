@@ -148,6 +148,31 @@ async def test_list_todos_empty_state(test_client, api_key_headers) -> None:
     assert body["todos"] == []
 
 
+@pytest.mark.asyncio
+async def test_list_todos_ordered_by_created_at_desc(
+    test_client, api_key_headers, async_session
+) -> None:
+    """GET /v1/todos returns todos ordered by created_at DESC (newest first).
+
+    SQLite's datetime resolution can collapse multiple inserts into the same
+    timestamp, so we set created_at explicitly to guarantee ordering.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from src.core.models import TodoItem
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for i, desc in enumerate(["oldest", "middle", "newest"]):
+        todo = TodoItem(description=desc, created_at=base + timedelta(hours=i))
+        async_session.add(todo)
+    await async_session.commit()
+
+    resp = await test_client.get("/v1/todos", headers=api_key_headers)
+    assert resp.status_code == 200
+    descriptions = [t["description"] for t in resp.json()["todos"]]
+    assert descriptions == ["newest", "middle", "oldest"]
+
+
 # ── GET /v1/todos/{id} ─────────────────────────────────────────────────────────
 
 

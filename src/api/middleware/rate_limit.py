@@ -78,6 +78,10 @@ def _get_pulse_rate() -> str:
     return "60/minute"
 
 
+def _get_calendar_rate() -> str:
+    return "60/minute"
+
+
 # Module-level limiter — shared across all routes that import it.
 # key_func=get_remote_address uses the client IP (or X-Forwarded-For when
 # --proxy-headers is active, which we enable in docker-compose.yml).
@@ -93,3 +97,4 @@ queue_limit = _get_queue_rate
 todos_limit = _get_todos_rate
 tasks_limit = _get_tasks_rate
 pulse_limit = _get_pulse_rate
+calendar_limit = _get_calendar_rate

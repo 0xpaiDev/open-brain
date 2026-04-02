@@ -1,0 +1,1365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Brain — Presentation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a14;
+    --surface: #12121f;
+    --surface2: #1a1a2e;
+    --border: #2a2a4a;
+    --accent: #6c63ff;
+    --accent2: #a78bfa;
+    --accent3: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --mom-accent: #f472b6;
+    --dev-accent: #6c63ff;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── MODE TOGGLE ── */
+  #mode-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 100;
+  }
+
+  #mode-bar .brand {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: linear-gradient(135deg, var(--accent2), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  #mode-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .mode-btn {
+    padding: 6px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.2s;
+    letter-spacing: 0.03em;
+  }
+
+  .mode-btn.active-mom {
+    background: linear-gradient(135deg, #f472b6, #e879f9);
+    color: white;
+  }
+
+  .mode-btn.active-dev {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+  }
+
+  #slide-counter {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 80px;
+    text-align: right;
+  }
+
+  /* ── SLIDE CONTAINER ── */
+  #deck {
+    position: fixed;
+    top: 52px; left: 0; right: 0; bottom: 44px;
+    overflow: hidden;
+  }
+
+  .slide {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 60px;
+    height: 100%;
+    width: 100%;
+  }
+
+  .slide.active {
+    display: flex;
+  }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .tag-mom {
+    background: rgba(244,114,182,0.15);
+    color: var(--mom-accent);
+    border: 1px solid rgba(244,114,182,0.3);
+  }
+
+  .tag-dev {
+    background: rgba(108,99,255,0.15);
+    color: var(--accent2);
+    border: 1px solid rgba(108,99,255,0.3);
+  }
+
+  .tag-all {
+    background: rgba(56,189,248,0.15);
+    color: var(--accent3);
+    border: 1px solid rgba(56,189,248,0.3);
+  }
+
+  /* Headings */
+  h1 {
+    font-size: clamp(32px, 4vw, 52px);
+    font-weight: 800;
+    line-height: 1.15;
+    text-align: center;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: clamp(24px, 3vw, 38px);
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--accent2);
+  }
+
+  .subtitle {
+    font-size: clamp(15px, 1.8vw, 20px);
+    color: var(--muted);
+    text-align: center;
+    max-width: 680px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+
+  .grad-text {
+    background: linear-gradient(135deg, var(--accent2), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .grad-mom {
+    background: linear-gradient(135deg, #f472b6, #e879f9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── CARD GRID ── */
+  .card-grid {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+    max-width: 960px;
+  }
+
+  .card-grid-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card-grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--accent); }
+
+  .card .icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .card .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+
+  .card .card-body {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ── CODE BLOCKS ── */
+  pre {
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    overflow-x: auto;
+    width: 100%;
+    max-width: 880px;
+    text-align: left;
+  }
+
+  .kw { color: #c084fc; }
+  .fn { color: #60a5fa; }
+  .str { color: #4ade80; }
+  .cm { color: #475569; font-style: italic; }
+  .num { color: #fb923c; }
+  .op { color: #94a3b8; }
+  .var { color: #e2e8f0; }
+  .hl { background: rgba(108,99,255,0.15); border-left: 3px solid var(--accent); padding-left: 12px; margin-left: -16px; display: block; }
+
+  /* ── PIPELINE DIAGRAM ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    max-width: 900px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .pipe-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 90px;
+  }
+
+  .pipe-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 8px;
+    text-align: center;
+    font-size: 11.5px;
+    font-weight: 600;
+    width: 100%;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .pipe-box .pipe-icon { font-size: 20px; display: block; margin-bottom: 4px; }
+  .pipe-box .pipe-label { display: block; color: var(--text); }
+  .pipe-box .pipe-sub { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; font-weight: 400; }
+
+  .pipe-arrow {
+    color: var(--muted);
+    font-size: 18px;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  .pipe-step:nth-child(3n+1) .pipe-box { border-color: #6c63ff66; }
+  .pipe-step:nth-child(3n+2) .pipe-box { border-color: #38bdf866; }
+  .pipe-step:nth-child(3n+3) .pipe-box { border-color: #4ade8066; }
+
+  /* ── TABLE ── */
+  table {
+    width: 100%;
+    max-width: 880px;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    background: var(--surface2);
+    color: var(--accent2);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #1a1a2e;
+    color: var(--text);
+    line-height: 1.5;
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #12121f; }
+
+  .td-green { color: var(--green); font-size: 12px; }
+  .td-red { color: var(--red); font-size: 12px; }
+  .td-yellow { color: var(--yellow); font-size: 12px; }
+
+  /* ── FORMULA BOX ── */
+  .formula-box {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 30px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 14px;
+    line-height: 2;
+    text-align: center;
+    max-width: 700px;
+    width: 100%;
+  }
+
+  .formula-box .w { color: var(--yellow); font-weight: 700; }
+  .formula-box .component { color: var(--accent3); }
+  .formula-box .op2 { color: var(--muted); }
+
+  /* ── ARCH DIAGRAM ── */
+  .arch-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 720px;
+    width: 100%;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+
+  .arch-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .arch-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: var(--text);
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+  }
+
+  .arch-box.input { border-color: #38bdf866; color: var(--accent3); }
+  .arch-box.queue { border-color: #fbbf2466; color: var(--yellow); }
+  .arch-box.worker { border-color: #6c63ff66; color: var(--accent2); }
+  .arch-box.store { border-color: #4ade8066; color: var(--green); }
+  .arch-box.retrieval { border-color: #f472b666; color: var(--mom-accent); }
+  .arch-arrow { color: var(--muted); text-align: center; width: 20px; flex-shrink: 0; }
+  .arch-label { color: var(--muted); font-size: 10px; flex: 1; padding-left: 10px; }
+
+  /* ── HIGHLIGHT PILLS ── */
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  .pill-blue { background: rgba(56,189,248,0.15); color: var(--accent3); }
+  .pill-purple { background: rgba(108,99,255,0.15); color: var(--accent2); }
+  .pill-green { background: rgba(74,222,128,0.15); color: var(--green); }
+  .pill-yellow { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .pill-red { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  /* ── BIG QUOTE ── */
+  .big-quote {
+    font-size: clamp(20px, 2.5vw, 30px);
+    font-weight: 600;
+    line-height: 1.5;
+    text-align: center;
+    max-width: 700px;
+    color: var(--text);
+  }
+
+  .big-quote em {
+    font-style: normal;
+    background: linear-gradient(135deg, #f472b6, #e879f9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── GOTCHA LIST ── */
+  .gotcha-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 860px;
+    width: 100%;
+  }
+
+  .gotcha-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .gotcha-item .gotcha-num {
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--accent);
+    color: white;
+    border-radius: 4px;
+    padding: 2px 7px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .gotcha-item .gotcha-title { font-weight: 600; color: var(--text); }
+  .gotcha-item .gotcha-desc { color: var(--muted); margin-top: 2px; }
+
+  /* ── NAV BAR ── */
+  #nav-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 44px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 100;
+  }
+
+  .nav-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 5px 18px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .nav-btn:hover { background: var(--accent); border-color: var(--accent); }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .progress-bar {
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    position: fixed;
+    top: 52px; left: 0;
+    transition: width 0.3s ease;
+    z-index: 101;
+  }
+
+  /* ── SLIDE-SPECIFIC ── */
+  #slide-1 {
+    background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(108,99,255,0.12) 0%, transparent 70%);
+  }
+
+  .brain-icon {
+    font-size: 72px;
+    margin-bottom: 16px;
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(108,99,255,0.4)); }
+    50% { transform: scale(1.06); filter: drop-shadow(0 0 20px rgba(108,99,255,0.8)); }
+  }
+
+  /* Animated pipeline (slide 5) */
+  .anim-pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    font-size: 13px;
+    max-width: 800px;
+    width: 100%;
+  }
+
+  .anim-step {
+    flex: 1;
+    text-align: center;
+    padding: 14px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 12.5px;
+    opacity: 0;
+    animation: fadeUp 0.5s ease forwards;
+  }
+
+  .anim-step:nth-child(1) { animation-delay: 0.1s; }
+  .anim-step:nth-child(3) { animation-delay: 0.35s; }
+  .anim-step:nth-child(5) { animation-delay: 0.6s; }
+  .anim-step:nth-child(7) { animation-delay: 0.85s; }
+  .anim-step:nth-child(9) { animation-delay: 1.1s; }
+
+  .anim-arrow {
+    color: var(--muted);
+    font-size: 22px;
+    padding: 0 4px;
+    flex-shrink: 0;
+    opacity: 0;
+    animation: fadeIn 0.3s ease forwards;
+  }
+
+  .anim-arrow:nth-child(2) { animation-delay: 0.25s; }
+  .anim-arrow:nth-child(4) { animation-delay: 0.5s; }
+  .anim-arrow:nth-child(6) { animation-delay: 0.75s; }
+  .anim-arrow:nth-child(8) { animation-delay: 1.0s; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .step-icon { font-size: 26px; display: block; margin-bottom: 6px; }
+  .step-name { font-weight: 700; color: var(--text); }
+  .step-sub { font-size: 11px; color: var(--muted); margin-top: 3px; display: block; }
+
+  /* Comparison table (slide 8) */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    max-width: 920px;
+    width: 100%;
+  }
+
+  .compare-col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .compare-col.winner {
+    border-color: var(--green);
+    background: rgba(74,222,128,0.04);
+  }
+
+  .compare-col h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .compare-col ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .compare-col ul li {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+    padding-left: 16px;
+    position: relative;
+  }
+
+  .compare-col ul li::before {
+    content: attr(data-icon);
+    position: absolute;
+    left: 0;
+  }
+
+  /* dim slides when mode selected */
+  .slide.mom-only, .slide.dev-only { opacity: 1; }
+
+  body.mode-mom .slide.dev-only { display: none; }
+  body.mode-dev .slide.mom-only { display: none; }
+
+  /* importance score visual (slide 9) */
+  .gen-col {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 12.5px;
+    font-family: 'Cascadia Code', monospace;
+    max-width: 700px;
+    width: 100%;
+  }
+
+  .gen-col .col-name { color: var(--accent3); font-weight: 700; }
+  .gen-col .col-type { color: var(--yellow); }
+  .gen-col .col-gen { color: var(--green); }
+  .gen-col .col-comment { color: #475569; font-style: italic; }
+
+  /* two-col layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 920px;
+    width: 100%;
+    align-items: start;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  /* slide 14 intel */
+  .intel-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    max-width: 860px;
+    width: 100%;
+  }
+
+  .intel-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .intel-card h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--accent2);
+  }
+
+  .intel-card p {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .intel-card code {
+    font-family: 'Cascadia Code', monospace;
+    font-size: 11.5px;
+    color: var(--accent3);
+    background: rgba(56,189,248,0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar" id="progress-bar"></div>
+
+<!-- Mode toggle bar -->
+<div id="mode-bar">
+  <div class="brand">🧠 OPEN BRAIN</div>
+  <div id="mode-toggle">
+    <button class="mode-btn" id="btn-all" onclick="setMode('all')">All Slides</button>
+    <button class="mode-btn" id="btn-mom" onclick="setMode('mom')">Mom Mode 💗</button>
+    <button class="mode-btn" id="btn-dev" onclick="setMode('dev')">Dev Mode 💻</button>
+  </div>
+  <div id="slide-counter">1 / 15</div>
+</div>
+
+<!-- DECK -->
+<div id="deck">
+
+  <!-- ── SLIDE 1: TITLE ── -->
+  <div class="slide active" id="slide-1" data-audience="all">
+    <div class="brain-icon">🧠</div>
+    <div class="tag tag-all">Open Source · Personal · AI-Powered</div>
+    <h1 class="grad-text">Open Brain</h1>
+    <p class="subtitle">A personal AI memory system — captures what you know, finds what you need, learns what matters.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:8px;">
+      <span class="pill pill-purple">FastAPI</span>
+      <span class="pill pill-blue">pgvector</span>
+      <span class="pill pill-green">Claude Haiku</span>
+      <span class="pill pill-yellow">Voyage AI</span>
+      <span class="pill pill-blue">PostgreSQL</span>
+      <span class="pill pill-purple">MCP Server</span>
+      <span class="pill pill-blue">Discord Bot</span>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-top:28px;">Use ← → arrows or keyboard to navigate &nbsp;·&nbsp; Toggle mode above</p>
+  </div>
+
+  <!-- ── SLIDE 2: THE PROBLEM (MOM) ── -->
+  <div class="slide mom-only" id="slide-2" data-audience="mom">
+    <div class="tag tag-mom">For Everyone · The Problem</div>
+    <h2>We all <span class="grad-mom">forget things</span></h2>
+    <p class="subtitle">You've had a brilliant idea, a key decision, or an important conversation — and weeks later, it's gone. Or scattered across notebooks, apps, and sticky notes you'll never re-read.</p>
+    <div class="card-grid card-grid-2" style="max-width:720px;">
+      <div class="card">
+        <span class="icon">📔</span>
+        <div class="card-title">The Old Way</div>
+        <div class="card-body">Notebooks, Notion, Notes apps, emails-to-self. Information in 10 different places, none of them searchable together. You already forgot which app you wrote it in.</div>
+      </div>
+      <div class="card" style="border-color:var(--accent);">
+        <span class="icon">🧠</span>
+        <div class="card-title">The Open Brain Way</div>
+        <div class="card-body">One place. You type (or speak, or chat). It reads, understands, connects the dots, and remembers — forever. Ask it a question later. It finds the right answer.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 3: WHAT IT DOES (MOM) ── -->
+  <div class="slide mom-only" id="slide-3" data-audience="mom">
+    <div class="tag tag-mom">For Everyone · What It Does</div>
+    <h2>Three things, <span class="grad-mom">done well</span></h2>
+    <div class="card-grid card-grid-3" style="max-width:860px;">
+      <div class="card" style="border-color:#f472b666;">
+        <span class="icon">✍️</span>
+        <div class="card-title">1. Remembers Anything</div>
+        <div class="card-body">You type a thought, paste a note, or send a message. Open Brain reads it, understands who and what it's about, and files it intelligently. No folders. No tags. No effort.</div>
+      </div>
+      <div class="card" style="border-color:#e879f966;">
+        <span class="icon">🔍</span>
+        <div class="card-title">2. Finds the Right Memory</div>
+        <div class="card-body">Ask in plain English: "What did I decide about the kitchen renovation?" It searches by meaning, not just keywords — so it finds it even if you used different words.</div>
+      </div>
+      <div class="card" style="border-color:#a78bfa66;">
+        <span class="icon">📈</span>
+        <div class="card-title">3. Gets Smarter Over Time</div>
+        <div class="card-body">Memories you access more often become more important. Recent things rank higher. Older, forgotten items fade. Every Sunday, it writes you a summary of the week's themes.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 4: HOW YOU USE IT (MOM) ── -->
+  <div class="slide mom-only" id="slide-4" data-audience="mom">
+    <div class="tag tag-mom">For Everyone · How You Use It</div>
+    <h2>Works <span class="grad-mom">wherever you are</span></h2>
+    <div class="card-grid card-grid-4" style="max-width:900px;">
+      <div class="card">
+        <span class="icon">💬</span>
+        <div class="card-title">Discord Chat</div>
+        <div class="card-body">Message the bot like texting a friend. Type a thought, ask a question. Works on your phone.</div>
+      </div>
+      <div class="card">
+        <span class="icon">⌨️</span>
+        <div class="card-title">Command Line</div>
+        <div class="card-body">For Shu, a few quick keystrokes stores or retrieves any memory instantly from the terminal.</div>
+      </div>
+      <div class="card">
+        <span class="icon">🤖</span>
+        <div class="card-title">Any AI Assistant</div>
+        <div class="card-body">Claude, ChatGPT, or any AI tool can tap into the memory bank automatically during conversation.</div>
+      </div>
+      <div class="card">
+        <span class="icon">🌐</span>
+        <div class="card-title">Direct API</div>
+        <div class="card-body">Any app or script can store and retrieve memories. Open Brain is a platform, not just a tool.</div>
+      </div>
+    </div>
+    <p class="subtitle" style="margin-top:20px;font-size:14px;">Think of it like a very smart, searchable diary — that any of your digital tools can read and write to.</p>
+  </div>
+
+  <!-- ── SLIDE 5: THE MAGIC (MOM) ── -->
+  <div class="slide mom-only" id="slide-5" data-audience="mom">
+    <div class="tag tag-mom">For Everyone · Under the Hood</div>
+    <h2>What happens when you <span class="grad-mom">type a thought</span></h2>
+    <div class="anim-pipeline">
+      <div class="anim-step">
+        <span class="step-icon">💬</span>
+        <span class="step-name">You Type</span>
+        <span class="step-sub">Any text, any length</span>
+      </div>
+      <div class="anim-arrow">→</div>
+      <div class="anim-step">
+        <span class="step-icon">🤖</span>
+        <span class="step-name">AI Reads It</span>
+        <span class="step-sub">Finds people, places, decisions</span>
+      </div>
+      <div class="anim-arrow">→</div>
+      <div class="anim-step">
+        <span class="step-icon">🔗</span>
+        <span class="step-name">Connects Dots</span>
+        <span class="step-sub">Links to related memories</span>
+      </div>
+      <div class="anim-arrow">→</div>
+      <div class="anim-step">
+        <span class="step-icon">🗄️</span>
+        <span class="step-name">Stored Safely</span>
+        <span class="step-sub">In a real database, forever</span>
+      </div>
+      <div class="anim-arrow">→</div>
+      <div class="anim-step">
+        <span class="step-icon">🎯</span>
+        <span class="step-name">Found Instantly</span>
+        <span class="step-sub">When you need it</span>
+      </div>
+    </div>
+    <div class="card-grid card-grid-3" style="max-width:720px;margin-top:16px;">
+      <div class="card">
+        <div class="card-title">🧑 People</div>
+        <div class="card-body">Recognises "Mum" and "Mom" are the same person. Remembers context about them.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">📋 Decisions</div>
+        <div class="card-body">Extracts decisions automatically: what you chose, why, and what alternatives you considered.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">✅ Tasks</div>
+        <div class="card-body">Spots "I need to call the plumber" and creates a task — without you having to ask.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 6: WHY IT MATTERS (MOM) ── -->
+  <div class="slide mom-only" id="slide-6" data-audience="mom">
+    <div class="tag tag-mom">For Everyone · Why It Matters</div>
+    <h2 style="margin-bottom:28px;">Your knowledge,<br><span class="grad-mom">organized forever</span></h2>
+    <div class="big-quote">
+      "Imagine never losing an idea again. Everything you've thought, decided, or learned — searchable in seconds. Not because you organised it. Because <em>it did that for you</em>."
+    </div>
+    <div style="display:flex;gap:16px;margin-top:32px;flex-wrap:wrap;justify-content:center;">
+      <div style="text-align:center;padding:16px 24px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+        <div style="font-size:28px;font-weight:800;color:var(--mom-accent);">410+</div>
+        <div style="font-size:12px;color:var(--muted);">Tests Passing</div>
+      </div>
+      <div style="text-align:center;padding:16px 24px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+        <div style="font-size:28px;font-weight:800;color:var(--accent3);">12</div>
+        <div style="font-size:12px;color:var(--muted);">Database Tables</div>
+      </div>
+      <div style="text-align:center;padding:16px 24px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+        <div style="font-size:28px;font-weight:800;color:var(--green);">1024</div>
+        <div style="font-size:12px;color:var(--muted);">Dimensions per Memory</div>
+      </div>
+      <div style="text-align:center;padding:16px 24px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+        <div style="font-size:28px;font-weight:800;color:var(--yellow);">4</div>
+        <div style="font-size:12px;color:var(--muted);">Ways to Access</div>
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-top:24px;">Built by Shu · Powered by Claude AI · Hosted on Supabase</p>
+  </div>
+
+  <!-- ── SLIDE 7: ARCHITECTURE (DEV) ── -->
+  <div class="slide dev-only" id="slide-7" data-audience="dev">
+    <div class="tag tag-dev">Engineering · System Architecture</div>
+    <h2 style="margin-bottom:18px;">Queue-Worker <span class="grad-text">at its core</span></h2>
+    <div class="arch-flow">
+      <div class="arch-row">
+        <div class="arch-box input">API &nbsp;/&nbsp; CLI &nbsp;/&nbsp; Discord Bot &nbsp;/&nbsp; MCP Server</div>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:18px;padding:2px 0;">↓</div>
+      <div class="arch-row">
+        <div class="arch-box queue">raw_memory (append-only log) &nbsp;+&nbsp; refinement_queue (SELECT FOR UPDATE SKIP LOCKED)</div>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:18px;padding:2px 0;">↓</div>
+      <div class="arch-box worker" style="padding:12px 14px;border-radius:6px;max-width:720px;width:100%;text-align:left;font-family:'Cascadia Code',monospace;font-size:12px;">
+        <strong>Worker Pipeline (async, idempotent)</strong><br>
+        <span style="color:var(--muted);">normalize → extract (Haiku) → validate → embed (Voyage) → resolve (pg_trgm) → store</span>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:18px;padding:2px 0;">↓</div>
+      <div class="arch-row" style="gap:6px;">
+        <div class="arch-box store">memory_items</div>
+        <div class="arch-box store">entities + aliases</div>
+        <div class="arch-box store">decisions + tasks</div>
+        <div class="arch-box store">retrieval_events</div>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:18px;padding:2px 0;">↓</div>
+      <div class="arch-box retrieval" style="border-radius:6px;max-width:720px;width:100%;font-size:12px;">
+        Hybrid Search &nbsp;·&nbsp; 0.50×vector + 0.20×keyword + 0.20×importance + 0.10×recency
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;justify-content:center;">
+      <span class="pill pill-green">Stateless API</span>
+      <span class="pill pill-blue">PostgreSQL = single source of truth</span>
+      <span class="pill pill-purple">No Redis / No in-process state</span>
+      <span class="pill pill-yellow">No agent framework</span>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 8: WHY NOT LANGCHAIN/SWARM ── -->
+  <div class="slide dev-only" id="slide-8" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Design Decision</div>
+    <h2 style="margin-bottom:18px;">Why <span class="grad-text">not</span> LangChain or Swarm?</h2>
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4 style="color:var(--red);">🦜 LangChain</h4>
+        <ul>
+          <li data-icon="✗ ">Abstraction leaks — you still need to understand the underlying API calls to debug failures</li>
+          <li data-icon="✗ ">Version churn — breaking changes every minor release</li>
+          <li data-icon="✗ ">Callback hell for even simple retry logic</li>
+          <li data-icon="✗ ">Opaque chain tracing — hard to know why the LLM got bad input</li>
+          <li data-icon="✗ ">Built for chains; adds overhead for a single extraction step</li>
+        </ul>
+      </div>
+      <div class="compare-col">
+        <h4 style="color:var(--yellow);">🐝 OpenAI Swarm</h4>
+        <ul>
+          <li data-icon="✗ ">Designed for multi-agent handoffs — we have exactly one worker doing one job</li>
+          <li data-icon="✗ ">Context variables passed between agents don't map to our PostgreSQL-centric model</li>
+          <li data-icon="✗ ">Agent loop overhead for a linear pipeline is pure waste</li>
+          <li data-icon="✗ ">Handoff semantics lose the durable queue guarantees we need for crash recovery</li>
+          <li data-icon="✗ ">Experimental — not production-ready at time of build</li>
+        </ul>
+      </div>
+      <div class="compare-col winner">
+        <h4 style="color:var(--green);">✓ Queue-Worker Pattern</h4>
+        <ul>
+          <li data-icon="✓ ">Durable by default — jobs survive worker crashes via stale lock reclaim</li>
+          <li data-icon="✓ ">Observable — every stage is a plain async Python function, easy to log and trace</li>
+          <li data-icon="✓ ">Zero framework tax — Tenacity for retry, structlog for tracing, that's it</li>
+          <li data-icon="✓ ">PostgreSQL guarantees ordering, idempotency, and consistency</li>
+          <li data-icon="✓ ">Scale when needed: add workers, don't change architecture</li>
+        </ul>
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin-top:10px;">The right orchestration for this system is PostgreSQL's <code style="color:var(--accent3);">SELECT FOR UPDATE SKIP LOCKED</code> — not an agent framework.</p>
+  </div>
+
+  <!-- ── SLIDE 9: STATE MANAGEMENT ── -->
+  <div class="slide dev-only" id="slide-9" data-audience="dev">
+    <div class="tag tag-dev">Engineering · State Management</div>
+    <h2 style="margin-bottom:18px;">PostgreSQL <span class="grad-text">is the state machine</span></h2>
+    <div class="two-col">
+      <div>
+        <p class="section-label">Immutability Rules</p>
+        <div class="card" style="margin-bottom:10px;">
+          <div class="card-title">Append-Only raw_memory</div>
+          <div class="card-body">Never UPDATE or DELETE. Corrections create new <code style="font-family:monospace;color:var(--accent3);">memory_items</code> with <code style="font-family:monospace;color:var(--accent3);">supersedes_id</code>. Full audit trail by design.</div>
+        </div>
+        <div class="card" style="margin-bottom:10px;">
+          <div class="card-title">Composite PK Idempotency</div>
+          <div class="card-body"><code style="font-family:monospace;color:var(--accent3);">(memory_id, entity_id)</code> on junction tables + <code style="font-family:monospace;color:var(--accent3);">ON CONFLICT DO NOTHING</code> = reprocessing the same job twice is always safe.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Stale Lock Reclaim</div>
+          <div class="card-body">Worker claims jobs with <code style="font-family:monospace;color:var(--accent3);">locked_at &lt; now() - 5min</code>. Crashed workers release automatically. No manual intervention.</div>
+        </div>
+      </div>
+      <div>
+        <p class="section-label">GENERATED Column (single source of truth)</p>
+        <div class="gen-col">
+          <span class="col-comment">-- Never UPDATE importance_score directly</span><br>
+          <span class="col-name">importance_score</span> <span class="col-type">FLOAT</span><br>
+          &nbsp;&nbsp;<span class="col-gen">GENERATED ALWAYS AS</span> (<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="num">0.6</span> <span class="op">*</span> base_importance<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="op">+</span> <span class="num">0.4</span> <span class="op">*</span> dynamic_importance<br>
+          &nbsp;&nbsp;) STORED<br><br>
+          <span class="col-comment">-- dynamic_importance updated daily by cron</span><br>
+          <span class="col-comment">-- decays exponentially via retrieval events</span>
+        </div>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
+          <span class="pill pill-green">No Redis</span>
+          <span class="pill pill-blue">No in-process cache</span>
+          <span class="pill pill-purple">No shared mutable state across requests</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 10: WORKER PIPELINE ── -->
+  <div class="slide dev-only" id="slide-10" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Worker Pipeline</div>
+    <h2 style="margin-bottom:16px;">6 stages, <span class="grad-text">each independently failable</span></h2>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">📐</span>
+          <span class="pipe-label">Normalize</span>
+          <span class="pipe-sub">NFC, collapse blanks, tokenize, 2k-token chunks</span>
+        </div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">🤖</span>
+          <span class="pipe-label">Extract</span>
+          <span class="pipe-sub">Claude Haiku → JSON entities, decisions, tasks, importance</span>
+        </div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">✅</span>
+          <span class="pipe-label">Validate</span>
+          <span class="pipe-sub">Pydantic schema, entity name normalization</span>
+        </div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">🧬</span>
+          <span class="pipe-label">Embed</span>
+          <span class="pipe-sub">Voyage AI voyage-3 1024-dim vectors, Tenacity 3×</span>
+        </div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">🔗</span>
+          <span class="pipe-label">Resolve</span>
+          <span class="pipe-sub">pg_trgm fuzzy match ≥0.92, merge aliases, exact→fuzzy→insert</span>
+        </div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <span class="pipe-icon">💾</span>
+          <span class="pipe-label">Store</span>
+          <span class="pipe-sub">Transactional: memory_items + entities + links + commit()</span>
+        </div>
+      </div>
+    </div>
+    <div class="two-col" style="max-width:860px;margin-top:16px;font-size:12.5px;">
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow);">ExtractionFailed</div>
+        <div class="card-body">Attempts &lt; 3 → reset to pending, escalate prompt. Attempts ≥ 3 → dead letter (<code style="font-family:monospace;color:var(--accent3);">failed_refinements</code>). Inspectable + retryable via API.</div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--red);">EmbeddingFailed</div>
+        <div class="card-body">Not retryable with escalation. Tenacity handles rate limits (3× backoff 2/4/8s). After exhaustion → dead letter immediately.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 11: HYBRID SEARCH ── -->
+  <div class="slide dev-only" id="slide-11" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Retrieval</div>
+    <h2 style="margin-bottom:18px;">Hybrid Search <span class="grad-text">Formula</span></h2>
+    <div class="formula-box">
+      combined_score <span class="op2">=</span><br>
+      &nbsp;&nbsp;<span class="w">0.50</span> <span class="op2">×</span> <span class="component">vector_similarity</span>  &nbsp;<span class="op2">// semantic meaning</span><br>
+      &nbsp;&nbsp;<span class="op2">+</span> <span class="w">0.20</span> <span class="op2">×</span> <span class="component">keyword_relevance</span>  &nbsp;<span class="op2">// exact term matching</span><br>
+      &nbsp;&nbsp;<span class="op2">+</span> <span class="w">0.20</span> <span class="op2">×</span> <span class="component">importance_score</span>   &nbsp;<span class="op2">// base×0.6 + dynamic×0.4</span><br>
+      &nbsp;&nbsp;<span class="op2">+</span> <span class="w">0.10</span> <span class="op2">×</span> <span class="component">recency_score</span>     &nbsp;<span class="op2">// exp(-ln2/30 × days)</span>
+    </div>
+    <div class="card-grid card-grid-2" style="max-width:860px;margin-top:16px;">
+      <div class="card">
+        <div class="card-title">HNSW Index (vector search)</div>
+        <div class="card-body">Cosine distance on 1024-dim Voyage embeddings. Top 100 candidates, then re-ranked. Fast approximate nearest-neighbour via pgvector HNSW index.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">GIN Index (full-text search)</div>
+        <div class="card-body"><code style="font-family:monospace;color:var(--accent3);">to_tsvector('english', content)</code> — the FTS query expression must be <strong>identical</strong> to the index definition or the GIN is bypassed (learned the hard way).</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Importance Score</div>
+        <div class="card-body">GENERATED column. <code style="font-family:monospace;color:var(--accent3);">dynamic_importance</code> updated nightly by exponential-decay aggregation of <code style="font-family:monospace;color:var(--accent3);">retrieval_events</code>. Frequently-accessed memories rise.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recency Score</div>
+        <div class="card-body">Exponential decay with 30-day half-life. A memory accessed today scores 1.0; same memory after 30 days scores 0.5. All weights are env-var configurable.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 12: IDEMPOTENCY & RESILIENCE ── -->
+  <div class="slide dev-only" id="slide-12" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Resilience</div>
+    <h2 style="margin-bottom:18px;">Built to <span class="grad-text">never lose a job</span></h2>
+    <div class="gotcha-list">
+      <div class="gotcha-item">
+        <div class="gotcha-num">1</div>
+        <div>
+          <div class="gotcha-title">SELECT FOR UPDATE SKIP LOCKED</div>
+          <div class="gotcha-desc">Distributed-safe job claiming. Multiple workers can run simultaneously — each gets a different job. No external queue needed at MVP scale.</div>
+        </div>
+      </div>
+      <div class="gotcha-item">
+        <div class="gotcha-num">2</div>
+        <div>
+          <div class="gotcha-title">Stale Lock Reclaim (locked_at &lt; now() - 5min)</div>
+          <div class="gotcha-desc">Worker crashed? Jobs stuck in <code style="font-family:monospace;color:var(--accent3);">processing</code> are automatically reclaimed after 5 minutes. No manual intervention. No lost work.</div>
+        </div>
+      </div>
+      <div class="gotcha-item">
+        <div class="gotcha-num">3</div>
+        <div>
+          <div class="gotcha-title">Composite PKs + ON CONFLICT DO NOTHING</div>
+          <div class="gotcha-desc">Processing the same job twice = safe. All junction tables use composite PKs. All inserts use conflict-ignore. The worker is fully idempotent.</div>
+        </div>
+      </div>
+      <div class="gotcha-item">
+        <div class="gotcha-num">4</div>
+        <div>
+          <div class="gotcha-title">Content-Hash Dedup (24-hour window)</div>
+          <div class="gotcha-desc">SHA-256 of normalized content prevents duplicate ingestion storms — especially from Discord where a bot might re-send the same message multiple times.</div>
+        </div>
+      </div>
+      <div class="gotcha-item">
+        <div class="gotcha-num">5</div>
+        <div>
+          <div class="gotcha-title">3-Attempt Dead Letter Queue</div>
+          <div class="gotcha-desc">Extraction failures retry with escalating prompts (attempts 1→2). On attempt 3, the job moves to <code style="font-family:monospace;color:var(--accent3);">failed_refinements</code> — inspectable and retryable via <code style="font-family:monospace;color:var(--accent3);">POST /v1/dead-letters/{id}/retry</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 13: WHY NOT LANGCHAIN DEEP DIVE ── -->
+  <div class="slide dev-only" id="slide-13" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Architecture Deep Dive</div>
+    <h2 style="margin-bottom:18px;">The honest answer about <span class="grad-text">orchestration</span></h2>
+    <div class="two-col" style="max-width:900px;align-items:start;">
+      <div>
+        <p class="section-label">What Swarm solves (and we don't need)</p>
+        <pre><span class="cm"># Swarm is great for:</span>
+<span class="kw">agent_a</span> = Agent(<span class="str">"extractor"</span>)
+<span class="kw">agent_b</span> = Agent(<span class="str">"embedder"</span>)
+<span class="cm"># → handoff between agents</span>
+<span class="cm"># → context variables flow across</span>
+<span class="cm"># → each agent can call tools</span>
+
+<span class="cm"># We have: one worker, one LLM call,</span>
+<span class="cm"># one pipeline. Swarm overhead = zero value.</span></pre>
+        <div class="card" style="margin-top:12px;">
+          <div class="card-title" style="color:var(--yellow);">The real "agent handoff" here</div>
+          <div class="card-body" style="font-size:12px;">Status transition in <code style="font-family:monospace;color:var(--accent3);">refinement_queue</code>: <code style="font-family:monospace;color:var(--yellow);">pending → processing → done</code>. PostgreSQL is the orchestrator. Each stage reads from and writes to the DB. Crash-safe, inspectable, no framework needed.</div>
+        </div>
+      </div>
+      <div>
+        <p class="section-label">Our actual pipeline (transparent Python)</p>
+        <pre><span class="kw">async def</span> <span class="fn">process_job</span>(queue_row, ...):
+  <span class="cm"># Each step = plain async function</span>
+  chunks  <span class="op">=</span> <span class="kw">await</span> <span class="fn">normalize</span>(raw.text)
+  extract <span class="op">=</span> <span class="kw">await</span> <span class="fn">extract_entities</span>(chunks)
+  <span class="cm"># ExtractionFailed → retry or dead letter</span>
+  embed   <span class="op">=</span> <span class="kw">await</span> <span class="fn">embed_text</span>(chunks)
+  <span class="cm"># EmbeddingFailed → dead letter immediately</span>
+  entities = <span class="kw">await</span> <span class="fn">resolve_entities</span>(session, ...)
+  <span class="kw">await</span> <span class="fn">store_memory_item</span>(session, ...)
+  <span class="kw">await</span> session.<span class="fn">commit</span>()  <span class="cm"># REQUIRED (learned)</span></pre>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
+          <span class="pill pill-green">Full stack trace on failure</span>
+          <span class="pill pill-blue">No framework version to chase</span>
+          <span class="pill pill-purple">Structlog spans the entire job</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 14: INTELLIGENCE LAYER ── -->
+  <div class="slide dev-only" id="slide-14" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Intelligence Layer</div>
+    <h2 style="margin-bottom:18px;">Scheduled jobs, <span class="grad-text">not async loops</span></h2>
+    <div class="intel-cards">
+      <div class="intel-card">
+        <h4>📊 Daily Importance Aggregation (3 AM)</h4>
+        <p>For each memory with <code>retrieval_events</code>: <code>dynamic_importance = Σ exp(-age/half_life)</code>. For memories with zero events: one-day exponential decay. GENERATED column recomputes automatically.</p>
+        <pre style="margin-top:12px;font-size:11px;"><span class="cm"># External cron — NOT FastAPI background task</span>
+python -m src.jobs.importance</pre>
+      </div>
+      <div class="intel-card">
+        <h4>📝 Weekly Synthesis (2 AM Sunday)</h4>
+        <p>Fetches last 7 days of memories + entity names → sends to Claude for theme clustering → stores result as a new <code>memory_item</code> with <code>type='context'</code>, <code>base_importance=0.8</code>.</p>
+        <pre style="margin-top:12px;font-size:11px;"><span class="cm"># Defaults to Haiku; set Opus for production</span>
+SYNTHESIS_MODEL=claude-opus-4-6
+python -m src.jobs.synthesis</pre>
+      </div>
+      <div class="intel-card">
+        <h4>🤔 Why External Cron, Not Async Loop?</h4>
+        <p>Long-running Claude Opus calls (synthesis can take 20–30s) must not block the async event loop. External cron = process isolation, crash containment, no impact on API latency.</p>
+      </div>
+      <div class="intel-card">
+        <h4>🔌 Why Not APScheduler / Celery Beat?</h4>
+        <p>These run inside the Python process — which defeats the point. Host cron spawns an independent process. Simple, auditable, doesn't require another service to keep running.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SLIDE 15: LESSONS LEARNED ── -->
+  <div class="slide dev-only" id="slide-15" data-audience="dev">
+    <div class="tag tag-dev">Engineering · Hard-Won Lessons</div>
+    <h2 style="margin-bottom:16px;">5 gotchas that <span class="grad-text">cost real debugging time</span></h2>
+    <div class="gotcha-list">
+      <div class="gotcha-item" style="border-left-color:var(--red);">
+        <div class="gotcha-num" style="background:var(--red);">1</div>
+        <div>
+          <div class="gotcha-title">session.flush() ≠ session.commit() — the silent data loss</div>
+          <div class="gotcha-desc">Worker was logging <code style="font-family:monospace;color:var(--accent3);">process_job_success</code> but DB stayed empty. SQLAlchemy's async context manager calls <code style="font-family:monospace;color:var(--accent3);">session.close()</code> on exit — implicit rollback. You must <code style="font-family:monospace;color:var(--accent3);">await session.commit()</code> explicitly after every terminal operation.</div>
+        </div>
+      </div>
+      <div class="gotcha-item" style="border-left-color:var(--yellow);">
+        <div class="gotcha-num" style="background:var(--yellow);color:#000;">2</div>
+        <div>
+          <div class="gotcha-title">pgvector codec + register_vector() = TypeError in production</div>
+          <div class="gotcha-desc"><code style="font-family:monospace;color:var(--accent3);">pgvector.sqlalchemy.Vector.process_bind_param</code> returns a string like <code style="font-family:monospace;color:var(--accent3);">'[0.1,...]'</code>. The asyncpg <code style="font-family:monospace;color:var(--accent3);">register_vector</code> codec expects a list. Do NOT call <code style="font-family:monospace;color:var(--accent3);">register_vector</code> — let PostgreSQL cast text → vector natively.</div>
+        </div>
+      </div>
+      <div class="gotcha-item" style="border-left-color:var(--accent);">
+        <div class="gotcha-num" style="background:var(--accent);">3</div>
+        <div>
+          <div class="gotcha-title">GIN index not used — FTS expression must be byte-for-byte identical</div>
+          <div class="gotcha-desc">The Alembic migration creates the index on <code style="font-family:monospace;color:var(--accent3);">to_tsvector('english', content)</code>. Your search query <em>must</em> use the same expression — same function, same config string. Any variation forces a full table scan.</div>
+        </div>
+      </div>
+      <div class="gotcha-item" style="border-left-color:var(--green);">
+        <div class="gotcha-num" style="background:var(--green);color:#000;">4</div>
+        <div>
+          <div class="gotcha-title">Settings singleton captures .env at import time — breaks test isolation</div>
+          <div class="gotcha-desc">When a <code style="font-family:monospace;color:var(--accent3)">.env</code> file exists, <code style="font-family:monospace;color:var(--accent3);">config.settings</code> loads production keys at module import. Use an autouse fixture: <code style="font-family:monospace;color:var(--accent3);">monkeypatch.setattr(_config, "settings", _config.Settings())</code> to re-create from test env vars each test.</div>
+        </div>
+      </div>
+      <div class="gotcha-item" style="border-left-color:var(--accent3);">
+        <div class="gotcha-num" style="background:var(--accent3);color:#000;">5</div>
+        <div>
+          <div class="gotcha-title">ORM identity map conflict after raw SQL UPDATE + session.delete()</div>
+          <div class="gotcha-desc">After raw SQL updates on child tables, calling <code style="font-family:monospace;color:var(--accent3);">session.delete(entity)</code> makes SQLAlchemy try to SET NULL stale FK references — which crashes on composite PK columns. Fix: <code style="font-family:monospace;color:var(--accent3);">session.expunge(entity)</code> first, then delete via SQLAlchemy Core.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #deck -->
+
+<!-- Nav bar -->
+<div id="nav-bar">
+  <button class="nav-btn" id="btn-prev" onclick="navigate(-1)">← Prev</button>
+  <div id="dot-container" style="display:flex;gap:6px;align-items:center;"></div>
+  <button class="nav-btn" id="btn-next" onclick="navigate(1)">Next →</button>
+</div>
+
+<script>
+  // ── State ──
+  let allSlides = Array.from(document.querySelectorAll('.slide'));
+  let visibleSlides = [...allSlides];
+  let currentIndex = 0;
+  let currentMode = 'all';
+
+  // ── Mode Switching ──
+  function setMode(mode) {
+    currentMode = mode;
+    document.body.className = mode === 'all' ? '' : `mode-${mode}`;
+    ['btn-all','btn-mom','btn-dev'].forEach(id => {
+      document.getElementById(id).className = 'mode-btn';
+    });
+    if (mode === 'mom') document.getElementById('btn-mom').className = 'mode-btn active-mom';
+    else if (mode === 'dev') document.getElementById('btn-dev').className = 'mode-btn active-dev';
+    else document.getElementById('btn-all').className = 'mode-btn active-dev';
+
+    // Rebuild visible slides
+    visibleSlides = allSlides.filter(s => {
+      const aud = s.dataset.audience;
+      if (mode === 'all') return true;
+      if (mode === 'mom') return aud === 'all' || aud === 'mom';
+      if (mode === 'dev') return aud === 'all' || aud === 'dev';
+      return true;
+    });
+
+    // Make non-visible slides invisible without display:none (handled by CSS class)
+    // But we jump to first visible slide
+    currentIndex = 0;
+    render();
+  }
+
+  // ── Navigation ──
+  function navigate(dir) {
+    const newIdx = currentIndex + dir;
+    if (newIdx < 0 || newIdx >= visibleSlides.length) return;
+    visibleSlides[currentIndex].classList.remove('active');
+    currentIndex = newIdx;
+    visibleSlides[currentIndex].classList.add('active');
+    render();
+  }
+
+  function render() {
+    const total = visibleSlides.length;
+    document.getElementById('slide-counter').textContent = `${currentIndex + 1} / ${total}`;
+    document.getElementById('btn-prev').disabled = currentIndex === 0;
+    document.getElementById('btn-next').disabled = currentIndex === total - 1;
+
+    // Progress bar
+    const pct = total > 1 ? (currentIndex / (total - 1)) * 100 : 100;
+    document.getElementById('progress-bar').style.width = pct + '%';
+
+    // Dots
+    const dc = document.getElementById('dot-container');
+    dc.innerHTML = '';
+    visibleSlides.forEach((_, i) => {
+      const dot = document.createElement('div');
+      dot.style.cssText = `
+        width: ${i === currentIndex ? '18px' : '7px'};
+        height: 7px;
+        border-radius: 4px;
+        background: ${i === currentIndex ? 'var(--accent2)' : 'var(--border)'};
+        transition: all 0.2s;
+        cursor: pointer;
+      `;
+      dot.onclick = () => {
+        if (i === currentIndex) return;
+        visibleSlides[currentIndex].classList.remove('active');
+        currentIndex = i;
+        visibleSlides[currentIndex].classList.add('active');
+        render();
+      };
+      dc.appendChild(dot);
+    });
+
+    // Ensure only current is active
+    allSlides.forEach(s => s.classList.remove('active'));
+    visibleSlides[currentIndex].classList.add('active');
+  }
+
+  // ── Keyboard ──
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); navigate(1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); navigate(-1); }
+  });
+
+  // ── Init ──
+  setMode('all');
+  document.getElementById('btn-all').className = 'mode-btn active-dev';
+</script>
+</body>
+</html>

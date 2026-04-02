@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 from src.api.middleware.auth import APIKeyMiddleware
 from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from src.api.routes.calendar_api import router as calendar_router
 from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
@@ -21,6 +22,7 @@ from src.api.routes.queue import router as queue_router
 from src.api.routes.search import router as search_router
 from src.api.routes.tasks import router as tasks_router
 from src.api.routes.todos import router as todos_router
+from src.core.config import get_settings
 from src.core.database import close_db, init_db
 
 logger = structlog.get_logger(__name__)
@@ -57,11 +59,19 @@ async def add_security_headers(request: Request, call_next: Any) -> Response:
 # Middleware (applied in reverse order — last added = outermost)
 app.add_middleware(APIKeyMiddleware)
 
-# CORS: Personal API — no browser origins permitted.
+# CORS: allow dashboard origins when configured, otherwise block all.
+def _cors_origins() -> list[str]:
+    try:
+        raw = get_settings().dashboard_origins
+    except Exception:
+        return []
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],  # No browser access
-    allow_credentials=False,
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
@@ -77,3 +87,4 @@ app.include_router(queue_router, tags=["Queue"])
 app.include_router(todos_router, tags=["Todos"])
 app.include_router(pulse_router, tags=["Pulse"])
 app.include_router(jobs_router, tags=["Jobs"])
+app.include_router(calendar_router, tags=["Calendar"])

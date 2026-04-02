@@ -19,9 +19,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, memory_limit
@@ -85,6 +85,13 @@ class MemoryItemResponse(BaseModel):
     is_superseded: bool
     supersedes_id: str | None
     created_at: datetime
+
+
+class MemoryRecentResponse(BaseModel):
+    """Response body for GET /v1/memory/recent."""
+
+    items: list[MemoryItemResponse]
+    total: int
 
 
 @router.post("/v1/memory", status_code=status.HTTP_202_ACCEPTED, response_model=MemoryResponse)
@@ -167,6 +174,70 @@ async def ingest_memory(
     return MemoryResponse(raw_id=str(raw.id), status="queued", supersedes_id=body.supersedes_id)
 
 
+def _memory_item_to_response(item: MemoryItem) -> MemoryItemResponse:
+    """Convert an ORM MemoryItem to an API response model."""
+    return MemoryItemResponse(
+        id=str(item.id),
+        raw_id=str(item.raw_id),
+        type=item.type,
+        content=item.content,
+        summary=item.summary,
+        base_importance=float(item.base_importance),
+        dynamic_importance=float(item.dynamic_importance),
+        importance_score=(
+            float(item.importance_score) if item.importance_score is not None else None
+        ),
+        is_superseded=item.is_superseded,
+        supersedes_id=str(item.supersedes_id) if item.supersedes_id is not None else None,
+        created_at=item.created_at,
+    )
+
+
+@router.get("/v1/memory/recent", response_model=MemoryRecentResponse)
+@limiter.limit(memory_limit)
+async def list_recent_memories(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    type_filter: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+) -> MemoryRecentResponse:
+    """List recent non-superseded memory items, newest first.
+
+    Args:
+        limit: Maximum items to return (1–100, default 20).
+        offset: Pagination offset (default 0).
+        type_filter: Optional type filter ("memory", "decision", "task").
+
+    Returns:
+        MemoryRecentResponse with items list and total count.
+
+    Raises:
+        401: Missing or invalid X-API-Key (handled by middleware).
+    """
+    base = select(MemoryItem).where(MemoryItem.is_superseded == False)  # noqa: E712
+    count_base = select(func.count()).select_from(MemoryItem).where(
+        MemoryItem.is_superseded == False  # noqa: E712
+    )
+
+    if type_filter is not None:
+        base = base.where(MemoryItem.type == type_filter)
+        count_base = count_base.where(MemoryItem.type == type_filter)
+
+    total_result = await session.execute(count_base)
+    total = total_result.scalar_one()
+
+    stmt = base.order_by(MemoryItem.created_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    items = list(result.scalars().all())
+
+    logger.info("memory_recent_listed", total=total, returned=len(items), type_filter=type_filter)
+    return MemoryRecentResponse(
+        items=[_memory_item_to_response(i) for i in items],
+        total=total,
+    )
+
+
 @router.get("/v1/memory/{memory_id}", response_model=MemoryItemResponse)
 @limiter.limit(memory_limit)
 async def get_memory_item(
@@ -197,18 +268,4 @@ async def get_memory_item(
         raise HTTPException(status_code=404, detail=f"MemoryItem {memory_id} not found")
 
     logger.info("memory_item_fetched", memory_id=memory_id)
-    return MemoryItemResponse(
-        id=str(item.id),
-        raw_id=str(item.raw_id),
-        type=item.type,
-        content=item.content,
-        summary=item.summary,
-        base_importance=float(item.base_importance),
-        dynamic_importance=float(item.dynamic_importance),
-        importance_score=(
-            float(item.importance_score) if item.importance_score is not None else None
-        ),
-        is_superseded=item.is_superseded,
-        supersedes_id=str(item.supersedes_id) if item.supersedes_id is not None else None,
-        created_at=item.created_at,
-    )
+    return _memory_item_to_response(item)

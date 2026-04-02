@@ -217,6 +217,22 @@ def _empty_calendar_state() -> CalendarState:
     )
 
 
+def is_calendar_available(settings: Any) -> bool:
+    """Check whether Google Calendar integration is usable.
+
+    Returns True when the Google client libraries are installed AND credential
+    paths are configured.  Does NOT verify that the credentials are valid —
+    that can only be confirmed by actually calling the API.
+    """
+    if not _GOOGLE_AVAILABLE:
+        return False
+    if not getattr(settings, "google_calendar_credentials_path", ""):
+        return False
+    if not getattr(settings, "google_calendar_token_path", ""):
+        return False
+    return True
+
+
 async def fetch_today_events(settings: Any) -> CalendarState:
     """Fetch today's calendar events. Never raises; returns empty state on any error.
 

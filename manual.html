@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="user">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Brain — User Manual</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a14;
+    --surface: #12121f;
+    --surface2: #1a1a2e;
+    --border: #2a2a4a;
+    --accent: #6c63ff;
+    --accent2: #a78bfa;
+    --accent3: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --orange: #fb923c;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --user-accent: #38bdf8;
+    --admin-accent: #fbbf24;
+    --sidebar-w: 240px;
+    --topbar-h: 52px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--topbar-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 200;
+    gap: 16px;
+  }
+
+  .brand {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    background: linear-gradient(135deg, var(--accent2), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .topbar-center {
+    font-size: 13px;
+    color: var(--muted);
+    flex: 1;
+    text-align: center;
+  }
+
+  #mode-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .mode-btn {
+    padding: 6px 20px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.2s;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  [data-mode="user"] .mode-btn[data-target="user"],
+  [data-mode="admin"] .mode-btn[data-target="admin"] {
+    color: #0a0a14;
+  }
+  [data-mode="user"] .mode-btn[data-target="user"] {
+    background: linear-gradient(135deg, var(--accent3), #0ea5e9);
+  }
+  [data-mode="admin"] .mode-btn[data-target="admin"] {
+    background: linear-gradient(135deg, var(--yellow), var(--orange));
+  }
+
+  .version-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  /* ── LAYOUT ── */
+  #layout {
+    display: flex;
+    margin-top: var(--topbar-h);
+    min-height: calc(100vh - var(--topbar-h));
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    position: sticky;
+    top: var(--topbar-h);
+    height: calc(100vh - var(--topbar-h));
+    overflow-y: auto;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 0 40px;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .nav-group {
+    margin-bottom: 4px;
+  }
+
+  .nav-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 12px 20px 4px;
+  }
+
+  .nav-link {
+    display: block;
+    padding: 6px 20px 6px 24px;
+    font-size: 12.5px;
+    color: var(--muted);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-link:hover { color: var(--text); background: var(--surface2); }
+
+  .nav-link.active {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  [data-mode="user"] .nav-link.active {
+    border-left-color: var(--accent3);
+    color: var(--accent3);
+  }
+
+  [data-mode="admin"] .nav-link.active {
+    border-left-color: var(--yellow);
+    color: var(--yellow);
+  }
+
+  /* Mode visibility */
+  .user-only { display: block; }
+  .admin-only { display: none; }
+
+  [data-mode="admin"] .user-only { display: none; }
+  [data-mode="admin"] .admin-only { display: block; }
+
+  .nav-link.user-only { display: block; }
+  .nav-link.admin-only { display: none; }
+  [data-mode="admin"] .nav-link.user-only { display: none; }
+  [data-mode="admin"] .nav-link.admin-only { display: block; }
+
+  /* ── MAIN CONTENT ── */
+  #content {
+    flex: 1;
+    padding: 40px 52px;
+    max-width: 900px;
+    overflow-x: hidden;
+  }
+
+  /* ── SECTIONS ── */
+  .section {
+    margin-bottom: 64px;
+    scroll-margin-top: calc(var(--topbar-h) + 24px);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-icon {
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .section-tag {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .tag-shared {
+    background: rgba(56,189,248,0.12);
+    color: var(--accent3);
+    border: 1px solid rgba(56,189,248,0.25);
+  }
+
+  .tag-user {
+    background: rgba(56,189,248,0.12);
+    color: var(--accent3);
+    border: 1px solid rgba(56,189,248,0.25);
+  }
+
+  .tag-admin {
+    background: rgba(251,191,36,0.12);
+    color: var(--yellow);
+    border: 1px solid rgba(251,191,36,0.25);
+  }
+
+  /* ── TYPOGRAPHY ── */
+  h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent2);
+    margin: 28px 0 10px;
+  }
+
+  h3:first-child { margin-top: 0; }
+
+  p {
+    color: var(--muted);
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+
+  p strong { color: var(--text); }
+
+  ul, ol {
+    padding-left: 20px;
+    margin-bottom: 14px;
+    color: var(--muted);
+  }
+
+  li { margin-bottom: 4px; line-height: 1.6; }
+  li strong { color: var(--text); }
+
+  code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 12px;
+    color: var(--accent3);
+  }
+
+  /* ── CODE BLOCKS ── */
+  .code-wrap {
+    position: relative;
+    margin: 14px 0 20px;
+  }
+
+  .code-label {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  pre {
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.75;
+    overflow-x: auto;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 26px;
+    right: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    letter-spacing: 0.03em;
+  }
+
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+  /* ── SYNTAX COLORS ── */
+  .kw { color: #c084fc; }
+  .fn { color: #60a5fa; }
+  .str { color: #4ade80; }
+  .cm { color: #475569; font-style: italic; }
+  .num { color: #fb923c; }
+  .op { color: #94a3b8; }
+  .var { color: #e2e8f0; }
+  .key { color: #38bdf8; }
+  .val { color: #f472b6; }
+  .flag { color: #fbbf24; }
+  .path { color: #a78bfa; }
+
+  /* ── CARDS ── */
+  .card-grid {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .card-grid-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--accent); }
+
+  .card .card-icon { font-size: 24px; margin-bottom: 8px; display: block; }
+  .card .card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+  .card .card-body { font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+  /* ── PARAM TABLE ── */
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 12.5px;
+  }
+
+  .param-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .param-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(42,42,74,0.5);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  .param-table td:first-child {
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    color: var(--accent3);
+    white-space: nowrap;
+  }
+
+  .param-table td:nth-child(2) { color: var(--yellow); font-size: 11.5px; }
+  .param-table td:last-child { color: var(--muted); }
+
+  .param-table tr:hover td { background: var(--surface2); }
+
+  /* ── CALLOUT ── */
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+  .callout-info {
+    background: rgba(56,189,248,0.08);
+    border: 1px solid rgba(56,189,248,0.2);
+    color: var(--accent3);
+  }
+
+  .callout-warn {
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.2);
+    color: var(--yellow);
+  }
+
+  .callout-danger {
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.2);
+    color: var(--red);
+  }
+
+  .callout-success {
+    background: rgba(74,222,128,0.08);
+    border: 1px solid rgba(74,222,128,0.2);
+    color: var(--green);
+  }
+
+  /* ── RESPONSE EXAMPLE ── */
+  .resp-box {
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    margin: 10px 0 20px;
+    overflow-x: auto;
+  }
+
+  /* ── STEP LIST ── */
+  .steps { margin: 12px 0 20px; }
+
+  .step {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+
+  [data-mode="user"] .step-num {
+    background: rgba(56,189,248,0.15);
+    color: var(--accent3);
+    border: 1px solid rgba(56,189,248,0.3);
+  }
+
+  [data-mode="admin"] .step-num {
+    background: rgba(251,191,36,0.15);
+    color: var(--yellow);
+    border: 1px solid rgba(251,191,36,0.3);
+  }
+
+  .step-body { flex: 1; }
+  .step-body strong { color: var(--text); font-size: 13px; display: block; margin-bottom: 4px; }
+  .step-body p { margin: 0; }
+
+  /* ── DIVIDER ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 32px 0;
+  }
+
+  /* ── ENV TABLE ── */
+  .env-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    margin: 14px 0 20px;
+  }
+
+  .env-table th {
+    text-align: left;
+    padding: 8px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .env-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(42,42,74,0.5);
+    vertical-align: top;
+  }
+
+  .env-table td:first-child {
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    color: var(--accent3);
+    white-space: nowrap;
+    width: 35%;
+  }
+
+  .env-table td:nth-child(2) {
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    color: var(--green);
+    font-size: 11.5px;
+  }
+
+  .env-table td:last-child { color: var(--muted); }
+  .env-table tr:hover td { background: var(--surface2); }
+
+  .required-badge {
+    background: rgba(248,113,113,0.12);
+    color: var(--red);
+    border: 1px solid rgba(248,113,113,0.25);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    #sidebar { display: none; }
+    #content { padding: 24px 20px; }
+    .card-grid-2, .card-grid-3 { grid-template-columns: 1fr; }
+    .topbar-center { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="brand">OPEN BRAIN</span>
+  <span class="topbar-center">User Manual &amp; Administration Guide</span>
+  <div id="mode-toggle">
+    <button class="mode-btn" data-target="user" onclick="setMode('user')">USER</button>
+    <button class="mode-btn" data-target="admin" onclick="setMode('admin')">ADMIN</button>
+  </div>
+  <span class="version-badge">v0.1.0</span>
+</div>
+
+<div id="layout">
+
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="nav-group">
+      <div class="nav-group-label">Getting Started</div>
+      <a class="nav-link" href="#quick-start">Quick Start</a>
+      <a class="nav-link" href="#health">Health Check</a>
+    </div>
+
+    <div class="nav-group user-only">
+      <div class="nav-group-label">User Guide</div>
+      <a class="nav-link user-only" href="#store">Storing Memories</a>
+      <a class="nav-link user-only" href="#search">Search &amp; Retrieve</a>
+      <a class="nav-link user-only" href="#tasks">Tasks</a>
+      <a class="nav-link user-only" href="#decisions">Decisions</a>
+      <a class="nav-link user-only" href="#entities">Entities</a>
+      <a class="nav-link user-only" href="#chat">Interactive Chat</a>
+    </div>
+
+    <div class="nav-group admin-only">
+      <div class="nav-group-label">Admin Guide</div>
+      <a class="nav-link admin-only" href="#services">Starting Services</a>
+      <a class="nav-link admin-only" href="#worker-health">Worker &amp; Queue Health</a>
+      <a class="nav-link admin-only" href="#importance">Daily Aggregations</a>
+      <a class="nav-link admin-only" href="#synthesis">Synthesis Job</a>
+      <a class="nav-link admin-only" href="#database">Database Admin</a>
+      <a class="nav-link admin-only" href="#ssh">SSH Administration</a>
+      <a class="nav-link admin-only" href="#env-vars">Environment Variables</a>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main id="content">
+
+    <!-- ═══════════════════════════ QUICK START ═══════════════════════════ -->
+    <section class="section" id="quick-start">
+      <div class="section-header">
+        <span class="section-icon">🧠</span>
+        <div>
+          <div class="section-title">Quick Start</div>
+        </div>
+        <span class="section-tag tag-shared">SHARED</span>
+      </div>
+
+      <p>
+        <strong>Open Brain</strong> is your AI-native personal memory system. It ingests notes, decisions, and conversations — then uses Claude to extract structured knowledge, build an entity graph, and return ranked context when you need it.
+      </p>
+
+      <div class="card-grid card-grid-3">
+        <div class="card">
+          <span class="card-icon">💻</span>
+          <div class="card-title">CLI</div>
+          <div class="card-body">Use the <code>ob</code> command for local shell access — ingest, search, chat directly from your terminal.</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">🌐</span>
+          <div class="card-title">REST API</div>
+          <div class="card-body">HTTP API on port 8000. Integrate with any tool, script, or service using standard JSON requests.</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">🤖</span>
+          <div class="card-title">Discord Bot</div>
+          <div class="card-body">Chat in your configured channel and memories are ingested automatically — no extra commands needed.</div>
+        </div>
+      </div>
+
+      <h3>Authentication</h3>
+      <p>All <code>/v1/*</code> API routes require your API key in the request header. Health endpoints are public.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">HTTP Header (all API calls)</span>
+        <pre><span class="key">X-API-Key</span><span class="op">: </span><span class="str">your-api-key-here</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <span>The CLI reads <code>API_KEY</code> from your <code>.env</code> file automatically — no manual header needed for <code>ob</code> commands.</span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ HEALTH CHECK ═══════════════════════════ -->
+    <section class="section" id="health">
+      <div class="section-header">
+        <span class="section-icon">💚</span>
+        <div><div class="section-title">Health Check</div></div>
+        <span class="section-tag tag-shared">SHARED</span>
+      </div>
+
+      <p>Two public endpoints let you verify the system is running without authentication.</p>
+
+      <div class="card-grid card-grid-2">
+        <div class="card">
+          <div class="card-title">GET /health — Liveness</div>
+          <div class="card-body">Always returns 200 while the process is alive. Use for uptime monitors and load balancer checks.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">GET /ready — Readiness</div>
+          <div class="card-body">Returns 200 only when the database is reachable. Returns 503 if DB is down. Use this before sending traffic.</div>
+        </div>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">CLI</span>
+        <pre><span class="fn">ob</span> <span class="kw">health</span>
+<span class="cm"># → status=ok database=reachable</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">curl</span>
+        <pre><span class="fn">curl</span> http://localhost:8000/health
+<span class="cm"># → {"status": "ok"}</span>
+
+<span class="fn">curl</span> http://localhost:8000/ready
+<span class="cm"># → {"status": "ok"}  or  {"status": "error", "reason": "db_down"}</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ STORE MEMORIES (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="store">
+      <div class="section-header">
+        <span class="section-icon">📥</span>
+        <div><div class="section-title">Storing Memories</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>
+        Memories are stored as raw text and then processed asynchronously by the worker — which uses Claude to extract type, summary, importance, entities, tasks, and decisions.
+      </p>
+
+      <div class="callout callout-success">
+        <span class="callout-icon">✅</span>
+        <span><strong>Deduplication:</strong> Identical content submitted within 24 hours is detected by SHA-256 hash and skipped automatically. You'll receive <code>status: duplicate</code> instead of <code>queued</code>.</span>
+      </div>
+
+      <h3>Via CLI</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Basic ingest</span>
+        <pre><span class="fn">ob</span> <span class="kw">ingest</span> <span class="str">"We decided to use PostgreSQL for the primary database"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">With source label</span>
+        <pre><span class="fn">ob</span> <span class="kw">ingest</span> <span class="str">"Meeting notes: product roadmap Q2"</span> <span class="flag">--source</span> <span class="str">meeting</span>
+<span class="fn">ob</span> <span class="kw">ingest</span> <span class="str">"Bug: login form crashes on Safari"</span> <span class="flag">--source</span> <span class="str">slack</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <table class="param-table">
+        <thead><tr><th>Argument</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>TEXT</td><td>required</td><td>The memory text to store</td></tr>
+          <tr><td>--source</td><td>optional</td><td>Label for where this came from (default: "cli"). Examples: discord, slack, meeting, notes</td></tr>
+        </tbody>
+      </table>
+
+      <p>The command returns a <code>raw_id</code> (UUID) and status. Save the raw_id if you need to reference this memory later.</p>
+
+      <div class="resp-box"><span class="key">raw_id</span><span class="op">: </span><span class="str">3f7a1bc2-...</span>
+<span class="key">status</span><span class="op">: </span><span class="val">queued</span>   <span class="cm">← or "duplicate" if same text within 24h</span></div>
+
+      <h3>Via REST API</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/memory</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/memory \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "text": "We decided to use PostgreSQL for the primary database",
+    "source": "notes"
+  }'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <p>The API returns <strong>202 Accepted</strong> immediately. Processing happens in the background — the worker picks it up within seconds.</p>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"raw_id"</span><span class="op">: </span><span class="str">"3f7a1bc2-..."</span><span class="op">,</span>
+  <span class="key">"status"</span><span class="op">: </span><span class="str">"queued"</span><span class="op">,</span>
+  <span class="key">"supersedes_id"</span><span class="op">: </span><span class="val">null</span>
+<span class="op">}</span></div>
+
+      <h3>Correcting a Memory</h3>
+      <p>Use <code>supersedes_id</code> to mark an earlier memory as outdated. The original stays in history but is flagged <code>is_superseded: true</code>.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/memory (with correction)</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/memory \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "text": "We switched from PostgreSQL to Supabase (managed Postgres)",
+    "source": "notes",
+    "supersedes_id": "3f7a1bc2-..."
+  }'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Via Discord Bot</h3>
+      <p>Just talk in your configured Discord channel. The bot ingests messages automatically using the <code>discord</code> source label — no commands needed.</p>
+    </section>
+
+    <!-- ═══════════════════════════ SEARCH (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="search">
+      <div class="section-header">
+        <span class="section-icon">🔍</span>
+        <div><div class="section-title">Search &amp; Retrieve</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>
+        Open Brain uses <strong>hybrid search</strong> — combining vector similarity (Voyage AI embeddings), keyword matching (pg_trgm), importance scoring, and recency to rank results.
+      </p>
+
+      <h3>CLI Search</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Basic search</span>
+        <pre><span class="fn">ob</span> <span class="kw">search</span> <span class="str">"database decisions"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">With filters</span>
+        <pre><span class="fn">ob</span> <span class="kw">search</span> <span class="str">"project roadmap"</span> <span class="flag">--limit</span> <span class="num">20</span> <span class="flag">--type</span> <span class="str">decision</span>
+<span class="fn">ob</span> <span class="kw">search</span> <span class="str">"auth bug"</span> <span class="flag">--entity</span> <span class="str">"Shu"</span>
+<span class="fn">ob</span> <span class="kw">search</span> <span class="str">"Q1 review"</span> <span class="flag">--from</span> <span class="str">2026-01-01</span> <span class="flag">--to</span> <span class="str">2026-03-31</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <table class="param-table">
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>QUERY</td><td>required</td><td>Natural language search query</td></tr>
+          <tr><td>--limit</td><td>10</td><td>Max results to return (up to 100)</td></tr>
+          <tr><td>--type</td><td>—</td><td>Filter by type: <code>memory</code>, <code>decision</code>, <code>task</code></td></tr>
+          <tr><td>--entity</td><td>—</td><td>Filter by entity name or alias (person, project, org)</td></tr>
+          <tr><td>--from</td><td>—</td><td>Earliest date, ISO 8601 (e.g. <code>2026-01-01</code>)</td></tr>
+          <tr><td>--to</td><td>—</td><td>Latest date, ISO 8601</td></tr>
+        </tbody>
+      </table>
+
+      <h3>CLI Context (for LLM input)</h3>
+      <p>The <code>context</code> command formats results into a token-budgeted block ready to paste into Claude or any LLM.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">Build LLM context</span>
+        <pre><span class="fn">ob</span> <span class="kw">context</span> <span class="str">"project status"</span> <span class="flag">--limit</span> <span class="num">5</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>API Search</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/search</span>
+        <pre><span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/search?q=database+decisions&amp;limit=10&amp;type_filter=decision"</span> \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <table class="param-table">
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>q</td><td>required</td><td>Search query text</td></tr>
+          <tr><td>limit</td><td>optional</td><td>Max results (default 10, max 100)</td></tr>
+          <tr><td>type_filter</td><td>optional</td><td>memory | decision | task</td></tr>
+          <tr><td>entity_filter</td><td>optional</td><td>Entity name or alias</td></tr>
+          <tr><td>date_from</td><td>optional</td><td>ISO 8601 start date</td></tr>
+          <tr><td>date_to</td><td>optional</td><td>ISO 8601 end date</td></tr>
+        </tbody>
+      </table>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"results"</span><span class="op">: [</span>
+    <span class="op">{</span>
+      <span class="key">"id"</span><span class="op">: </span><span class="str">"abc123..."</span><span class="op">,</span>
+      <span class="key">"content"</span><span class="op">: </span><span class="str">"We decided to use PostgreSQL..."</span><span class="op">,</span>
+      <span class="key">"summary"</span><span class="op">: </span><span class="str">"PostgreSQL chosen for primary database"</span><span class="op">,</span>
+      <span class="key">"type"</span><span class="op">: </span><span class="str">"decision"</span><span class="op">,</span>
+      <span class="key">"importance_score"</span><span class="op">: </span><span class="num">0.87</span><span class="op">,</span>
+      <span class="key">"combined_score"</span><span class="op">: </span><span class="num">0.94</span>
+    <span class="op">}</span>
+  <span class="op">],</span>
+  <span class="key">"query"</span><span class="op">: </span><span class="str">"database decisions"</span>
+<span class="op">}</span></div>
+
+      <h3>API Context Endpoint</h3>
+      <p>Returns a pre-formatted context string with token budget information — ideal for injecting into LLM prompts.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/search/context</span>
+        <pre><span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/search/context?q=project+status&amp;limit=5"</span> \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"context"</span><span class="op">: </span><span class="str">"[1] decision — PostgreSQL chosen...\n[2] memory — Q1 review notes..."</span><span class="op">,</span>
+  <span class="key">"tokens_used"</span><span class="op">: </span><span class="num">842</span><span class="op">,</span>
+  <span class="key">"tokens_budget"</span><span class="op">: </span><span class="num">4096</span><span class="op">,</span>
+  <span class="key">"items_included"</span><span class="op">: </span><span class="num">5</span><span class="op">,</span>
+  <span class="key">"items_truncated"</span><span class="op">: </span><span class="num">0</span>
+<span class="op">}</span></div>
+
+      <h3>Get a Specific Memory</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/memory/{memory_id}</span>
+        <pre><span class="fn">curl</span> http://localhost:8000/v1/memory/<span class="val">abc123-...</span> \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ TASKS (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="tasks">
+      <div class="section-header">
+        <span class="section-icon">✅</span>
+        <div><div class="section-title">Tasks</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>Tasks are extracted from memories automatically by the worker, or created manually via the API. Each task links to a parent memory.</p>
+
+      <h3>List Tasks</h3>
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/tasks</span>
+        <pre><span class="cm"># All open tasks</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/tasks?status=open"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Tasks assigned to a specific owner</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/tasks?status=open&amp;owner=Shu"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Tasks due soon</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/tasks?due_before=2026-04-01T00:00:00"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Create a Task</h3>
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/tasks</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/tasks \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "memory_id": "abc123-...",
+    "description": "Set up Supabase project",
+    "owner": "Shu",
+    "due_date": "2026-04-15T00:00:00",
+    "status": "open"
+  }'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Update Task Status</h3>
+      <div class="code-wrap">
+        <span class="code-label">PATCH /v1/tasks/{task_id}</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> PATCH http://localhost:8000/v1/tasks/<span class="val">task-uuid</span> \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{"status": "done"}'</span>   <span class="cm"># open | done | cancelled</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ DECISIONS (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="decisions">
+      <div class="section-header">
+        <span class="section-icon">⚖️</span>
+        <div><div class="section-title">Decisions</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>Decisions are extracted automatically when you ingest a memory that describes a choice or resolution. You can also create them manually to link structured reasoning to a memory.</p>
+
+      <h3>List Decisions</h3>
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/decisions</span>
+        <pre><span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/decisions?limit=20"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Filter by memory</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/decisions?memory_id=abc123-..."</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Create a Decision</h3>
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/decisions</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/decisions \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "memory_id": "abc123-...",
+    "decision": "Use Supabase for managed PostgreSQL",
+    "reasoning": "Reduces ops overhead, includes pgvector support out of the box",
+    "alternatives": ["Self-hosted Postgres on VPS", "Neon.tech", "PlanetScale"]
+  }'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ ENTITIES (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="entities">
+      <div class="section-header">
+        <span class="section-icon">🏷️</span>
+        <div><div class="section-title">Entities</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>Entities are people, projects, organizations, and tools extracted from your memories. They form a knowledge graph — each entity has aliases so fuzzy references still resolve correctly.</p>
+
+      <h3>List &amp; Search Entities</h3>
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/entities</span>
+        <pre><span class="cm"># All entities</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/entities"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Search by name</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/entities?q=Shu"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Filter by type</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/entities?type_filter=person&amp;limit=50"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Add an Alias</h3>
+      <p>If the same person appears under different names, add an alias so they resolve to the same entity.</p>
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/entities/{entity_id}/aliases</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/entities/<span class="val">entity-uuid</span>/aliases \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{"alias": "Shu-chan", "source": "discord"}'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Merge Duplicate Entities</h3>
+      <p>If the same person/project was created as two separate entities, merge the source into the target. All aliases, memory links, and relations are moved atomically.</p>
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/entities/merge</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/entities/merge \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{
+    "source_entity_id": "old-uuid-...",
+    "target_entity_id": "keep-uuid-..."
+  }'</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <span>Merge is destructive — the source entity is deleted. The source name is automatically added as an alias on the target so it remains searchable.</span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════ CHAT (USER) ═══════════════════════════ -->
+    <section class="section user-only" id="chat">
+      <div class="section-header">
+        <span class="section-icon">💬</span>
+        <div><div class="section-title">Interactive Chat</div></div>
+        <span class="section-tag tag-user">USER</span>
+      </div>
+
+      <p>Chat with Claude grounded in your Open Brain memory. Each turn fetches relevant context and injects it into the prompt automatically.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">Start a chat session</span>
+        <pre><span class="fn">ob</span> <span class="kw">chat</span>
+<span class="fn">ob</span> <span class="kw">chat</span> <span class="flag">--model</span> <span class="str">claude</span> <span class="flag">--topic</span> <span class="str">"project decisions"</span>
+<span class="fn">ob</span> <span class="kw">chat</span> <span class="flag">--no-ingest</span>   <span class="cm"># don't save this conversation to memory</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <table class="param-table">
+        <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>--model</td><td>claude</td><td>LLM to use: <code>claude</code> or <code>openai</code></td></tr>
+          <tr><td>--topic</td><td>—</td><td>Seed phrase for initial memory search context</td></tr>
+          <tr><td>--no-ingest</td><td>off</td><td>Skip saving this conversation to memory at session end</td></tr>
+        </tbody>
+      </table>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Open Brain fetches relevant memories</strong>
+            <p>On each message, it searches your memory for related context and injects the top results into Claude's prompt.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>Claude answers with full context</strong>
+            <p>Responses are grounded in what you've stored — decisions, notes, entities — not just general knowledge.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <strong>Conversation is saved</strong>
+            <p>When you exit (<code>quit</code> / <code>exit</code> / Ctrl+C), the full conversation is ingested back into memory — unless you used <code>--no-ingest</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <!-- ═════════════════════  ADMIN SECTIONS  ══════════════════ -->
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <!-- STARTING SERVICES (ADMIN) -->
+    <section class="section admin-only" id="services">
+      <div class="section-header">
+        <span class="section-icon">🚀</span>
+        <div><div class="section-title">Starting Services</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <p>Open Brain runs as three independent services: <strong>API</strong> (FastAPI), <strong>Worker</strong> (background processor), and optionally a <strong>Discord bot</strong>. They can be started locally or via Docker Compose.</p>
+
+      <h3>Local Development (no Docker)</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Terminal 1 — API server</span>
+        <pre><span class="fn">uvicorn</span> src.api.main:app <span class="flag">--reload</span> <span class="flag">--host</span> <span class="str">0.0.0.0</span> <span class="flag">--port</span> <span class="num">8000</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Terminal 2 — Worker (continuous polling)</span>
+        <pre><span class="fn">python</span> <span class="flag">-m</span> src.pipeline.worker</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Terminal 3 — Worker (process one batch &amp; exit)</span>
+        <pre><span class="fn">ob</span> <span class="kw">worker</span> <span class="flag">--sync</span>   <span class="cm"># useful for cron jobs or one-off processing</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Helper Scripts</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">start.sh / stop.sh</span>
+        <pre><span class="fn">./start.sh</span>    <span class="cm"># starts API + Worker + Discord bot as background processes</span>
+<span class="fn">./stop.sh</span>     <span class="cm"># stops all three</span>
+
+<span class="cm"># View live logs</span>
+<span class="fn">tail</span> <span class="flag">-f</span> /tmp/ob-api.log /tmp/ob-worker.log /tmp/ob-bot.log</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Docker Compose (Production)</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">First-time setup — apply migrations</span>
+        <pre><span class="fn">docker</span> compose <span class="flag">--profile</span> migrate up</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Start services</span>
+        <pre><span class="fn">docker</span> compose <span class="flag">--profile</span> api up <span class="flag">-d</span>       <span class="cm"># FastAPI server</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> worker up <span class="flag">-d</span>    <span class="cm"># Background worker</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> discord up <span class="flag">-d</span>   <span class="cm"># Discord bot (optional)</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> caddy up <span class="flag">-d</span>    <span class="cm"># TLS reverse proxy (optional)</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Check status</span>
+        <pre><span class="fn">docker</span> compose ps
+<span class="fn">docker</span> compose logs <span class="flag">-f</span> api <span class="flag">--tail</span>=<span class="num">50</span>
+<span class="fn">docker</span> compose logs <span class="flag">-f</span> worker <span class="flag">--tail</span>=<span class="num">50</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <span>Each service uses <code>json-file</code> logging with 50MB max size and 5-file rotation. Docker handles log rotation automatically.</span>
+      </div>
+    </section>
+
+    <!-- WORKER HEALTH (ADMIN) -->
+    <section class="section admin-only" id="worker-health">
+      <div class="section-header">
+        <span class="section-icon">📊</span>
+        <div><div class="section-title">Worker &amp; Queue Health</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <p>The worker processes memories from the <code>refinement_queue</code> table using <code>SELECT FOR UPDATE SKIP LOCKED</code> — safe for multiple workers. Failed jobs land in <code>dead_letters</code> after 3 attempts.</p>
+
+      <h3>Queue Status</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">GET /v1/queue/status</span>
+        <pre><span class="fn">curl</span> http://localhost:8000/v1/queue/status <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"pending"</span><span class="op">: </span><span class="num">3</span><span class="op">,</span>          <span class="cm">← waiting to be picked up</span>
+  <span class="key">"processing"</span><span class="op">: </span><span class="num">1</span><span class="op">,</span>       <span class="cm">← currently being processed</span>
+  <span class="key">"done"</span><span class="op">: </span><span class="num">142</span><span class="op">,</span>           <span class="cm">← successfully processed</span>
+  <span class="key">"failed"</span><span class="op">: </span><span class="num">2</span><span class="op">,</span>           <span class="cm">← moved to dead letters</span>
+  <span class="key">"total"</span><span class="op">: </span><span class="num">148</span><span class="op">,</span>
+  <span class="key">"oldest_locked_at"</span><span class="op">: </span><span class="str">"2026-03-18T03:12:00"</span>  <span class="cm">← worker health signal</span>
+<span class="op">}</span></div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <span><strong>Stale locks:</strong> If <code>oldest_locked_at</code> is more than 5 minutes old (WORKER_LOCK_TTL_SECONDS default: 300), the worker may be stuck. Restart the worker service. Stale jobs are automatically reclaimed on next poll.</span>
+      </div>
+
+      <h3>Dead Letters</h3>
+      <p>Jobs that fail 3 times move to the dead letter queue. Inspect and retry them here.</p>
+
+      <div class="code-wrap">
+        <span class="code-label">View dead letters</span>
+        <pre><span class="cm"># Unresolved failures</span>
+<span class="fn">curl</span> http://localhost:8000/v1/dead-letters <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span>
+
+<span class="cm"># Resolved (previously retried) failures</span>
+<span class="fn">curl</span> <span class="str">"http://localhost:8000/v1/dead-letters?resolved=true"</span> <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Retry a failed job</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/dead-letters/<span class="val">failed-uuid</span>/retry \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"id"</span><span class="op">: </span><span class="str">"failed-uuid"</span><span class="op">,</span>
+  <span class="key">"queue_id"</span><span class="op">: </span><span class="str">"queue-uuid"</span><span class="op">,</span>
+  <span class="key">"retry_count"</span><span class="op">: </span><span class="num">1</span><span class="op">,</span>
+  <span class="key">"message"</span><span class="op">: </span><span class="str">"Re-enqueued for processing"</span>
+<span class="op">}</span></div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <span>The retry limit is controlled by <code>DEAD_LETTER_RETRY_LIMIT</code>. A 409 response means the limit has been reached — investigate <code>error_reason</code> and <code>last_output</code> in the dead letter record before retrying manually.</span>
+      </div>
+    </section>
+
+    <!-- DAILY AGGREGATIONS (ADMIN) -->
+    <section class="section admin-only" id="importance">
+      <div class="section-header">
+        <span class="section-icon">📈</span>
+        <div><div class="section-title">Daily Aggregations</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <p>
+        The <strong>importance job</strong> runs daily and updates <code>dynamic_importance</code> on memory items based on how often they've been retrieved (<code>retrieval_events</code> table). The computed column <code>importance_score</code> recalculates automatically.
+      </p>
+
+      <h3>Run Manually</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Direct Python</span>
+        <pre><span class="fn">python</span> <span class="flag">-m</span> src.jobs.importance</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Via Docker</span>
+        <pre><span class="fn">docker</span> compose run <span class="flag">--rm</span> worker <span class="fn">python</span> <span class="flag">-m</span> src.jobs.importance</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Automated Cron Setup</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">crontab -e</span>
+        <pre><span class="cm"># Daily at 3:00 AM — importance score aggregation</span>
+<span class="num">0 3 * * *</span> <span class="fn">cd</span> /opt/open-brain <span class="op">&amp;&amp;</span> \
+  <span class="fn">docker</span> compose run <span class="flag">--rm</span> worker <span class="fn">python</span> <span class="flag">-m</span> src.jobs.importance \
+  >> /var/log/openbrain-jobs.log 2>&amp;1</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <span><strong>Do not</strong> update <code>importance_score</code> directly. It is a PostgreSQL <code>GENERATED</code> column. Update <code>base_importance</code> or <code>dynamic_importance</code> only — the score recalculates automatically.</span>
+      </div>
+    </section>
+
+    <!-- SYNTHESIS (ADMIN) -->
+    <section class="section admin-only" id="synthesis">
+      <div class="section-header">
+        <span class="section-icon">🔮</span>
+        <div><div class="section-title">Synthesis Job</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <p>
+        The <strong>synthesis job</strong> produces a structured weekly digest — grouping memories by entity, identifying patterns, and storing the result as a new memory item with <code>source: synthesis</code>. It uses Claude to generate the digest.
+      </p>
+
+      <h3>Trigger via API</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">POST /v1/synthesis/run</span>
+        <pre><span class="fn">curl</span> <span class="flag">-X</span> POST http://localhost:8000/v1/synthesis/run \
+  <span class="flag">-H</span> <span class="str">"X-API-Key: YOUR_KEY"</span> \
+  <span class="flag">-H</span> <span class="str">"Content-Type: application/json"</span> \
+  <span class="flag">-d</span> <span class="str">'{"days": 7}'</span>   <span class="cm"># 1–90 days lookback</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="resp-box"><span class="op">{</span>
+  <span class="key">"synthesis_id"</span><span class="op">: </span><span class="str">"synth-uuid-..."</span><span class="op">,</span>
+  <span class="key">"memory_count"</span><span class="op">: </span><span class="num">47</span><span class="op">,</span>
+  <span class="key">"date_from"</span><span class="op">: </span><span class="str">"2026-03-11"</span><span class="op">,</span>
+  <span class="key">"date_to"</span><span class="op">: </span><span class="str">"2026-03-18"</span><span class="op">,</span>
+  <span class="key">"skipped"</span><span class="op">: </span><span class="val">false</span><span class="op">,</span>
+  <span class="key">"message"</span><span class="op">: </span><span class="str">"Synthesis complete. 47 memories clustered into 8 topics."</span>
+<span class="op">}</span></div>
+
+      <h3>Run Manually</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Direct Python</span>
+        <pre><span class="fn">python</span> <span class="flag">-m</span> src.jobs.synthesis</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Automated Cron Setup</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">crontab -e (weekly Sunday 2 AM)</span>
+        <pre><span class="cm"># Weekly synthesis — Sunday at 2:00 AM</span>
+<span class="num">0 2 * * 0</span> <span class="fn">cd</span> /opt/open-brain <span class="op">&amp;&amp;</span> \
+  <span class="fn">docker</span> compose run <span class="flag">--rm</span> worker <span class="fn">python</span> <span class="flag">-m</span> src.jobs.synthesis \
+  >> /var/log/openbrain-jobs.log 2>&amp;1</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <span><strong>Model note:</strong> Synthesis currently uses <code>claude-haiku-4-5</code> for cost efficiency. Set <code>SYNTHESIS_MODEL=claude-opus-4-6</code> in <code>.env</code> before going to production for best quality digests.</span>
+      </div>
+    </section>
+
+    <!-- DATABASE (ADMIN) -->
+    <section class="section admin-only" id="database">
+      <div class="section-header">
+        <span class="section-icon">🗄️</span>
+        <div><div class="section-title">Database Administration</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <h3>Migrations</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Apply all pending migrations</span>
+        <pre><span class="fn">alembic</span> upgrade head
+
+<span class="cm"># Or via Docker</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> migrate up</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Check migration state</span>
+        <pre><span class="fn">alembic</span> current    <span class="cm"># which revision is applied</span>
+<span class="fn">alembic</span> history    <span class="cm"># full migration history</span>
+<span class="fn">alembic</span> heads      <span class="cm"># latest revision</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-danger">
+        <span class="callout-icon">🚫</span>
+        <span><strong>Never</strong> use <code>Base.metadata.create_all()</code> against Supabase. Always use <code>alembic upgrade head</code>. SQLAlchemy creates the embedding column as JSONB; only Alembic correctly sets it to <code>vector(1024)</code>.</span>
+      </div>
+
+      <h3>Backup</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Manual pg_dump</span>
+        <pre><span class="fn">pg_dump</span> <span class="str">"$SQLALCHEMY_URL"</span> > backup_<span class="fn">$(date +%Y%m%d)</span>.sql</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="code-wrap">
+        <span class="code-label">Automated backup cron (daily 3:30 AM, 30-day retention)</span>
+        <pre><span class="num">30 3 * * *</span> <span class="fn">cd</span> /opt/open-brain <span class="op">&amp;&amp;</span> \
+  <span class="fn">./scripts/backup.sh</span> >> /var/log/openbrain-backup.log 2>&amp;1</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <span>Use the Supabase <strong>direct connection</strong> (port 5432) — not PgBouncer (port 6543). <code>SELECT FOR UPDATE SKIP LOCKED</code> breaks on the pooler connection.</span>
+      </div>
+    </section>
+
+    <!-- SSH ADMINISTRATION (ADMIN) -->
+    <section class="section admin-only" id="ssh">
+      <div class="section-header">
+        <span class="section-icon">🔒</span>
+        <div><div class="section-title">SSH Administration</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <h3>Connect &amp; Navigate</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Connect to server</span>
+        <pre><span class="fn">ssh</span> user@your-server-ip
+<span class="fn">cd</span> /opt/open-brain</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Service Status</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Check running containers</span>
+        <pre><span class="fn">docker</span> compose ps
+<span class="fn">docker</span> stats <span class="flag">--no-stream</span>   <span class="cm"># snapshot of CPU / memory</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Logs</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">View live logs</span>
+        <pre><span class="fn">docker</span> compose logs <span class="flag">-f</span> <span class="flag">--tail</span>=<span class="num">200</span>              <span class="cm"># all services</span>
+<span class="fn">docker</span> compose logs <span class="flag">-f</span> api <span class="flag">--tail</span>=<span class="num">100</span>          <span class="cm"># API only</span>
+<span class="fn">docker</span> compose logs <span class="flag">-f</span> worker <span class="flag">--tail</span>=<span class="num">100</span>       <span class="cm"># Worker only</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Restart Services</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Restart individual service</span>
+        <pre><span class="fn">docker</span> compose restart api
+<span class="fn">docker</span> compose restart worker
+<span class="fn">docker</span> compose restart discord-bot</pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Deploy Updates</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Full redeploy workflow</span>
+        <pre><span class="fn">git</span> pull origin main                              <span class="cm"># pull latest code</span>
+<span class="fn">docker</span> compose build                              <span class="cm"># rebuild images</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> migrate up              <span class="cm"># apply new migrations</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> api up <span class="flag">-d</span>             <span class="cm"># restart API</span>
+<span class="fn">docker</span> compose <span class="flag">--profile</span> worker up <span class="flag">-d</span>          <span class="cm"># restart Worker</span>
+<span class="fn">docker</span> compose logs <span class="flag">-f</span> <span class="flag">--tail</span>=<span class="num">50</span>               <span class="cm"># watch startup</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Environment Configuration</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Edit environment variables</span>
+        <pre><span class="fn">nano</span> .env                    <span class="cm"># edit with nano (or vim .env)</span>
+<span class="fn">docker</span> compose config        <span class="cm"># verify compose resolves env correctly</span>
+<span class="fn">docker</span> compose restart       <span class="cm"># apply changes — restart needed</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Disk &amp; Memory</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">System resources</span>
+        <pre><span class="fn">df</span> <span class="flag">-h</span>                        <span class="cm"># disk usage</span>
+<span class="fn">free</span> <span class="flag">-h</span>                      <span class="cm"># memory usage</span>
+<span class="fn">docker</span> system df             <span class="cm"># Docker disk usage (images/volumes)</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <h3>Cleanup</h3>
+
+      <div class="code-wrap">
+        <span class="code-label">Prune unused Docker resources</span>
+        <pre><span class="fn">docker</span> image prune <span class="flag">-f</span>                        <span class="cm"># remove dangling images</span>
+<span class="fn">docker</span> container prune <span class="flag">-f</span>                    <span class="cm"># remove stopped containers</span></pre>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+
+      <div class="callout callout-danger">
+        <span class="callout-icon">🚫</span>
+        <span><strong>Do not run</strong> <code>docker system prune --volumes</code> in production — this will delete all database volumes and destroy your data.</span>
+      </div>
+    </section>
+
+    <!-- ENV VARS (ADMIN) -->
+    <section class="section admin-only" id="env-vars">
+      <div class="section-header">
+        <span class="section-icon">⚙️</span>
+        <div><div class="section-title">Environment Variables</div></div>
+        <span class="section-tag tag-admin">ADMIN</span>
+      </div>
+
+      <p>All configuration is read from the <code>.env</code> file (copy from <code>.env.example</code>). Environment variables take priority over the file.</p>
+
+      <h3>Required</h3>
+
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Example</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>SQLALCHEMY_URL</td>
+            <td>postgresql+asyncpg://...</td>
+            <td><span class="required-badge">REQUIRED</span> Direct connection port 5432 — not 6543 PgBouncer</td>
+          </tr>
+          <tr>
+            <td>API_KEY</td>
+            <td>openbrain-secret-2026</td>
+            <td><span class="required-badge">REQUIRED</span> X-API-Key header value used by all clients</td>
+          </tr>
+          <tr>
+            <td>ANTHROPIC_API_KEY</td>
+            <td>sk-ant-...</td>
+            <td><span class="required-badge">REQUIRED</span> Claude API key for extraction &amp; synthesis</td>
+          </tr>
+          <tr>
+            <td>VOYAGE_API_KEY</td>
+            <td>pa-...</td>
+            <td><span class="required-badge">REQUIRED</span> Voyage AI key for embedding generation</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Server &amp; Worker</h3>
+
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>API_HOST</td><td>localhost</td><td>Set to <code>0.0.0.0</code> when behind a reverse proxy</td></tr>
+          <tr><td>API_PORT</td><td>8000</td><td>API server port</td></tr>
+          <tr><td>LOG_LEVEL</td><td>info</td><td>debug | info | warning | error</td></tr>
+          <tr><td>ENVIRONMENT</td><td>development</td><td>development | production</td></tr>
+          <tr><td>WORKER_POLL_INTERVAL</td><td>5</td><td>Seconds between queue polls</td></tr>
+          <tr><td>WORKER_LOCK_TTL_SECONDS</td><td>300</td><td>Stale lock reclaim threshold (5 min)</td></tr>
+          <tr><td>WORKER_BATCH_SIZE</td><td>5</td><td>Jobs claimed per poll cycle</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Intelligence Jobs</h3>
+
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>SYNTHESIS_MODEL</td>
+            <td>claude-haiku-4-5-20251001</td>
+            <td>Switch to <code>claude-opus-4-6</code> before production</td>
+          </tr>
+          <tr><td>EXTRACTION_MODEL</td><td>claude-haiku-4-5-20251001</td><td>Model for memory extraction pipeline</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Rate Limits</h3>
+
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Default</th><th>Endpoint</th></tr></thead>
+        <tbody>
+          <tr><td>RATE_LIMIT_MEMORY_PER_MINUTE</td><td>50</td><td>POST /v1/memory</td></tr>
+          <tr><td>RATE_LIMIT_SEARCH_PER_MINUTE</td><td>100</td><td>GET /v1/search, /v1/search/context</td></tr>
+          <tr><td>RATE_LIMIT_DEAD_LETTERS_PER_MINUTE</td><td>5</td><td>POST /v1/dead-letters/{id}/retry</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Caddy (TLS — optional)</h3>
+
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Example</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>DOMAIN</td><td>openbrain.yourdomain.com</td><td>Enables automatic TLS via Caddy + Let's Encrypt</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // ── MODE TOGGLE ──
+  function setMode(mode) {
+    document.documentElement.setAttribute('data-mode', mode);
+    updateSidebar();
+  }
+
+  // ── SIDEBAR ACTIVE STATE ──
+  function updateSidebar() {
+    const mode = document.documentElement.getAttribute('data-mode');
+    const sections = document.querySelectorAll('.section');
+    const links = document.querySelectorAll('.nav-link');
+
+    // Re-run observer on visible sections
+    sections.forEach(s => observer.observe(s));
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        const active = document.querySelector('.nav-link[href="#' + id + '"]');
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.25, rootMargin: '-60px 0px -40% 0px' });
+
+  document.querySelectorAll('.section').forEach(s => observer.observe(s));
+
+  // ── COPY BUTTONS ──
+  function copyCode(btn) {
+    const pre = btn.closest('.code-wrap').querySelector('pre');
+    const text = pre.innerText || pre.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 1800);
+    });
+  }
+</script>
+</body>
+</html>

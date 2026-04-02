@@ -198,7 +198,7 @@ async def list_todos(
     total_result = await session.execute(count_stmt)
     total = total_result.scalar_one()
 
-    stmt = stmt.offset(offset).limit(limit)
+    stmt = stmt.order_by(TodoItem.created_at.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     todos = list(result.scalars().all())
 
