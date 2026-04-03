@@ -492,6 +492,52 @@ async def test_get_pulse_by_date_requires_auth(test_client):
     assert resp.status_code == 401
 
 
+# ── Section 7b: _today_midnight_utc timezone handling ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_today_midnight_utc_respects_configured_timezone(monkeypatch):
+    """_today_midnight_utc uses pulse_timezone to compute local midnight in UTC."""
+    from src.api.routes.pulse import _today_midnight_utc
+
+    # Freeze "now" in Vilnius timezone: 2026-04-03 01:30 EET (UTC+3)
+    # Local midnight = 2026-04-03T00:00 EET = 2026-04-02T21:00 UTC
+    from zoneinfo import ZoneInfo
+
+    frozen = datetime(2026, 4, 3, 1, 30, tzinfo=ZoneInfo("Europe/Vilnius"))
+    monkeypatch.setenv("PULSE_TIMEZONE", "Europe/Vilnius")
+    # Re-initialize settings so pulse_timezone picks up
+    from src.core import config as _config
+
+    monkeypatch.setattr(_config, "settings", _config.Settings())
+
+    with patch("src.api.routes.pulse.datetime") as mock_dt:
+        mock_dt.now.return_value = frozen
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = _today_midnight_utc()
+
+    # Vilnius midnight (UTC+3) → 21:00 UTC previous day
+    assert result.hour == 21
+    assert result.day == 2  # April 2nd in UTC
+
+
+@pytest.mark.asyncio
+async def test_today_midnight_utc_falls_back_to_utc_on_invalid_tz(monkeypatch):
+    """Invalid pulse_timezone falls back to UTC."""
+    from src.api.routes.pulse import _today_midnight_utc
+
+    monkeypatch.setenv("PULSE_TIMEZONE", "Invalid/Zone")
+    from src.core import config as _config
+
+    monkeypatch.setattr(_config, "settings", _config.Settings())
+
+    result = _today_midnight_utc()
+    # Should still return a valid datetime in UTC
+    assert result.tzinfo is not None
+    assert result.hour == 0  # UTC midnight = hour 0
+    assert result.minute == 0
+
+
 # ── Section 8: PulseCog.handle_reply ──────────────────────────────────────────
 
 

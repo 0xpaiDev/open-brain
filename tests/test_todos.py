@@ -403,3 +403,175 @@ async def test_update_todo_fails_reason_too_long(test_client, api_key_headers) -
         headers=api_key_headers,
     )
     assert resp.status_code == 422
+
+
+# ── due_before filter ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_due_before_filter(test_client, api_key_headers) -> None:
+    """GET ?due_before filters todos with due_date before the threshold."""
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "future", "due_date": "2026-04-10T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "past", "due_date": "2026-04-01T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    # No due_date — should NOT appear (NULL is not <= threshold)
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "no due"},
+        headers=api_key_headers,
+    )
+
+    resp = await test_client.get(
+        "/v1/todos?due_before=2026-04-05T00:00:00Z", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["todos"][0]["description"] == "past"
+
+
+@pytest.mark.asyncio
+async def test_list_todos_due_before_timezone_naive_converted_to_utc(
+    test_client, api_key_headers
+) -> None:
+    """due_before without tzinfo is treated as UTC (timezone-naive → UTC)."""
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "due early", "due_date": "2026-04-01T12:00:00Z"},
+        headers=api_key_headers,
+    )
+    # Timezone-naive threshold — should be converted to UTC by route
+    resp = await test_client.get(
+        "/v1/todos?due_before=2026-04-02T00:00:00", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+# ── PATCH event_type="cancelled" ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_patch_todo_cancelled_creates_cancelled_event(
+    test_client, api_key_headers
+) -> None:
+    """PATCH status=cancelled records event_type='cancelled' in history."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "cancel me"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}", json={"status": "cancelled"}, headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    assert events[-1]["event_type"] == "cancelled"
+
+
+# ── Pagination ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_pagination_offset_limit(test_client, api_key_headers) -> None:
+    """GET ?limit=2&offset=1 returns correct slice with full total count."""
+    for i in range(5):
+        await test_client.post(
+            "/v1/todos", json={"description": f"todo-{i}"}, headers=api_key_headers
+        )
+
+    resp = await test_client.get(
+        "/v1/todos?limit=2&offset=1", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 5
+    assert len(body["todos"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_todos_offset_beyond_total_returns_empty(
+    test_client, api_key_headers
+) -> None:
+    """Offset beyond total returns empty list with correct total."""
+    await test_client.post(
+        "/v1/todos", json={"description": "only one"}, headers=api_key_headers
+    )
+    resp = await test_client.get(
+        "/v1/todos?offset=100", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["todos"] == []
+
+
+# ── Strengthen: ordering determinism ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_order_deterministic_repeated_calls(
+    test_client, api_key_headers
+) -> None:
+    """Repeated list calls return identical ordering (deterministic tiebreaker)."""
+    for i in range(5):
+        await test_client.post(
+            "/v1/todos",
+            json={"description": f"rapid-{i}"},
+            headers=api_key_headers,
+        )
+
+    resp1 = await test_client.get("/v1/todos", headers=api_key_headers)
+    resp2 = await test_client.get("/v1/todos", headers=api_key_headers)
+    ids1 = [t["id"] for t in resp1.json()["todos"]]
+    ids2 = [t["id"] for t in resp2.json()["todos"]]
+    assert ids1 == ids2
+    assert len(ids1) == 5
+
+
+# ── Strengthen: history snapshot field-level assertions ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_history_snapshot_values_on_priority_change(
+    test_client, api_key_headers
+) -> None:
+    """PATCH priority records correct old_value/new_value with event_type='priority_changed'."""
+    r = await test_client.post(
+        "/v1/todos",
+        json={"description": "snapshot test", "priority": "low"},
+        headers=api_key_headers,
+    )
+    todo_id = r.json()["id"]
+
+    await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"priority": "high"},
+        headers=api_key_headers,
+    )
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    update_event = events[-1]
+    assert update_event["event_type"] == "priority_changed"
+    assert update_event["old_value"]["priority"] == "low"
+    assert update_event["new_value"]["priority"] == "high"
+    # Description should remain unchanged in both snapshots
+    assert update_event["old_value"]["description"] == "snapshot test"
+    assert update_event["new_value"]["description"] == "snapshot test"

@@ -21,6 +21,7 @@ eggs/
 .eggs/
 lib/
 !web/lib/
+!web/__tests__/lib/
 lib64/
 parts/
 sdist/

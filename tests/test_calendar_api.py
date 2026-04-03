@@ -117,6 +117,40 @@ async def test_calendar_today_cache_hit(test_client, api_key_headers) -> None:
 
 
 @pytest.mark.asyncio
+async def test_calendar_today_cache_expired_triggers_refetch(
+    test_client, api_key_headers
+) -> None:
+    """After TTL expires, endpoint re-fetches instead of returning stale data."""
+    state1 = _make_calendar_state(events=1)
+    state2 = _make_calendar_state(events=3)
+
+    with (
+        patch("src.api.routes.calendar_api.is_calendar_available", return_value=True),
+        patch("src.api.routes.calendar_api.fetch_today_events", side_effect=[state1, state2]) as mock_fetch,
+    ):
+        # First call populates cache
+        resp1 = await test_client.get("/v1/calendar/today", headers=api_key_headers)
+        assert resp1.status_code == 200
+        assert len(resp1.json()["events"]) == 1
+        assert mock_fetch.call_count == 1
+
+        # Expire the cache by backdating the timestamp
+        from datetime import timedelta
+        from src.api.routes import calendar_api
+
+        calendar_api._cache["fetched_at"] = datetime.now(UTC) - timedelta(minutes=6)
+
+        # Second call should re-fetch fresh data
+        resp2 = await test_client.get("/v1/calendar/today", headers=api_key_headers)
+        assert resp2.status_code == 200
+        assert len(resp2.json()["events"]) == 3
+        assert mock_fetch.call_count == 2
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
 async def test_calendar_today_requires_auth(test_client) -> None:
     """Request without API key returns 401."""
     resp = await test_client.get("/v1/calendar/today")

@@ -230,6 +230,33 @@ async def test_post_memory_duplicate_no_queue_row_created(client, auth_headers, 
     assert count_after == count_before
 
 
+# ── Dedup 24h boundary ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_post_memory_duplicate_outside_24h_is_not_duplicate(
+    client, auth_headers, async_session
+):
+    """Same text submitted after 24h window is NOT treated as duplicate."""
+    from datetime import UTC, datetime, timedelta
+
+    text = "repeated after 24h"
+    resp1 = await client.post("/v1/memory", json={"text": text}, headers=auth_headers)
+    assert resp1.status_code == 202
+    assert resp1.json()["status"] == "queued"
+
+    # Backdate the raw_memory's created_at to 25 hours ago
+    raw = (await async_session.execute(select(RawMemory))).scalar_one()
+    raw.created_at = datetime.now(UTC) - timedelta(hours=25)
+    await async_session.commit()
+
+    # Second submission — same text but outside 24h window
+    resp2 = await client.post("/v1/memory", json={"text": text}, headers=auth_headers)
+    assert resp2.status_code == 202
+    assert resp2.json()["status"] == "queued"  # NOT "duplicate"
+    assert resp2.json()["raw_id"] != resp1.json()["raw_id"]
+
+
 # ── Superseding chain (Phase 2.3) ─────────────────────────────────────────────
 
 

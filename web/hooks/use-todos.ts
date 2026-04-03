@@ -5,9 +5,9 @@ import { api } from "@/lib/api";
 import type { TodoItem, TodoListResponse } from "@/lib/types";
 import { toast } from "sonner";
 
-const PRIORITY_ORDER: Record<string, number> = { high: 0, normal: 1, low: 2 };
+export const PRIORITY_ORDER: Record<string, number> = { high: 0, normal: 1, low: 2 };
 
-function sortOpenTodos(todos: TodoItem[]): TodoItem[] {
+export function sortOpenTodos(todos: TodoItem[]): TodoItem[] {
   return [...todos].sort((a, b) => {
     const pDiff = (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1);
     if (pDiff !== 0) return pDiff;

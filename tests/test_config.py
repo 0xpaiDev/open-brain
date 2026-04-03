@@ -231,3 +231,43 @@ class TestSettingsLoading:
         ):
             settings = Settings(_env_file=None)  # type: ignore[call-arg]
             assert settings.entity_fuzzy_match_threshold == 0.75
+
+    def test_dashboard_origins_parses_comma_separated(self) -> None:
+        """dashboard_origins splits comma-separated string into a list of origins."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+                "DASHBOARD_ORIGINS": "http://a, http://b , http://c",
+            },
+        ):
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
+            origins = [o.strip() for o in settings.dashboard_origins.split(",") if o.strip()]
+            assert origins == ["http://a", "http://b", "http://c"]
+
+    def test_dashboard_origins_empty_string_yields_empty_list(self) -> None:
+        """Empty dashboard_origins produces an empty list after split/filter."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+                "DASHBOARD_ORIGINS": "",
+            },
+        ):
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
+            origins = [o.strip() for o in settings.dashboard_origins.split(",") if o.strip()]
+            assert origins == []
+
+    def test_dashboard_origins_defaults_empty_when_unset(self) -> None:
+        """dashboard_origins defaults to empty string when env var is not set."""
+        with patch.dict(
+            os.environ,
+            {
+                "SQLALCHEMY_URL": "postgresql+asyncpg://user:pass@localhost/db",
+                "API_KEY": "test-key",
+            },
+        ):
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
+            assert settings.dashboard_origins == ""
