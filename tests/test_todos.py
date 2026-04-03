@@ -5,6 +5,7 @@ history append-only invariant. All tests use in-memory SQLite via conftest.
 """
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -773,3 +774,292 @@ async def test_create_todo_description_at_max_length(test_client, api_key_header
         headers=api_key_headers,
     )
     assert resp.status_code == 201
+
+
+# ── F2: start_date tests ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_todo_with_start_date(test_client, api_key_headers) -> None:
+    """POST /v1/todos with start_date returns it in the response."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={
+            "description": "start date task",
+            "start_date": "2026-04-01T00:00:00Z",
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["start_date"] is not None
+    assert "2026-04-01" in body["start_date"]
+    # due_date should be null when not provided
+    assert body["due_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_todo_start_date(test_client, api_key_headers) -> None:
+    """PATCH with start_date updates the field and appears in response."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "update start date"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+    assert created["start_date"] is None
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"start_date": "2026-05-01T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert "2026-05-01" in resp.json()["start_date"]
+
+
+@pytest.mark.asyncio
+async def test_create_todo_with_date_range(test_client, api_key_headers) -> None:
+    """POST with both start_date and due_date returns both in response."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={
+            "description": "date range task",
+            "start_date": "2026-04-01T00:00:00Z",
+            "due_date": "2026-04-15T00:00:00Z",
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert "2026-04-01" in body["start_date"]
+    assert "2026-04-15" in body["due_date"]
+
+
+@pytest.mark.asyncio
+async def test_start_date_in_history_snapshot(test_client, api_key_headers) -> None:
+    """History snapshot includes start_date in old_value and new_value."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={
+                "description": "snapshot start_date",
+                "start_date": "2026-04-01T00:00:00Z",
+            },
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Update start_date
+    await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"start_date": "2026-05-01T00:00:00Z"},
+        headers=api_key_headers,
+    )
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    # Last event is the update
+    last = events[-1]
+    assert "start_date" in last["old_value"]
+    assert "start_date" in last["new_value"]
+    assert "2026-04-01" in last["old_value"]["start_date"]
+    assert "2026-05-01" in last["new_value"]["start_date"]
+
+
+# ── F1/F6-backend: reopened event ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_reopen_todo_creates_reopened_history(test_client, api_key_headers) -> None:
+    """PATCH status='open' on a done todo writes event_type='reopened'."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "reopen me"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Complete it first
+    await test_client.patch(
+        f"/v1/todos/{todo_id}", json={"status": "done"}, headers=api_key_headers
+    )
+
+    # Reopen
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}", json={"status": "open"}, headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "open"
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    assert events[-1]["event_type"] == "reopened"
+
+
+@pytest.mark.asyncio
+async def test_reopen_non_done_todo_creates_updated_history(test_client, api_key_headers) -> None:
+    """PATCH status='open' on an already-open todo produces 'updated', not 'reopened'."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "already open"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}", json={"status": "open"}, headers=api_key_headers
+    )
+    assert resp.status_code == 200
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    assert events[-1]["event_type"] == "updated"
+
+
+# ── F5: overdue-undeferred endpoint ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_returns_overdue_tasks(
+    test_client, api_key_headers
+) -> None:
+    """GET /v1/todos/overdue-undeferred returns open todos past their due date."""
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "overdue task", "due_date": "2020-01-01T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["description"] == "overdue task"
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_excludes_deferred_today(
+    test_client, api_key_headers
+) -> None:
+    """Overdue task deferred today is excluded from the list."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "deferred today", "due_date": "2020-01-01T00:00:00Z"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Defer it (creates a "deferred" history entry with today's timestamp)
+    await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"due_date": "2026-12-31T00:00:00Z", "reason": "busy"},
+        headers=api_key_headers,
+    )
+
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    # The task now has a future due_date, so it won't be overdue anymore
+    assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_includes_deferred_yesterday(
+    test_client, api_key_headers, async_session
+) -> None:
+    """Overdue task deferred yesterday (but still overdue) appears in the list."""
+    from datetime import timedelta
+
+    from src.core.models import TodoHistory
+
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "deferred yesterday", "due_date": "2020-01-01T00:00:00Z"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Defer it, then backdate the history entry to yesterday
+    await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"due_date": "2020-01-02T00:00:00Z", "reason": "still overdue"},
+        headers=api_key_headers,
+    )
+
+    from sqlalchemy import select
+
+    result = await async_session.execute(
+        select(TodoHistory)
+        .where(TodoHistory.todo_id == uuid.UUID(todo_id))
+        .where(TodoHistory.event_type == "deferred")
+    )
+    deferred_row = result.scalar_one()
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    deferred_row.created_at = yesterday
+    await async_session.commit()
+
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["description"] == "deferred yesterday"
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_excludes_completed(
+    test_client, api_key_headers
+) -> None:
+    """Completed overdue todo is not returned."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "done overdue", "due_date": "2020-01-01T00:00:00Z"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    await test_client.patch(
+        f"/v1/todos/{todo_id}", json={"status": "done"}, headers=api_key_headers
+    )
+
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_excludes_future_tasks(
+    test_client, api_key_headers
+) -> None:
+    """Task due tomorrow is not returned."""
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "future task", "due_date": "2099-01-01T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_overdue_undeferred_empty_when_no_overdue(
+    test_client, api_key_headers
+) -> None:
+    """No overdue tasks returns empty list."""
+    resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
+    assert resp.status_code == 200
+    assert resp.json() == []

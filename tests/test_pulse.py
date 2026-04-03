@@ -1431,3 +1431,117 @@ async def test_list_pulses_limit_over_max_returns_422(test_client, api_key_heade
     """GET /v1/pulse?limit=366 returns 422 (above le=365)."""
     resp = await test_client.get("/v1/pulse?limit=366", headers=api_key_headers)
     assert resp.status_code == 422
+
+
+# ── Section 10: POST /v1/pulse/start ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_creates_with_ai_question(test_client, api_key_headers):
+    """POST /v1/pulse/start creates a pulse with AI-generated question."""
+    mock_question = "What's blocking the migration task?"
+    mock_llm = _make_mock_llm(mock_question)
+
+    with patch("src.llm.client.anthropic_client", mock_llm):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "sent"
+    assert data["ai_question"] == "What's blocking the migration task?"
+    assert data["id"]
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_409_if_exists(test_client, api_key_headers):
+    """POST /v1/pulse/start returns 409 if pulse already exists today."""
+    # Create a pulse first via the regular endpoint
+    pulse_date = _today_midnight().isoformat()
+    resp1 = await test_client.post(
+        "/v1/pulse",
+        json={"pulse_date": pulse_date, "status": "sent"},
+        headers=api_key_headers,
+    )
+    assert resp1.status_code == 201
+
+    # Now /start should return 409
+    resp2 = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+    assert resp2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_llm_failure_uses_default_question(test_client, api_key_headers):
+    """POST /v1/pulse/start falls back to default question when LLM raises."""
+    mock_llm = AsyncMock()
+    mock_llm.complete = AsyncMock(side_effect=RuntimeError("LLM down"))
+
+    with patch("src.llm.client.anthropic_client", mock_llm):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["ai_question"] == "What's one thing you want to accomplish today?"
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_no_api_key_uses_default_question(test_client, api_key_headers):
+    """POST /v1/pulse/start uses default question when anthropic_client is None."""
+    with patch("src.llm.client.anthropic_client", None):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["ai_question"] == "What's one thing you want to accomplish today?"
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_includes_todo_context(test_client, api_key_headers, async_session):
+    """POST /v1/pulse/start passes open todos to the question generator."""
+    from src.core.models import TodoItem
+
+    # Create an open todo so the endpoint has context to pass
+    todo = TodoItem(description="Deploy the new API", priority="high", status="open")
+    async_session.add(todo)
+    await async_session.commit()
+
+    captured_kwargs: dict = {}
+
+    async def spy_generate(llm, **kwargs):
+        captured_kwargs.update(kwargs)
+        return "What's blocking the deploy?"
+
+    with patch("src.jobs.pulse._generate_ai_question", side_effect=spy_generate):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    assert "open_todos" in captured_kwargs
+    assert len(captured_kwargs["open_todos"]) >= 1
+    assert any("Deploy the new API" in t["description"] for t in captured_kwargs["open_todos"])
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_alternates_question_type(test_client, api_key_headers, async_session):
+    """POST /v1/pulse/start fetches yesterday's question for alternation."""
+    from src.core.models import DailyPulse
+
+    # Create yesterday's pulse with a known ai_question
+    yesterday = _today_midnight() - timedelta(days=1)
+    yesterday_pulse = DailyPulse(
+        pulse_date=yesterday,
+        status="completed",
+        ai_question="What project needs attention today?",
+    )
+    async_session.add(yesterday_pulse)
+    await async_session.commit()
+
+    captured_kwargs: dict = {}
+
+    async def spy_generate(llm, **kwargs):
+        captured_kwargs.update(kwargs)
+        return "What drained your energy yesterday?"
+
+    with patch("src.jobs.pulse._generate_ai_question", side_effect=spy_generate):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    assert captured_kwargs.get("yesterday_question") == "What project needs attention today?"

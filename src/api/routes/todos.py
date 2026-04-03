@@ -36,6 +36,7 @@ class TodoCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     priority: str = "normal"
     due_date: datetime | None = None
+    start_date: datetime | None = None
 
     @field_validator("priority")
     @classmethod
@@ -49,6 +50,7 @@ class TodoUpdate(BaseModel):
     description: str | None = Field(None, max_length=500)
     priority: str | None = None
     due_date: datetime | None = None
+    start_date: datetime | None = None
     status: str | None = None
     reason: str | None = Field(None, max_length=500)  # stored in history only
 
@@ -73,6 +75,7 @@ class TodoResponse(BaseModel):
     priority: str
     status: str
     due_date: datetime | None
+    start_date: datetime | None
     discord_message_id: str | None
     discord_channel_id: str | None
     created_at: datetime
@@ -104,6 +107,7 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         priority=todo.priority,
         status=todo.status,
         due_date=todo.due_date,
+        start_date=todo.start_date,
         discord_message_id=todo.discord_message_id,
         discord_channel_id=todo.discord_channel_id,
         created_at=todo.created_at,
@@ -149,6 +153,7 @@ async def create_todo_route(
         description=body.description,
         priority=body.priority,
         due_date=body.due_date,
+        start_date=body.start_date,
     )
     logger.info("create_todo_route", todo_id=str(todo.id))
     return _todo_to_response(todo)
@@ -204,6 +209,44 @@ async def list_todos(
 
     logger.info("list_todos", total=total, returned=len(todos))
     return TodoListResponse(todos=[_todo_to_response(t) for t in todos], total=total)
+
+
+# ── GET /v1/todos/overdue-undeferred ───────────────────────────────────────────
+
+
+@router.get("/v1/todos/overdue-undeferred", response_model=list[TodoResponse])
+@limiter.limit(todos_limit)
+async def list_overdue_undeferred(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+) -> list[TodoResponse]:
+    """Return open todos that are overdue and have NOT been deferred today.
+
+    Used by the frontend overdue enforcement modal to force the user to
+    defer (with a reason) any task that slipped past its due date.
+
+    Returns:
+        List of TodoResponse for overdue, un-deferred tasks.
+    """
+    start_of_today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    deferred_today_sub = (
+        select(TodoHistory.todo_id)
+        .where(TodoHistory.event_type == "deferred")
+        .where(TodoHistory.created_at >= start_of_today)
+    ).subquery()
+
+    stmt = (
+        select(TodoItem)
+        .where(TodoItem.status == "open")
+        .where(TodoItem.due_date < start_of_today)
+        .where(~TodoItem.id.in_(select(deferred_today_sub.c.todo_id)))
+    )
+    result = await session.execute(stmt)
+    todos = list(result.scalars().all())
+
+    logger.info("list_overdue_undeferred", count=len(todos))
+    return [_todo_to_response(t) for t in todos]
 
 
 # ── GET /v1/todos/{id} ─────────────────────────────────────────────────────────
@@ -263,6 +306,7 @@ async def update_todo_route(
         description=body.description,
         priority=body.priority,
         due_date=body.due_date,
+        start_date=body.start_date,
         status=body.status,
         reason=body.reason,
     )

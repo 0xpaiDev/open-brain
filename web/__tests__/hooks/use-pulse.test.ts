@@ -106,14 +106,64 @@ describe("usePulse", () => {
     });
 
     expect(result.current.pulse).toEqual(FAKE_PULSE);
-    // Verify POST was called with pulse_date
+    // Verify POST was called to /v1/pulse/start with no body
     const postCall = fetchMock.mock.calls.find(
       ([, init]) => init?.method === "POST",
     );
     expect(postCall).toBeDefined();
-    const body = JSON.parse(postCall![1].body as string);
-    expect(body.pulse_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(body.status).toBe("sent");
+    expect(postCall![0]).toContain("/v1/pulse/start");
+    expect(postCall![1].body).toBeUndefined();
+  });
+
+  // ── createPulse 409 → fallback to GET /v1/pulse/today ─────────────────
+
+  test("createPulse 409 fetches existing pulse", async () => {
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "POST") return jsonResponse({ detail: "exists" }, 409);
+      // GET /v1/pulse/today — first call returns 404 (mount), second returns pulse (409 fallback)
+      if (init?.method === "GET") {
+        if (fetchMock.mock.calls.filter(([, i]) => !i?.method || i.method === "GET").length <= 1) {
+          return jsonResponse({}, 404);
+        }
+        return jsonResponse(FAKE_PULSE);
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => usePulse());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.pulse).toBeNull();
+
+    await act(async () => {
+      await result.current.createPulse();
+    });
+
+    expect(result.current.pulse).toEqual(FAKE_PULSE);
+  });
+
+  // ── createPulse sets pulse with ai_question ───────────────────────────
+
+  test("createPulse sets pulse with ai_question from response", async () => {
+    const pulseWithQuestion: PulseResponse = {
+      ...FAKE_PULSE,
+      ai_question: "What's blocking the deploy?",
+    };
+
+    const fetchMock = vi.fn(async (_path: string, init?: RequestInit) => {
+      if (init?.method === "GET") return jsonResponse({}, 404);
+      return jsonResponse(pulseWithQuestion, 201);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => usePulse());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.createPulse();
+    });
+
+    expect(result.current.pulse?.ai_question).toBe("What's blocking the deploy?");
   });
 
   // ── submitPulse calls PATCH and updates state ───────────────────────────

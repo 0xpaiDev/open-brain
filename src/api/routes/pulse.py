@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, pulse_limit
 from src.core.database import get_db
-from src.core.models import DailyPulse
+from src.core.models import DailyPulse, TodoItem
 
 logger = structlog.get_logger(__name__)
 
@@ -133,6 +133,91 @@ def _today_midnight_utc() -> datetime:
 
     local_midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     return local_midnight.astimezone(ZoneInfo("UTC"))
+
+
+# ── POST /v1/pulse/start ──────────────────────────────────────────────────────
+
+
+@router.post("/v1/pulse/start", response_model=PulseResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(pulse_limit)
+async def start_pulse(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+) -> PulseResponse:
+    """Create today's pulse with an AI-generated question.
+
+    Queries open todos from the DB, fetches yesterday's ai_question for
+    alternation, calls _generate_ai_question(), and persists the pulse.
+
+    Returns:
+        PulseResponse with ai_question populated.
+
+    Raises:
+        409: If a pulse record already exists for today.
+    """
+    from datetime import timedelta
+
+    from src.jobs.pulse import _generate_ai_question
+
+    today_start = _today_midnight_utc()
+
+    # Check if pulse already exists today
+    existing_stmt = (
+        select(DailyPulse)
+        .where(DailyPulse.pulse_date >= today_start)
+        .limit(1)
+    )
+    existing = (await session.execute(existing_stmt)).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="A pulse record already exists for today")
+
+    # Fetch open todos from DB directly
+    todo_stmt = (
+        select(TodoItem)
+        .where(TodoItem.status == "open")
+        .limit(25)
+    )
+    todo_rows = (await session.execute(todo_stmt)).scalars().all()
+    open_todos = [{"description": t.description, "due_date": t.due_date.isoformat() if t.due_date else None} for t in todo_rows]
+
+    # Fetch yesterday's ai_question for alternation
+    yesterday_start = today_start - timedelta(days=1)
+    yesterday_stmt = (
+        select(DailyPulse)
+        .where(DailyPulse.pulse_date >= yesterday_start, DailyPulse.pulse_date < today_start)
+        .limit(1)
+    )
+    yesterday_pulse = (await session.execute(yesterday_stmt)).scalar_one_or_none()
+    yesterday_question = yesterday_pulse.ai_question if yesterday_pulse else None
+
+    # Get LLM client (None if no API key)
+    llm = None
+    try:
+        from src.llm.client import anthropic_client
+
+        llm = anthropic_client
+    except Exception:
+        pass
+
+    ai_question = await _generate_ai_question(llm, open_todos=open_todos, yesterday_question=yesterday_question)
+
+    # Create pulse record
+    pulse = DailyPulse(
+        pulse_date=today_start,
+        status="sent",
+        ai_question=ai_question,
+    )
+    session.add(pulse)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="A pulse record already exists for today") from None
+
+    await session.commit()
+    await session.refresh(pulse)
+    logger.info("start_pulse", pulse_id=str(pulse.id), ai_question=ai_question[:60])
+    return _pulse_to_response(pulse)
 
 
 # ── POST /v1/pulse ─────────────────────────────────────────────────────────────

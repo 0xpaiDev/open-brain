@@ -46,15 +46,20 @@ export function usePulse(): UsePulseReturn {
   const createPulse = useCallback(async () => {
     try {
       setLoading(true);
-      const today = new Date().toISOString().split("T")[0];
-      const data = await api<PulseResponse>("POST", "/v1/pulse", {
-        pulse_date: today,
-        status: "sent",
-      });
+      const data = await api<PulseResponse>("POST", "/v1/pulse/start");
       setPulse(data);
       toast.success("Day started!");
-    } catch {
-      toast.error("Failed to start your day");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        try {
+          const existing = await api<PulseResponse>("GET", "/v1/pulse/today");
+          setPulse(existing);
+        } catch {
+          toast.error("Failed to load existing pulse");
+        }
+      } else {
+        toast.error("Failed to start your day");
+      }
     } finally {
       setLoading(false);
     }

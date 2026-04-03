@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTodos } from "@/hooks/use-todos";
+import { useTodos, filterTodayTodos } from "@/hooks/use-todos";
 import type { TodoItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,14 +17,33 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
-export function getDueBadge(dueDate: string | null): { label: string; className: string } | null {
+export function getDueBadge(dueDate: string | null, startDate?: string | null): { label: string; className: string } | null {
   if (!dueDate) return null;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const due = new Date(dueDate);
   due.setHours(0, 0, 0, 0);
+
+  // Active badge for date ranges: start_date <= today <= due_date
+  if (startDate) {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    if (today >= start && today <= due) {
+      return { label: "Active", className: "bg-primary/10 text-primary" };
+    }
+  }
+
   const diffDays = Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) return { label: "Overdue", className: "bg-error/10 text-error" };
@@ -48,15 +67,96 @@ function priorityBorderClass(priority: string): string {
   }
 }
 
+function DeferPopover({
+  todoId,
+  onDefer,
+}: {
+  todoId: string;
+  onDefer: (id: string, dueDate: string, reason?: string) => Promise<void>;
+}) {
+  const [deferDate, setDeferDate] = useState("");
+  const [deferReason, setDeferReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  async function handleSubmit() {
+    if (!deferDate) return;
+    setSubmitting(true);
+    try {
+      await onDefer(todoId, deferDate, deferReason || undefined);
+      setOpen(false);
+      setDeferDate("");
+      setDeferReason("");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Defer task"
+            className="min-w-8 min-h-8 flex items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
+          />
+        }
+      >
+        <span className="material-symbols-outlined text-on-surface-variant text-base">calendar_month</span>
+      </DialogTrigger>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Defer Task</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 py-2">
+          <Input
+            type="date"
+            value={deferDate}
+            onChange={(e) => setDeferDate(e.target.value)}
+            aria-label="New due date"
+          />
+          <textarea
+            value={deferReason}
+            onChange={(e) => setDeferReason(e.target.value)}
+            placeholder="Reason (optional)"
+            className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            rows={2}
+            aria-label="Defer reason"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!deferDate || submitting}
+            onClick={handleSubmit}
+          >
+            Defer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TaskRow({
   todo,
   onComplete,
+  onDefer,
 }: {
   todo: TodoItem;
   onComplete: (id: string) => void;
+  onDefer: (id: string, dueDate: string, reason?: string) => Promise<void>;
 }) {
   const [completing, setCompleting] = useState(false);
-  const badge = getDueBadge(todo.due_date);
+  const badge = getDueBadge(todo.due_date, todo.start_date);
 
   function handleCheck() {
     setCompleting(true);
@@ -98,6 +198,8 @@ function TaskRow({
         {todo.description}
       </span>
 
+      <DeferPopover todoId={todo.id} onDefer={onDefer} />
+
       {badge && (
         <span className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 font-label ${badge.className}`}>
           {badge.label}
@@ -123,11 +225,13 @@ function DoneTaskRow({ todo }: { todo: TodoItem }) {
 function AddTaskForm({
   onAdd,
 }: {
-  onAdd: (description: string, priority: "high" | "normal" | "low", dueDate?: string) => Promise<void>;
+  onAdd: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string) => Promise<void>;
 }) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"high" | "normal" | "low">("normal");
   const [dueDate, setDueDate] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [isRange, setIsRange] = useState(false);
   const [adding, setAdding] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -137,10 +241,17 @@ function AddTaskForm({
 
     setAdding(true);
     try {
-      await onAdd(trimmed, priority, dueDate || undefined);
+      await onAdd(
+        trimmed,
+        priority,
+        dueDate || undefined,
+        isRange && startDate ? startDate : undefined,
+      );
       setDescription("");
       setDueDate("");
+      setStartDate("");
       setPriority("normal");
+      setIsRange(false);
     } finally {
       setAdding(false);
     }
@@ -170,13 +281,50 @@ function AddTaskForm({
         </SelectContent>
       </Select>
 
-      <Input
-        type="date"
-        value={dueDate}
-        onChange={(e) => setDueDate(e.target.value)}
-        className="w-36 hidden md:block"
-        disabled={adding}
-      />
+      <button
+        type="button"
+        onClick={() => setIsRange((v) => !v)}
+        className={`text-xs px-2 py-1 rounded-md border transition-colors hidden md:inline-flex ${
+          isRange
+            ? "border-primary text-primary bg-primary/10"
+            : "border-outline-variant text-on-surface-variant hover:border-primary"
+        }`}
+        title={isRange ? "Switch to single date" : "Switch to date range"}
+      >
+        {isRange ? "Range" : "Date"}
+      </button>
+
+      {isRange ? (
+        <>
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-36 hidden md:block"
+            disabled={adding}
+            aria-label="From date"
+            title="From"
+          />
+          <span className="text-xs text-on-surface-variant hidden md:inline">to</span>
+          <Input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-36 hidden md:block"
+            disabled={adding}
+            aria-label="Due date"
+            title="Due"
+          />
+        </>
+      ) : (
+        <Input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="w-36 hidden md:block"
+          disabled={adding}
+        />
+      )}
 
       <Button
         type="submit"
@@ -205,8 +353,36 @@ function TaskSkeleton() {
   );
 }
 
+function TaskListContent({
+  todos,
+  completeTodo,
+  deferTodo,
+  emptyMessage,
+}: {
+  todos: TodoItem[];
+  completeTodo: (id: string) => Promise<void>;
+  deferTodo: (id: string, dueDate: string, reason?: string) => Promise<void>;
+  emptyMessage: string;
+}) {
+  if (todos.length === 0) {
+    return (
+      <p className="text-on-surface-variant text-sm py-4 text-center">
+        {emptyMessage}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-0.5">
+      {todos.map((todo) => (
+        <TaskRow key={todo.id} todo={todo} onComplete={completeTodo} onDefer={deferTodo} />
+      ))}
+    </div>
+  );
+}
+
 export function TaskList() {
-  const { openTodos, doneTodos, loading, error, completeTodo, addTodo } = useTodos();
+  const { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo } = useTodos();
+  const todayTodos = filterTodayTodos(openTodos);
 
   if (loading) return <TaskSkeleton />;
   if (error) {
@@ -237,11 +413,42 @@ export function TaskList() {
           No tasks yet. Add one below!
         </p>
       ) : (
-        <div className="space-y-0.5">
-          {openTodos.map((todo) => (
-            <TaskRow key={todo.id} todo={todo} onComplete={completeTodo} />
-          ))}
-        </div>
+        <Tabs defaultValue={0}>
+          <TabsList variant="line" className="mb-2">
+            <TabsTrigger value={0}>
+              Today
+              {todayTodos.length > 0 && (
+                <span className="bg-tertiary/10 text-tertiary rounded-full px-1.5 py-0.5 text-xs font-label ml-1">
+                  {todayTodos.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value={1}>
+              All
+              {openTodos.length > 0 && (
+                <span className="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-xs font-label ml-1">
+                  {openTodos.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value={0}>
+            <TaskListContent
+              todos={todayTodos}
+              completeTodo={completeTodo}
+              deferTodo={deferTodo}
+              emptyMessage="Nothing due today — nice!"
+            />
+          </TabsContent>
+          <TabsContent value={1}>
+            <TaskListContent
+              todos={openTodos}
+              completeTodo={completeTodo}
+              deferTodo={deferTodo}
+              emptyMessage="No open tasks"
+            />
+          </TabsContent>
+        </Tabs>
       )}
 
       {doneTodos.length > 0 && (

@@ -16,11 +16,17 @@ def set_test_env(monkeypatch):
     Re-initializes the config.settings singleton from the test env vars so
     that all tests see API_KEY='test-secret-key', not the value from .env.
     monkeypatch restores the original singleton after each test.
+
+    Also disables the rate limiter so that test suites with many requests
+    (e.g. test_todos.py with 50+ tests) do not hit 429 responses.
     """
     monkeypatch.setenv("SQLALCHEMY_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.setenv("API_KEY", "test-secret-key")
     from src.core import config as _config
     monkeypatch.setattr(_config, "settings", _config.Settings())
+
+    from src.api.middleware.rate_limit import limiter
+    monkeypatch.setattr(limiter, "enabled", False)
 
 
 # ── Database fixtures ─────────────────────────────────────────────────────────

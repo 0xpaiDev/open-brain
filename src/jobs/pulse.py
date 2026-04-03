@@ -304,7 +304,7 @@ async def _generate_ai_question(
         if cleaned and not cleaned.endswith("?"):
             cleaned = cleaned.rstrip("?") + "?"
         return cleaned or default_question
-    except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+    except Exception as exc:
         logger.exception("pulse_question_generation_failed", error=str(exc))
         return default_question
 

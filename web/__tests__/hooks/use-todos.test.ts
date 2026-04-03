@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { sortOpenTodos } from "@/hooks/use-todos";
+import { sortOpenTodos, filterTodayTodos } from "@/hooks/use-todos";
 import { setApiKey, ApiError } from "@/lib/api";
 import type { TodoItem, TodoListResponse } from "@/lib/types";
 
@@ -11,6 +11,7 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     priority: "normal",
     status: "open",
     due_date: null,
+    start_date: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -105,9 +106,18 @@ describe("sortOpenTodos", () => {
 
 // ── useTodos hook tests ─────────────────────────────────────────────────────
 
-// Mock sonner toast
+// Mock sonner toast — toast is both callable and has methods.
+// vi.hoisted() ensures the variable is available when vi.mock hoists.
+const { toastFn } = vi.hoisted(() => {
+  const fn = Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  });
+  return { toastFn: fn };
+});
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  toast: toastFn,
 }));
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -120,6 +130,7 @@ const TODO_A: TodoItem = {
   priority: "normal",
   status: "open",
   due_date: null,
+  start_date: null,
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
 };
@@ -224,5 +235,242 @@ describe("useTodos hook", () => {
     // High priority should sort first
     expect(result.current.openTodos[0].priority).toBe("high");
     expect(result.current.openTodos[0].id).toBe("new-1");
+  });
+
+  // ── deferTodo ──────────────────────────────────────────────────────────────
+
+  test("deferTodo updates due_date optimistically", async () => {
+    const todo = { ...TODO_A, id: "d-1", due_date: "2026-04-01T00:00:00Z" };
+    const newDueDate = "2026-04-15";
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todo], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      // PATCH succeeds
+      return jsonResponse({ ...todo, due_date: newDueDate });
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferTodo("d-1", newDueDate);
+    });
+
+    expect(result.current.openTodos[0].due_date).toBe(newDueDate);
+  });
+
+  test("deferTodo with reason passes reason in PATCH body", async () => {
+    const todo = { ...TODO_A, id: "d-2", due_date: "2026-04-01T00:00:00Z" };
+    const newDueDate = "2026-04-20";
+    const reason = "Waiting on dependencies";
+    let patchBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todo], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      // Capture PATCH body
+      if (init?.method === "PATCH") {
+        patchBody = JSON.parse(init.body as string);
+        return jsonResponse({ ...todo, due_date: newDueDate });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferTodo("d-2", newDueDate, reason);
+    });
+
+    expect(patchBody).not.toBeNull();
+    expect(patchBody!.due_date).toBe(newDueDate);
+    expect(patchBody!.reason).toBe(reason);
+  });
+
+  // ── F6: completeTodo undo toast + undoComplete ─────────────────────────────
+
+  test("completeTodo shows undo toast on success", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [TODO_A], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      // PATCH succeeds
+      return jsonResponse({ ...TODO_A, status: "done" });
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.completeTodo("a-1");
+    });
+
+    // toast() called directly (not toast.success) with undo action
+    expect(toastFn).toHaveBeenCalledWith(
+      "Task completed",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Undo" }),
+        duration: 5000,
+      }),
+    );
+  });
+
+  test("undoComplete moves task back to open", async () => {
+    const doneTodo = { ...TODO_A, id: "undo-1", status: "done" as const };
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [doneTodo], total: 1 });
+      }
+      // PATCH to reopen succeeds
+      return jsonResponse({ ...doneTodo, status: "open" });
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.doneTodos).toHaveLength(1);
+    expect(result.current.openTodos).toHaveLength(0);
+
+    await act(async () => {
+      await result.current.undoComplete("undo-1");
+    });
+
+    expect(result.current.openTodos).toHaveLength(1);
+    expect(result.current.openTodos[0].status).toBe("open");
+    expect(result.current.doneTodos).toHaveLength(0);
+  });
+
+  test("undoComplete rollback on API failure", async () => {
+    const doneTodo = { ...TODO_A, id: "undo-2", status: "done" as const };
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [doneTodo], total: 1 });
+      }
+      // PATCH fails
+      return jsonResponse({}, 500);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.undoComplete("undo-2");
+    });
+
+    // Rolled back — todo should be back in done
+    expect(result.current.doneTodos).toHaveLength(1);
+    expect(result.current.openTodos).toHaveLength(0);
+    expect(toastFn.error).toHaveBeenCalledWith("Failed to undo");
+  });
+});
+
+// ── filterTodayTodos ────────────────────────────────────────────────────────
+
+describe("filterTodayTodos", () => {
+  function todayISO(): string {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  function daysFromNow(n: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  test("includes overdue tasks", () => {
+    const overdue = makeTodo({ due_date: "2020-01-01T00:00:00Z" });
+    const result = filterTodayTodos([overdue]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(overdue.id);
+  });
+
+  test("includes tasks due today", () => {
+    const dueToday = makeTodo({ due_date: todayISO() });
+    const result = filterTodayTodos([dueToday]);
+    expect(result).toHaveLength(1);
+  });
+
+  test("includes active range tasks (start_date <= today <= due_date)", () => {
+    const rangeTask = makeTodo({
+      start_date: daysFromNow(-3),
+      due_date: daysFromNow(3),
+    });
+    const result = filterTodayTodos([rangeTask]);
+    expect(result).toHaveLength(1);
+  });
+
+  test("excludes future tasks", () => {
+    const future = makeTodo({ due_date: daysFromNow(7) });
+    const result = filterTodayTodos([future]);
+    expect(result).toHaveLength(0);
+  });
+
+  test("excludes tasks with no dates", () => {
+    const noDates = makeTodo({ due_date: null, start_date: null });
+    const result = filterTodayTodos([noDates]);
+    expect(result).toHaveLength(0);
+  });
+
+  test("handles timezone edge cases — date near midnight", () => {
+    // Task due at end-of-today in UTC — should still be "today" in local time
+    const today = new Date();
+    today.setHours(23, 59, 59, 0);
+    const dueEndOfToday = makeTodo({ due_date: today.toISOString() });
+    const result = filterTodayTodos([dueEndOfToday]);
+    expect(result).toHaveLength(1);
+  });
+
+  test("excludes future range task not yet started", () => {
+    // start_date is tomorrow, due in a week — today is before the range
+    const futureRange = makeTodo({
+      start_date: daysFromNow(1),
+      due_date: daysFromNow(7),
+    });
+    const result = filterTodayTodos([futureRange]);
+    expect(result).toHaveLength(0);
+  });
+
+  test("mixed list filters correctly", () => {
+    const overdue = makeTodo({ description: "overdue", due_date: "2020-01-01T00:00:00Z" });
+    const dueToday = makeTodo({ description: "today", due_date: todayISO() });
+    const future = makeTodo({ description: "future", due_date: daysFromNow(7) });
+    const noDates = makeTodo({ description: "no dates" });
+    const activeRange = makeTodo({
+      description: "range",
+      start_date: daysFromNow(-1),
+      due_date: daysFromNow(1),
+    });
+
+    const result = filterTodayTodos([overdue, dueToday, future, noDates, activeRange]);
+    expect(result).toHaveLength(3);
+    expect(result.map((t) => t.description).sort()).toEqual(["overdue", "range", "today"]);
   });
 });

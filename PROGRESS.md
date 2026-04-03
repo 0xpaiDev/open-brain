@@ -2,8 +2,52 @@
 
 **Project Start**: 2026-03-13
 **Target Completion**: ~2026-04-24 (6 weeks)
-**Current Phase**: ✅ Phase 6 complete. Morning Pulse modal upgrade applied.
-**Overall Progress**: All phases complete (2026-03-24, 666 tests passing)
+**Current Phase**: ✅ Dashboard Enhancement complete.
+**Overall Progress**: All phases complete (2026-04-03, 843 tests: 751 backend + 92 Vitest)
+
+---
+
+## Dashboard Enhancement ✅ COMPLETE (2026-04-03)
+
+6-feature enhancement for web dashboard feature parity with Discord bot + new UX.
+
+### F1: Morning AI Question on Web ✅
+- [x] `POST /v1/pulse/start` endpoint — queries open todos, fetches yesterday's question for alternation, calls `_generate_ai_question()`, creates pulse with ai_question populated
+- [x] Frontend `createPulse()` calls `/v1/pulse/start`; 409 fallback fetches existing pulse via `GET /v1/pulse/today`
+- [x] Broadened exception catch in `_generate_ai_question()` to `except Exception` (was httpx-only)
+- [x] 6 backend tests + 2 frontend tests
+
+### F2: start_date on TodoItem ✅
+- [x] Migration `0006_add_start_date.py` — nullable `DateTime(timezone=True)`
+- [x] ORM model, Pydantic schemas (TodoCreate/TodoUpdate/TodoResponse), service functions (_snapshot, create_todo, update_todo)
+- [x] Frontend types, AddTaskForm date range toggle, `getDueBadge()` "Active" badge for range tasks
+- [x] 4 backend tests + 2 frontend tests (getDueBadge + date range toggle)
+
+### F3: Today/All Tabs ✅
+- [x] Client-side only — `filterTodayTodos()` in `use-todos.ts`: overdue, due today, active range (start_date ≤ today ≤ due_date)
+- [x] `Tabs`/`TabsList`/`TabsTrigger`/`TabsContent` in `task-list.tsx` with badge counts
+- [x] 8 frontend tests (filterTodayTodos) + 4 component tests (tabs)
+
+### F4: Defer UI ✅
+- [x] `DeferPopover` component with date picker + optional reason textarea
+- [x] `deferTodo()` hook function with optimistic update + rollback
+- [x] No backend changes — existing PATCH auto-detects event_type="deferred"
+- [x] 2 frontend tests (defer dialog + reason)
+
+### F5: Overdue Enforcement ✅
+- [x] `GET /v1/todos/overdue-undeferred` endpoint — declared before `/{todo_id}`, subquery excludes deferred-today
+- [x] `useOverdue` hook — fetches endpoint, re-fetches on `visibilitychange`
+- [x] `OverdueModal` component — non-dismissable dialog, required reason, closes when all handled
+- [x] 6 backend tests + 4 hook tests + 5 component tests
+
+### F6: Reopened Event + Undo Toast ✅
+- [x] Backend: "reopened" event_type when `status=open` and `old_status=done`
+- [x] Frontend: `completeTodo()` shows Sonner toast with "Undo" action (5s), `undoComplete()` with rollback
+- [x] 2 backend tests + 3 frontend tests
+
+**Files modified**: 15 modified, 6 new (1 migration, 2 hooks, 2 components, 1 test file)
+**Test delta**: +39 backend, +48 frontend (from 784 to 843 total)
+**Deploy note**: Run `alembic upgrade head` to apply migration 0006 (add `start_date` column).
 
 ---
 

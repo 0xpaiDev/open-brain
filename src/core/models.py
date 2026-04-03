@@ -378,6 +378,7 @@ class TodoItem(Base):
     priority: Mapped[str] = mapped_column(String(10), default="normal")
     status: Mapped[str] = mapped_column(String(20), default="open")
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     discord_channel_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -396,7 +397,7 @@ class TodoItem(Base):
 class TodoHistory(Base):
     """Append-only audit log for todo state changes.
 
-    event_type: "created" | "completed" | "deferred" | "cancelled" | "priority_changed"
+    event_type: "created" | "completed" | "reopened" | "deferred" | "cancelled" | "priority_changed"
     old_value/new_value: JSON snapshots of changed fields
     reason: populated on deferrals
     """

@@ -24,6 +24,7 @@ def _snapshot(todo: TodoItem) -> dict[str, Any]:
         "priority": todo.priority,
         "status": todo.status,
         "due_date": todo.due_date.isoformat() if todo.due_date else None,
+        "start_date": todo.start_date.isoformat() if todo.start_date else None,
     }
 
 
@@ -32,6 +33,7 @@ async def create_todo(
     description: str,
     priority: str = "normal",
     due_date: datetime | None = None,
+    start_date: datetime | None = None,
 ) -> TodoItem:
     """Insert a TodoItem and a 'created' history row in one transaction.
 
@@ -40,11 +42,12 @@ async def create_todo(
         description: Required todo text.
         priority: "high" | "normal" | "low" (default "normal").
         due_date: Optional due date.
+        start_date: Optional start date (for date ranges).
 
     Returns:
         The newly created TodoItem with id populated.
     """
-    todo = TodoItem(description=description, priority=priority, due_date=due_date)
+    todo = TodoItem(description=description, priority=priority, due_date=due_date, start_date=start_date)
     session.add(todo)
     await session.flush()  # Populate todo.id before writing history
 
@@ -69,6 +72,7 @@ async def update_todo(
     description: str | None = None,
     priority: str | None = None,
     due_date: datetime | None = None,
+    start_date: datetime | None = None,
     status: str | None = None,
     reason: str | None = None,
 ) -> TodoItem:
@@ -99,6 +103,8 @@ async def update_todo(
         todo.priority = priority
     if due_date is not None:
         todo.due_date = due_date
+    if start_date is not None:
+        todo.start_date = start_date
     if status is not None:
         todo.status = status
 
@@ -109,6 +115,8 @@ async def update_todo(
         event_type = "completed"
     elif status == "cancelled":
         event_type = "cancelled"
+    elif status == "open" and old_snapshot["status"] == "done":
+        event_type = "reopened"
     elif due_date is not None and status is None and priority is None and description is None:
         event_type = "deferred"
     elif priority is not None and status is None:

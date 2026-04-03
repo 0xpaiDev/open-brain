@@ -44,6 +44,7 @@ export interface TodoItem {
   priority: "high" | "normal" | "low";
   status: "open" | "done" | "cancelled";
   due_date: string | null;
+  start_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,12 +67,14 @@ export interface TodoCreate {
   description: string;
   priority?: "high" | "normal" | "low";
   due_date?: string;
+  start_date?: string;
 }
 
 export interface TodoUpdate {
   status?: "open" | "done" | "cancelled";
   priority?: "high" | "normal" | "low";
   due_date?: string | null;
+  start_date?: string | null;
   description?: string;
   reason?: string;
 }
