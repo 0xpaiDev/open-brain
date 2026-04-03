@@ -155,3 +155,42 @@ async def test_calendar_today_requires_auth(test_client) -> None:
     """Request without API key returns 401."""
     resp = await test_client.get("/v1/calendar/today")
     assert resp.status_code == 401
+
+
+# ── T-10: tomorrow_preview field in response ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_calendar_today_includes_tomorrow_preview(test_client, api_key_headers) -> None:
+    """Response includes tomorrow_preview as a list even when empty."""
+    state = _make_calendar_state(events=1, tomorrow=2)
+    with (
+        patch("src.api.routes.calendar_api.is_calendar_available", return_value=True),
+        patch("src.api.routes.calendar_api.fetch_today_events", return_value=state),
+    ):
+        resp = await test_client.get("/v1/calendar/today", headers=api_key_headers)
+
+    body = resp.json()
+    assert "tomorrow_preview" in body
+    assert isinstance(body["tomorrow_preview"], list)
+    assert len(body["tomorrow_preview"]) == 2
+    assert body["tomorrow_preview"][0]["title"] == "Tomorrow 0"
+
+
+# ── T-11: fetch_today_events raises exception → graceful ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_calendar_today_fetch_error_graceful(test_client, api_key_headers) -> None:
+    """When fetch_today_events raises, endpoint should not return 500."""
+    with (
+        patch("src.api.routes.calendar_api.is_calendar_available", return_value=True),
+        patch("src.api.routes.calendar_api.fetch_today_events", side_effect=RuntimeError("Google down")),
+    ):
+        resp = await test_client.get("/v1/calendar/today", headers=api_key_headers)
+
+    # Should gracefully degrade to unavailable, not 500
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "unavailable"
+    assert body["events"] == []

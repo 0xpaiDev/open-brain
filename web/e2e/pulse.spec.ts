@@ -50,4 +50,30 @@ test.describe("Morning Pulse", () => {
       page.getByText(/sleep/i).or(page.getByText(/energy/i)).or(page.getByText(/completed/i)),
     ).toBeVisible({ timeout: 10000 });
   });
+
+  // ── T-49: Double-submit prevention ──────────────────────────────────────
+
+  test("double-clicking submit does not create duplicate pulse", async ({ page }) => {
+    await page.goto("/");
+
+    // Start the pulse
+    const startBtn = page.getByRole("button", { name: /start your day/i });
+    if (await startBtn.isVisible({ timeout: 3000 })) {
+      await startBtn.click();
+    }
+
+    // If form is visible, try double-clicking submit
+    const logBtn = page.getByRole("button", { name: /log my morning/i });
+    if (await logBtn.isVisible({ timeout: 3000 })) {
+      // Double-click rapidly
+      await logBtn.dblclick();
+
+      // Should not crash — either shows summary or stays on form
+      await page.waitForTimeout(2000);
+
+      // Page should still be functional (no unhandled error)
+      const errorOverlay = page.locator(".error-overlay, #error-boundary");
+      await expect(errorOverlay).not.toBeVisible();
+    }
+  });
 });

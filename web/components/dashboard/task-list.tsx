@@ -18,7 +18,7 @@ import {
   CollapsibleContent,
 } from "@/components/ui/collapsible";
 
-function getDueBadge(dueDate: string | null): { label: string; className: string } | null {
+export function getDueBadge(dueDate: string | null): { label: string; className: string } | null {
   if (!dueDate) return null;
 
   const today = new Date();

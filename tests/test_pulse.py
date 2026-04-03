@@ -1364,3 +1364,70 @@ async def test_completed_status_accepted(test_client, api_key_headers):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "completed"
+
+
+# ── T-14: PATCH sleep_quality=0 returns 422 ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_pulse_sleep_quality_zero_returns_422(test_client, api_key_headers):
+    """sleep_quality=0 is below ge=1 boundary — should return 422."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch(
+        "/v1/pulse/today",
+        json={"sleep_quality": 0},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+# ── T-15: PATCH sleep_quality=6 returns 422 ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_pulse_sleep_quality_six_returns_422(test_client, api_key_headers):
+    """sleep_quality=6 is above le=5 boundary — should return 422."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch(
+        "/v1/pulse/today",
+        json={"sleep_quality": 6},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+# ── T-16: PATCH /v1/pulse/today requires auth ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_today_pulse_requires_auth(test_client, api_key_headers):
+    """PATCH /v1/pulse/today without X-API-Key returns 401."""
+    pulse_date = _today_midnight().isoformat()
+    await test_client.post("/v1/pulse", json={"pulse_date": pulse_date}, headers=api_key_headers)
+
+    resp = await test_client.patch("/v1/pulse/today", json={"notes": "test"})
+    assert resp.status_code == 401
+
+
+# ── T-17: GET /v1/pulse?limit=0 returns 422 ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_pulses_limit_zero_returns_422(test_client, api_key_headers):
+    """GET /v1/pulse?limit=0 returns 422 (below ge=1)."""
+    resp = await test_client.get("/v1/pulse?limit=0", headers=api_key_headers)
+    assert resp.status_code == 422
+
+
+# ── T-19: GET /v1/pulse?limit=366 returns 422 ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_pulses_limit_over_max_returns_422(test_client, api_key_headers):
+    """GET /v1/pulse?limit=366 returns 422 (above le=365)."""
+    resp = await test_client.get("/v1/pulse?limit=366", headers=api_key_headers)
+    assert resp.status_code == 422

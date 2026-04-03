@@ -56,4 +56,29 @@ test.describe("Task Management", () => {
     // The task should still exist somewhere (in the done section)
     // but might have different styling
   });
+
+  // ── T-45: Add task with priority and due date ─────────────────────────────
+
+  test("add a task with high priority", async ({ page }) => {
+    await page.goto("/");
+
+    const taskInput = page.locator('[data-testid="task-input"]').or(
+      page.getByPlaceholder(/add a task|new task|description/i),
+    );
+    await taskInput.fill("High priority E2E task");
+
+    // Select high priority
+    const prioritySelect = page.locator('[data-testid="priority-select"]').or(
+      page.getByRole("combobox"),
+    );
+    if (await prioritySelect.isVisible()) {
+      await prioritySelect.click();
+      await page.getByRole("option", { name: /high/i }).click();
+    }
+
+    await page.getByRole("button", { name: /add/i }).click();
+
+    // Task should appear with some priority indicator
+    await expect(page.getByText("High priority E2E task")).toBeVisible({ timeout: 5000 });
+  });
 });

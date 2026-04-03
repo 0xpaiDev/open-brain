@@ -16,7 +16,7 @@ function formatTime(iso: string): string {
   }
 }
 
-function isCurrentOrNext(event: CalendarEvent, now: Date): boolean {
+export function isCurrentOrNext(event: CalendarEvent, now: Date): boolean {
   const start = new Date(event.start);
   const end = new Date(event.end);
 

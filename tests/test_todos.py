@@ -575,3 +575,201 @@ async def test_history_snapshot_values_on_priority_change(
     # Description should remain unchanged in both snapshots
     assert update_event["old_value"]["description"] == "snapshot test"
     assert update_event["new_value"]["description"] == "snapshot test"
+
+
+# ── T-01: PATCH description-only → event_type="updated" ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_patch_description_only_triggers_updated_event(
+    test_client, api_key_headers
+) -> None:
+    """PATCH with only description field writes history with event_type='updated'."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "original text"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"description": "updated text"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "updated text"
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    last_event = events[-1]
+    assert last_event["event_type"] == "updated"
+    assert last_event["new_value"]["description"] == "updated text"
+    assert last_event["old_value"]["description"] == "original text"
+
+
+# ── T-02: PATCH multiple fields at once ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_patch_multiple_fields_priority_and_status(
+    test_client, api_key_headers
+) -> None:
+    """PATCH with both priority and status: status='done' → event_type='completed'."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "multi-field"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"priority": "high", "status": "done"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["priority"] == "high"
+    assert body["status"] == "done"
+
+    history = await test_client.get(
+        f"/v1/todos/{todo_id}/history", headers=api_key_headers
+    )
+    events = history.json()
+    assert events[-1]["event_type"] == "completed"
+
+
+# ── T-03: PATCH empty body no-op ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_patch_empty_body_is_valid(test_client, api_key_headers) -> None:
+    """PATCH with {} body returns 200 and the todo remains unchanged."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "no-op test"}, headers=api_key_headers
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["description"] == "no-op test"
+    assert body["priority"] == "normal"
+    assert body["status"] == "open"
+
+
+# ── T-04: GET ?limit=0 → 422 ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_limit_zero_returns_422(test_client, api_key_headers) -> None:
+    """GET /v1/todos?limit=0 returns 422 (below ge=1)."""
+    resp = await test_client.get("/v1/todos?limit=0", headers=api_key_headers)
+    assert resp.status_code == 422
+
+
+# ── T-05: GET ?limit=501 → 422 ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_limit_over_max_returns_422(test_client, api_key_headers) -> None:
+    """GET /v1/todos?limit=501 returns 422 (above le=500)."""
+    resp = await test_client.get("/v1/todos?limit=501", headers=api_key_headers)
+    assert resp.status_code == 422
+
+
+# ── T-06: GET combined status+priority filter ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_combined_status_priority_filter(
+    test_client, api_key_headers
+) -> None:
+    """GET ?status=open&priority=high returns only the intersection."""
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "open-high", "priority": "high"},
+        headers=api_key_headers,
+    )
+    await test_client.post(
+        "/v1/todos",
+        json={"description": "open-normal"},
+        headers=api_key_headers,
+    )
+    # Create and complete a high-priority todo
+    done_resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "done-high", "priority": "high"},
+        headers=api_key_headers,
+    )
+    done_id = done_resp.json()["id"]
+    await test_client.patch(
+        f"/v1/todos/{done_id}", json={"status": "done"}, headers=api_key_headers
+    )
+
+    resp = await test_client.get(
+        "/v1/todos?status=open&priority=high", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["todos"][0]["description"] == "open-high"
+
+
+# ── T-07, T-08, T-09: Auth on GET/PATCH/history ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_todos_requires_auth(test_client) -> None:
+    """GET /v1/todos without X-API-Key returns 401."""
+    resp = await test_client.get("/v1/todos")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_patch_todo_requires_auth(test_client, api_key_headers) -> None:
+    """PATCH /v1/todos/{id} without X-API-Key returns 401."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "auth test"}, headers=api_key_headers
+        )
+    ).json()
+    resp = await test_client.patch(
+        f"/v1/todos/{created['id']}", json={"status": "done"}
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_todo_history_requires_auth(test_client, api_key_headers) -> None:
+    """GET /v1/todos/{id}/history without X-API-Key returns 401."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "auth hist"}, headers=api_key_headers
+        )
+    ).json()
+    resp = await test_client.get(f"/v1/todos/{created['id']}/history")
+    assert resp.status_code == 401
+
+
+# ── T-18: POST description exactly 500 chars ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_todo_description_at_max_length(test_client, api_key_headers) -> None:
+    """POST /v1/todos with description of exactly 500 chars returns 201."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "x" * 500},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201

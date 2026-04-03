@@ -172,3 +172,54 @@ describe("validateApiKey", () => {
     });
   });
 });
+
+// ── T-29: Network error propagation ────────────────────────────────────────
+
+describe("api() network errors", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("throws TypeError when fetch rejects (network down)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+    setApiKey("k");
+
+    await expect(api("GET", "/v1/test")).rejects.toThrow(TypeError);
+    await expect(api("GET", "/v1/test")).rejects.toThrow("Failed to fetch");
+  });
+
+  // T-30: Malformed JSON response
+  test("throws SyntaxError when response JSON is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("Unexpected token");
+        },
+      }),
+    );
+    setApiKey("k");
+
+    await expect(api("GET", "/v1/test")).rejects.toThrow(SyntaxError);
+  });
+});
+
+// ── T-31: SSR guard ────────────────────────────────────────────────────────
+
+describe("getApiKey SSR", () => {
+  test("returns null when window is undefined", () => {
+    const original = globalThis.window;
+    // @ts-expect-error - intentionally removing window for SSR test
+    delete globalThis.window;
+    try {
+      expect(getApiKey()).toBeNull();
+    } finally {
+      globalThis.window = original;
+    }
+  });
+});

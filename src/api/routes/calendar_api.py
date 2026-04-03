@@ -88,7 +88,19 @@ async def get_calendar_today(request: Request) -> CalendarTodayResponse:
         return _cache["data"]
 
     # Fetch fresh data
-    state = await fetch_today_events(settings)
+    try:
+        state = await fetch_today_events(settings)
+    except Exception:
+        logger.exception("calendar_fetch_error")
+        now = datetime.now(UTC)
+        return CalendarTodayResponse(
+            status="unavailable",
+            date=now.date().isoformat(),
+            fetched_at=now.isoformat().replace("+00:00", "Z"),
+            events=[],
+            tomorrow_preview=[],
+        )
+
     response = CalendarTodayResponse(
         status="ok",
         date=state.date,

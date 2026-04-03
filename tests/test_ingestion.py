@@ -528,3 +528,31 @@ async def test_create_memory_accepts_text_at_max_length(client, auth_headers):
         headers=auth_headers,
     )
     assert resp.status_code == 202
+
+
+# ── T-12: POST source at exactly 200 chars accepted ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_post_memory_source_at_max_length(client, auth_headers):
+    """POST /v1/memory with source of exactly 200 chars returns 202."""
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": "test content", "source": "s" * 200},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 202
+
+
+# ── T-13: POST source at 201 chars returns 422 ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_post_memory_source_exceeds_max_length(client, auth_headers):
+    """POST /v1/memory with source > 200 chars returns 422."""
+    resp = await client.post(
+        "/v1/memory",
+        json={"text": "test content", "source": "s" * 201},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
