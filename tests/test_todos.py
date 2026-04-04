@@ -1063,3 +1063,131 @@ async def test_overdue_undeferred_empty_when_no_overdue(
     resp = await test_client.get("/v1/todos/overdue-undeferred", headers=api_key_headers)
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── Label support on todos ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_todo_with_label(test_client, api_key_headers) -> None:
+    """POST /v1/todos with label returns label in response."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "labeled task", "label": "Work"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["label"] == "Work"
+
+
+@pytest.mark.asyncio
+async def test_create_todo_without_label(test_client, api_key_headers) -> None:
+    """POST /v1/todos without label defaults to null."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "no label"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["label"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_todo_set_label(test_client, api_key_headers) -> None:
+    """PATCH with label updates the label."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "t"}, headers=api_key_headers
+        )
+    ).json()
+    resp = await test_client.patch(
+        f"/v1/todos/{created['id']}",
+        json={"label": "Personal"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "Personal"
+
+
+@pytest.mark.asyncio
+async def test_patch_todo_clear_label(test_client, api_key_headers) -> None:
+    """PATCH with label=null clears the label (via model_fields_set)."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "t", "label": "Work"},
+            headers=api_key_headers,
+        )
+    ).json()
+    resp = await test_client.patch(
+        f"/v1/todos/{created['id']}",
+        json={"label": None},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_todos_filter_by_label(test_client, api_key_headers) -> None:
+    """GET /v1/todos?label=Work returns only matching todos."""
+    await test_client.post(
+        "/v1/todos", json={"description": "w1", "label": "Work"}, headers=api_key_headers
+    )
+    await test_client.post(
+        "/v1/todos", json={"description": "w2", "label": "Work"}, headers=api_key_headers
+    )
+    await test_client.post(
+        "/v1/todos", json={"description": "p1", "label": "Personal"}, headers=api_key_headers
+    )
+
+    resp = await test_client.get("/v1/todos?label=Work", headers=api_key_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert all(t["label"] == "Work" for t in data["todos"])
+
+
+@pytest.mark.asyncio
+async def test_list_todos_filter_nonexistent_label(test_client, api_key_headers) -> None:
+    """GET /v1/todos?label=nonexistent returns empty."""
+    resp = await test_client.get("/v1/todos?label=nonexistent", headers=api_key_headers)
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_label_in_history_snapshots(test_client, api_key_headers) -> None:
+    """Changing label records old/new label in history snapshots."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "h", "label": "Old"},
+            headers=api_key_headers,
+        )
+    ).json()
+    await test_client.patch(
+        f"/v1/todos/{created['id']}",
+        json={"label": "New"},
+        headers=api_key_headers,
+    )
+    history = (
+        await test_client.get(
+            f"/v1/todos/{created['id']}/history", headers=api_key_headers
+        )
+    ).json()
+    # Last entry should have label change
+    last = history[-1]
+    assert last["old_value"]["label"] == "Old"
+    assert last["new_value"]["label"] == "New"
+
+
+@pytest.mark.asyncio
+async def test_create_todo_label_too_long_422(test_client, api_key_headers) -> None:
+    """POST with label > 50 chars returns 422."""
+    resp = await test_client.post(
+        "/v1/todos",
+        json={"description": "t", "label": "x" * 51},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422

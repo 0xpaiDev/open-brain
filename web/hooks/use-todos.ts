@@ -20,6 +20,68 @@ export function sortOpenTodos(todos: TodoItem[]): TodoItem[] {
   });
 }
 
+/** Get Monday 00:00 of the week containing `date`. ISO weeks start on Monday. */
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  // getDay(): 0=Sun 1=Mon ... 6=Sat → offset to Monday
+  const diff = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+/** Filter todos due within the current ISO week (Mon–Sun), including overdue within the week. */
+export function filterThisWeekTodos(todos: TodoItem[]): TodoItem[] {
+  const now = new Date();
+  const monday = getMonday(now);
+  const nextMonday = new Date(monday);
+  nextMonday.setDate(nextMonday.getDate() + 7);
+
+  return todos.filter((todo) => {
+    if (!todo.due_date) return false;
+    const due = new Date(todo.due_date);
+    due.setHours(0, 0, 0, 0);
+    return due >= monday && due < nextMonday;
+  });
+}
+
+export interface DoneGroup {
+  label: string;
+  todos: TodoItem[];
+}
+
+/** Group done todos by completion period. Uses `updated_at` as proxy for completion time. */
+export function groupDoneTodos(todos: TodoItem[]): DoneGroup[] {
+  if (todos.length === 0) return [];
+
+  const now = new Date();
+  const thisMonday = getMonday(now);
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(lastMonday.getDate() - 7);
+
+  const groups = new Map<string, TodoItem[]>();
+
+  for (const todo of todos) {
+    const completed = new Date(todo.updated_at);
+    completed.setHours(0, 0, 0, 0);
+
+    let key: string;
+    if (completed >= thisMonday) {
+      key = "This Week";
+    } else if (completed >= lastMonday) {
+      key = "Last Week";
+    } else {
+      key = completed.toLocaleDateString([], { month: "long", year: "numeric" });
+    }
+
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(todo);
+  }
+
+  return Array.from(groups.entries()).map(([label, todos]) => ({ label, todos }));
+}
+
 /** Filter todos relevant to "today": overdue, due today, or in active date range. */
 export function filterTodayTodos(todos: TodoItem[]): TodoItem[] {
   const today = new Date();
@@ -48,16 +110,21 @@ interface UseTodosReturn {
   loading: boolean;
   error: string | null;
   completeTodo: (id: string) => Promise<void>;
-  undoComplete: (id: string) => Promise<void>;
-  addTodo: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string) => Promise<void>;
+  addTodo: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string, label?: string) => Promise<void>;
   deferTodo: (id: string, dueDate: string, reason?: string) => Promise<void>;
+  loadMoreDone: () => Promise<void>;
+  hasMoreDone: boolean;
 }
+
+const DONE_PAGE_SIZE = 20;
 
 export function useTodos(): UseTodosReturn {
   const [openTodos, setOpenTodos] = useState<TodoItem[]>([]);
   const [doneTodos, setDoneTodos] = useState<TodoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMoreDone, setHasMoreDone] = useState(false);
+  const [doneOffset, setDoneOffset] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,11 +133,13 @@ export function useTodos(): UseTodosReturn {
       try {
         const [openRes, doneRes] = await Promise.all([
           api<TodoListResponse>("GET", "/v1/todos?status=open&limit=50"),
-          api<TodoListResponse>("GET", "/v1/todos?status=done&limit=10"),
+          api<TodoListResponse>("GET", `/v1/todos?status=done&limit=${DONE_PAGE_SIZE}`),
         ]);
         if (!cancelled) {
           setOpenTodos(sortOpenTodos(openRes.todos));
           setDoneTodos(doneRes.todos);
+          setDoneOffset(doneRes.todos.length);
+          setHasMoreDone(doneRes.todos.length >= DONE_PAGE_SIZE);
         }
       } catch {
         if (!cancelled) setError("Failed to load tasks");
@@ -85,29 +154,7 @@ export function useTodos(): UseTodosReturn {
     };
   }, []);
 
-  const undoComplete = useCallback(async (id: string) => {
-    const todo = doneTodos.find((t) => t.id === id);
-    if (!todo) return;
-
-    const prevOpen = openTodos;
-    const prevDone = doneTodos;
-
-    // Optimistic: move back to open
-    setDoneTodos((prev) => prev.filter((t) => t.id !== id));
-    setOpenTodos((prev) => sortOpenTodos([...prev, { ...todo, status: "open" as const }]));
-
-    try {
-      await api<TodoItem>("PATCH", `/v1/todos/${id}`, { status: "open" });
-    } catch {
-      setOpenTodos(prevOpen);
-      setDoneTodos(prevDone);
-      toast.error("Failed to undo");
-    }
-  }, [openTodos, doneTodos]);
-
   const completeTodo = useCallback(async (id: string) => {
-    const prevOpen = openTodos;
-    const prevDone = doneTodos;
     const todo = openTodos.find((t) => t.id === id);
     if (!todo) return;
 
@@ -118,27 +165,41 @@ export function useTodos(): UseTodosReturn {
     try {
       await api<TodoItem>("PATCH", `/v1/todos/${id}`, { status: "done" });
       toast("Task completed", {
-        action: { label: "Undo", onClick: () => undoComplete(id) },
+        action: {
+          label: "Undo",
+          onClick: () => {
+            // Inline undo — captures `todo` directly, avoids stale closure
+            setDoneTodos((prev) => prev.filter((t) => t.id !== id));
+            setOpenTodos((prev) => sortOpenTodos([...prev, { ...todo, status: "open" as const }]));
+            api<TodoItem>("PATCH", `/v1/todos/${id}`, { status: "open" }).catch(() => {
+              setOpenTodos((prev) => prev.filter((t) => t.id !== id));
+              setDoneTodos((prev) => [{ ...todo, status: "done" as const }, ...prev]);
+              toast.error("Failed to undo");
+            });
+          },
+        },
         duration: 5000,
       });
     } catch {
       // Rollback
-      setOpenTodos(prevOpen);
-      setDoneTodos(prevDone);
+      setOpenTodos((prev) => sortOpenTodos([...prev, todo]));
+      setDoneTodos((prev) => prev.filter((t) => t.id !== id));
       toast.error("Failed to complete task");
     }
-  }, [openTodos, doneTodos, undoComplete]);
+  }, [openTodos]);
 
   const addTodo = useCallback(async (
     description: string,
     priority: "high" | "normal" | "low",
     dueDate?: string,
     startDate?: string,
+    label?: string,
   ) => {
     try {
       const body: Record<string, unknown> = { description, priority };
       if (dueDate) body.due_date = dueDate;
       if (startDate) body.start_date = startDate;
+      if (label) body.label = label;
 
       const created = await api<TodoItem>("POST", "/v1/todos", body);
       setOpenTodos((prev) => sortOpenTodos([...prev, created]));
@@ -166,5 +227,19 @@ export function useTodos(): UseTodosReturn {
     }
   }, [openTodos]);
 
-  return { openTodos, doneTodos, loading, error, completeTodo, undoComplete, addTodo, deferTodo };
+  const loadMoreDone = useCallback(async () => {
+    try {
+      const res = await api<TodoListResponse>(
+        "GET",
+        `/v1/todos?status=done&limit=${DONE_PAGE_SIZE}&offset=${doneOffset}`
+      );
+      setDoneTodos((prev) => [...prev, ...res.todos]);
+      setDoneOffset((prev) => prev + res.todos.length);
+      setHasMoreDone(res.todos.length >= DONE_PAGE_SIZE);
+    } catch {
+      toast.error("Failed to load more tasks");
+    }
+  }, [doneOffset]);
+
+  return { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, loadMoreDone, hasMoreDone };
 }

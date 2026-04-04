@@ -1,6 +1,21 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-03** | 6 phases, 843 tests (751 backend + 92 Vitest)
+Covering **2026-03-13 to 2026-04-04** | 6 phases + dashboard update, 901 tests (752 backend + 142 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-04 (Dashboard Todo Update — 2/2)
+
+**What changed**:
+- Completed Steps 6+7 of `dash-update-plan.md`: filter redesign + E2E tests — all 7 steps done
+- `web/hooks/use-todos.ts` — paginated done loading (`loadMoreDone`, `hasMoreDone`), `filterThisWeekTodos()`, `groupDoneTodos()` with ISO week boundaries
+- `web/components/dashboard/task-list.tsx` — 3 tabs (Today/This Week/All), search bar, label filter chips, grouped done sections with Collapsible per period, "Load more" button
+- `web/e2e/todos.spec.ts` — 4 new E2E tests (default date, undo toast, search, This Week tab)
+- 28 new Vitest tests (14 hook + 14 component), updated existing tab tests for 3-tab layout
+
+**Decisions made**: Search and label filter state kept in component (not hook) — presentation concern
+**Gotchas found**: None
+**Test count**: 901 total (752 backend + 142 Vitest + 7 E2E)
 
 ---
 

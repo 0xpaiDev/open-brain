@@ -25,6 +25,7 @@ def _snapshot(todo: TodoItem) -> dict[str, Any]:
         "status": todo.status,
         "due_date": todo.due_date.isoformat() if todo.due_date else None,
         "start_date": todo.start_date.isoformat() if todo.start_date else None,
+        "label": todo.label,
     }
 
 
@@ -34,6 +35,7 @@ async def create_todo(
     priority: str = "normal",
     due_date: datetime | None = None,
     start_date: datetime | None = None,
+    label: str | None = None,
 ) -> TodoItem:
     """Insert a TodoItem and a 'created' history row in one transaction.
 
@@ -43,11 +45,12 @@ async def create_todo(
         priority: "high" | "normal" | "low" (default "normal").
         due_date: Optional due date.
         start_date: Optional start date (for date ranges).
+        label: Optional label name (soft reference).
 
     Returns:
         The newly created TodoItem with id populated.
     """
-    todo = TodoItem(description=description, priority=priority, due_date=due_date, start_date=start_date)
+    todo = TodoItem(description=description, priority=priority, due_date=due_date, start_date=start_date, label=label)
     session.add(todo)
     await session.flush()  # Populate todo.id before writing history
 
@@ -75,6 +78,8 @@ async def update_todo(
     start_date: datetime | None = None,
     status: str | None = None,
     reason: str | None = None,
+    label: str | None = None,
+    fields_set: set[str] | None = None,
 ) -> TodoItem:
     """Apply field updates to a TodoItem and append a history row.
 
@@ -91,10 +96,15 @@ async def update_todo(
         due_date: New due date (optional).
         status: New status value (optional).
         reason: Stored in history for deferrals; optional otherwise.
+        label: Label name (optional). Use fields_set to distinguish "not provided" from "set to null".
+        fields_set: Set of field names explicitly provided in the request body.
+            When a nullable field (label, due_date, start_date) appears in fields_set,
+            it will be applied even if None (clearing the value).
 
     Returns:
         The updated TodoItem.
     """
+    _set = fields_set or set()
     old_snapshot = _snapshot(todo)
 
     if description is not None:
@@ -103,10 +113,18 @@ async def update_todo(
         todo.priority = priority
     if due_date is not None:
         todo.due_date = due_date
+    elif "due_date" in _set:
+        todo.due_date = None
     if start_date is not None:
         todo.start_date = start_date
+    elif "start_date" in _set:
+        todo.start_date = None
     if status is not None:
         todo.status = status
+    if label is not None:
+        todo.label = label
+    elif "label" in _set:
+        todo.label = None
 
     new_snapshot = _snapshot(todo)
 

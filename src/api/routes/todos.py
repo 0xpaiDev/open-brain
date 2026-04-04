@@ -37,12 +37,20 @@ class TodoCreate(BaseModel):
     priority: str = "normal"
     due_date: datetime | None = None
     start_date: datetime | None = None
+    label: str | None = Field(None, max_length=50)
 
     @field_validator("priority")
     @classmethod
     def validate_priority(cls, v: str) -> str:
         if v not in _VALID_PRIORITIES:
             raise ValueError(f"priority must be one of {sorted(_VALID_PRIORITIES)}")
+        return v
+
+    @field_validator("label")
+    @classmethod
+    def validate_label(cls, v: str | None) -> str | None:
+        if v is not None and len(v) < 1:
+            raise ValueError("label must not be empty")
         return v
 
 
@@ -53,6 +61,7 @@ class TodoUpdate(BaseModel):
     start_date: datetime | None = None
     status: str | None = None
     reason: str | None = Field(None, max_length=500)  # stored in history only
+    label: str | None = Field(None, max_length=50)
 
     @field_validator("priority")
     @classmethod
@@ -76,6 +85,7 @@ class TodoResponse(BaseModel):
     status: str
     due_date: datetime | None
     start_date: datetime | None
+    label: str | None
     discord_message_id: str | None
     discord_channel_id: str | None
     created_at: datetime
@@ -108,6 +118,7 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         status=todo.status,
         due_date=todo.due_date,
         start_date=todo.start_date,
+        label=todo.label,
         discord_message_id=todo.discord_message_id,
         discord_channel_id=todo.discord_channel_id,
         created_at=todo.created_at,
@@ -154,6 +165,7 @@ async def create_todo_route(
         priority=body.priority,
         due_date=body.due_date,
         start_date=body.start_date,
+        label=body.label,
     )
     logger.info("create_todo_route", todo_id=str(todo.id))
     return _todo_to_response(todo)
@@ -168,6 +180,7 @@ async def list_todos(
     request: Request,
     status: str | None = Query(default=None),
     priority: str | None = Query(default=None),
+    label: str | None = Query(default=None),
     due_before: datetime | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -178,6 +191,7 @@ async def list_todos(
     Args:
         status: Filter by status (open/done/cancelled).
         priority: Filter by priority (high/normal/low).
+        label: Filter by label name.
         due_before: Filter todos due before this datetime.
         limit: Maximum results (1–500).
         offset: Number of results to skip.
@@ -194,6 +208,9 @@ async def list_todos(
     if priority is not None:
         stmt = stmt.where(TodoItem.priority == priority)
         count_stmt = count_stmt.where(TodoItem.priority == priority)
+    if label is not None:
+        stmt = stmt.where(TodoItem.label == label)
+        count_stmt = count_stmt.where(TodoItem.label == label)
     if due_before is not None:
         if due_before.tzinfo is None:
             due_before = due_before.replace(tzinfo=timezone.utc)
@@ -309,6 +326,8 @@ async def update_todo_route(
         start_date=body.start_date,
         status=body.status,
         reason=body.reason,
+        label=body.label,
+        fields_set=body.model_fields_set,
     )
     logger.info("update_todo_route", todo_id=str(todo_id))
     return _todo_to_response(todo)

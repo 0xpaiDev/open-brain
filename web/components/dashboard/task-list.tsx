@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useTodos, filterTodayTodos } from "@/hooks/use-todos";
-import type { TodoItem } from "@/lib/types";
+import { useTodos, filterTodayTodos, filterThisWeekTodos, groupDoneTodos } from "@/hooks/use-todos";
+import { useTodoLabels } from "@/hooks/use-todo-labels";
+import type { TodoItem, TodoLabel } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,6 +27,18 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+
+export function formatDateButtonText(dateStr: string): string {
+  if (!dateStr) return "No date";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const date = new Date(dateStr + "T00:00:00");
+  date.setHours(0, 0, 0, 0);
+  const diff = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 export function getDueBadge(dueDate: string | null, startDate?: string | null): { label: string; className: string } | null {
   if (!dueDate) return null;
@@ -146,6 +159,95 @@ function DeferPopover({
   );
 }
 
+function DatePickerDialog({
+  dueDate,
+  startDate,
+  isRange,
+  onApply,
+  disabled,
+}: {
+  dueDate: string;
+  startDate: string;
+  isRange: boolean;
+  onApply: (dueDate: string, startDate: string, isRange: boolean) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [localDue, setLocalDue] = useState(dueDate);
+  const [localStart, setLocalStart] = useState(startDate);
+  const [localRange, setLocalRange] = useState(isRange);
+
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      setLocalDue(dueDate);
+      setLocalStart(startDate);
+      setLocalRange(isRange);
+    }
+    setOpen(next);
+  }
+
+  function handleApply() {
+    onApply(localDue, localRange ? localStart : "", localRange);
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger
+        render={
+          <button
+            type="button"
+            disabled={disabled}
+            className="flex items-center gap-1 text-sm px-2 py-1 rounded-md border border-outline-variant hover:border-primary transition-colors"
+            aria-label="Pick date"
+          />
+        }
+      >
+        <span className="material-symbols-outlined text-base">calendar_month</span>
+        <span>{formatDateButtonText(dueDate)}</span>
+      </DialogTrigger>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Due Date</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 py-2">
+          <Input
+            type="date"
+            value={localDue}
+            onChange={(e) => setLocalDue(e.target.value)}
+            aria-label="Due date"
+          />
+          <label className="flex items-center gap-2 text-sm text-on-surface-variant">
+            <input
+              type="checkbox"
+              checked={localRange}
+              onChange={(e) => setLocalRange(e.target.checked)}
+              className="accent-primary"
+            />
+            Date range
+          </label>
+          {localRange && (
+            <Input
+              type="date"
+              value={localStart}
+              onChange={(e) => setLocalStart(e.target.value)}
+              aria-label="Start date"
+            />
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleApply}>
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TaskRow({
   todo,
   onComplete,
@@ -200,8 +302,14 @@ function TaskRow({
 
       <DeferPopover todoId={todo.id} onDefer={onDefer} />
 
+      {todo.label && (
+        <span className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-surface-container-high text-on-surface-variant">
+          {todo.label}
+        </span>
+      )}
+
       {badge && (
-        <span className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 font-label ${badge.className}`}>
+        <span className={`text-xs rounded-full px-2 py-0.5 shrink-0 font-label ${badge.className}`}>
           {badge.label}
         </span>
       )}
@@ -212,7 +320,7 @@ function TaskRow({
 function DoneTaskRow({ todo }: { todo: TodoItem }) {
   return (
     <div className="flex items-center gap-3 py-1.5 px-3 opacity-60">
-      <div className="w-5 h-5 rounded-full bg-primary/30 flex items-center justify-center flex-shrink-0">
+      <div className="w-5 h-5 rounded-full bg-primary/30 flex items-center justify-center shrink-0">
         <span className="material-symbols-outlined text-primary text-xs">check</span>
       </div>
       <span className="flex-1 text-sm text-on-surface-variant line-through">
@@ -224,14 +332,17 @@ function DoneTaskRow({ todo }: { todo: TodoItem }) {
 
 function AddTaskForm({
   onAdd,
+  labels,
 }: {
-  onAdd: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string) => Promise<void>;
+  onAdd: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string, label?: string) => Promise<void>;
+  labels: TodoLabel[];
 }) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"high" | "normal" | "low">("normal");
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(new Date().toISOString().split("T")[0]);
   const [startDate, setStartDate] = useState("");
   const [isRange, setIsRange] = useState(false);
+  const [label, setLabel] = useState("");
   const [adding, setAdding] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -246,95 +357,87 @@ function AddTaskForm({
         priority,
         dueDate || undefined,
         isRange && startDate ? startDate : undefined,
+        label || undefined,
       );
       setDescription("");
-      setDueDate("");
+      setDueDate(new Date().toISOString().split("T")[0]);
       setStartDate("");
       setPriority("normal");
       setIsRange(false);
+      setLabel("");
     } finally {
       setAdding(false);
     }
   }
 
+  function handleDateApply(newDue: string, newStart: string, newRange: boolean) {
+    setDueDate(newDue);
+    setStartDate(newStart);
+    setIsRange(newRange);
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-outline-variant/20"
+      className="flex flex-col gap-2 mt-4 pt-4 border-t border-outline-variant/20"
     >
       <Input
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Add a task..."
-        className="flex-1 min-w-[150px]"
+        className="w-full"
         disabled={adding}
       />
 
-      <Select value={priority} onValueChange={(v) => setPriority(v as "high" | "normal" | "low")}>
-        <SelectTrigger size="sm" className="w-24">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="high">High</SelectItem>
-          <SelectItem value="normal">Normal</SelectItem>
-          <SelectItem value="low">Low</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-2">
+        <Select value={priority} onValueChange={(v) => setPriority(v as "high" | "normal" | "low")}>
+          <SelectTrigger size="sm" className="w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="normal">Normal</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+          </SelectContent>
+        </Select>
 
-      <button
-        type="button"
-        onClick={() => setIsRange((v) => !v)}
-        className={`text-xs px-2 py-1 rounded-md border transition-colors hidden md:inline-flex ${
-          isRange
-            ? "border-primary text-primary bg-primary/10"
-            : "border-outline-variant text-on-surface-variant hover:border-primary"
-        }`}
-        title={isRange ? "Switch to single date" : "Switch to date range"}
-      >
-        {isRange ? "Range" : "Date"}
-      </button>
+        {labels.length > 0 && (
+          <Select value={label} onValueChange={(v) => setLabel(v ?? "")}>
+            <SelectTrigger size="sm" className="w-28" aria-label="Label">
+              <SelectValue placeholder="Label" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">None</SelectItem>
+              {labels.map((l) => (
+                <SelectItem key={l.name} value={l.name}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                    {l.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
-      {isRange ? (
-        <>
-          <Input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-36 hidden md:block"
-            disabled={adding}
-            aria-label="From date"
-            title="From"
-          />
-          <span className="text-xs text-on-surface-variant hidden md:inline">to</span>
-          <Input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-36 hidden md:block"
-            disabled={adding}
-            aria-label="Due date"
-            title="Due"
-          />
-        </>
-      ) : (
-        <Input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className="w-36 hidden md:block"
+        <DatePickerDialog
+          dueDate={dueDate}
+          startDate={startDate}
+          isRange={isRange}
+          onApply={handleDateApply}
           disabled={adding}
         />
-      )}
 
-      <Button
-        type="submit"
-        size="sm"
-        disabled={adding || !description.trim()}
-        className="active:scale-95 transition-transform"
-      >
-        <span className="material-symbols-outlined text-base">add</span>
-        Add
-      </Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={adding || !description.trim()}
+          className="active:scale-95 transition-transform ml-auto"
+        >
+          <span className="material-symbols-outlined text-base">add</span>
+          Add
+        </Button>
+      </div>
     </form>
   );
 }
@@ -381,8 +484,48 @@ function TaskListContent({
 }
 
 export function TaskList() {
-  const { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo } = useTodos();
+  const { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, loadMoreDone, hasMoreDone } = useTodos();
+  const { labels } = useTodoLabels();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeLabels, setActiveLabels] = useState<Set<string>>(new Set());
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const todayTodos = filterTodayTodos(openTodos);
+  const weekTodos = filterThisWeekTodos(openTodos);
+  const doneGroups = groupDoneTodos(doneTodos);
+
+  // Derive unique labels from open todos for filter chips
+  const todoLabels = Array.from(new Set(openTodos.map((t) => t.label).filter(Boolean) as string[]));
+
+  function applyFilters(todos: TodoItem[]): TodoItem[] {
+    let filtered = todos;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((t) => t.description.toLowerCase().includes(q));
+    }
+    if (activeLabels.size > 0) {
+      filtered = filtered.filter((t) => t.label && activeLabels.has(t.label));
+    }
+    return filtered;
+  }
+
+  function toggleLabel(label: string) {
+    setActiveLabels((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  async function handleLoadMore() {
+    setLoadingMore(true);
+    try {
+      await loadMoreDone();
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   if (loading) return <TaskSkeleton />;
   if (error) {
@@ -408,6 +551,44 @@ export function TaskList() {
         )}
       </div>
 
+      {/* Search bar */}
+      <Input
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search tasks..."
+        className="mb-2"
+        aria-label="Search tasks"
+      />
+
+      {/* Label filter chips */}
+      {todoLabels.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          {todoLabels.map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => toggleLabel(l)}
+              className={`text-xs rounded-full px-2.5 py-1 font-label transition-colors ${
+                activeLabels.has(l)
+                  ? "bg-primary text-on-primary"
+                  : "bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+          {activeLabels.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveLabels(new Set())}
+              className="text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {openTodos.length === 0 && doneTodos.length === 0 ? (
         <p className="text-on-surface-variant text-sm py-4 text-center">
           No tasks yet. Add one below!
@@ -424,6 +605,14 @@ export function TaskList() {
               )}
             </TabsTrigger>
             <TabsTrigger value={1}>
+              This Week
+              {weekTodos.length > 0 && (
+                <span className="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-xs font-label ml-1">
+                  {weekTodos.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value={2}>
               All
               {openTodos.length > 0 && (
                 <span className="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-xs font-label ml-1">
@@ -434,7 +623,7 @@ export function TaskList() {
           </TabsList>
           <TabsContent value={0}>
             <TaskListContent
-              todos={todayTodos}
+              todos={applyFilters(todayTodos)}
               completeTodo={completeTodo}
               deferTodo={deferTodo}
               emptyMessage="Nothing due today — nice!"
@@ -442,7 +631,15 @@ export function TaskList() {
           </TabsContent>
           <TabsContent value={1}>
             <TaskListContent
-              todos={openTodos}
+              todos={applyFilters(weekTodos)}
+              completeTodo={completeTodo}
+              deferTodo={deferTodo}
+              emptyMessage="Nothing due this week"
+            />
+          </TabsContent>
+          <TabsContent value={2}>
+            <TaskListContent
+              todos={applyFilters(openTodos)}
               completeTodo={completeTodo}
               deferTodo={deferTodo}
               emptyMessage="No open tasks"
@@ -452,22 +649,37 @@ export function TaskList() {
       )}
 
       {doneTodos.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger className="flex items-center gap-2 mt-3 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors w-full">
-            <span className="material-symbols-outlined text-base">expand_more</span>
-            Show {doneTodos.length} completed
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="space-y-0.5 mt-1">
-              {doneTodos.map((todo) => (
-                <DoneTaskRow key={todo.id} todo={todo} />
-              ))}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        <div className="mt-3">
+          {doneGroups.map((group) => (
+            <Collapsible key={group.label}>
+              <CollapsibleTrigger className="flex items-center gap-2 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors w-full">
+                <span className="material-symbols-outlined text-base">expand_more</span>
+                {group.label} ({group.todos.length})
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="space-y-0.5 mt-1">
+                  {group.todos.map((todo) => (
+                    <DoneTaskRow key={todo.id} todo={todo} />
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
+          {hasMoreDone && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="w-full mt-2 text-on-surface-variant"
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </Button>
+          )}
+        </div>
       )}
 
-      <AddTaskForm onAdd={addTodo} />
+      <AddTaskForm onAdd={addTodo} labels={labels} />
     </div>
   );
 }

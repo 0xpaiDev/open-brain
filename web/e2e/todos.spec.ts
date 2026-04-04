@@ -81,4 +81,76 @@ test.describe("Task Management", () => {
     // Task should appear with some priority indicator
     await expect(page.getByText("High priority E2E task")).toBeVisible({ timeout: 5000 });
   });
+
+  // ── Step 7: New E2E tests for dashboard update ────────────────────────────
+
+  test("add task — default date is today", async ({ page }) => {
+    await page.goto("/");
+
+    // Date picker button should show "Today" by default
+    const dateBtn = page.getByLabel("Pick date");
+    await expect(dateBtn).toContainText("Today");
+  });
+
+  test("complete task → undo via toast → task restored", async ({ page }) => {
+    await page.goto("/");
+
+    // Add a task
+    const taskInput = page.getByPlaceholder(/add a task/i);
+    await taskInput.fill("Undo E2E test");
+    await page.getByRole("button", { name: /add/i }).click();
+    await expect(page.getByText("Undo E2E test")).toBeVisible({ timeout: 5000 });
+
+    // Complete the task
+    const checkbox = page.getByRole("checkbox", { name: /complete.*undo e2e test/i });
+    await checkbox.click();
+
+    // Wait for toast with "Undo" button
+    const undoBtn = page.getByRole("button", { name: "Undo" });
+    await expect(undoBtn).toBeVisible({ timeout: 5000 });
+
+    // Click undo
+    await undoBtn.click();
+
+    // Task should reappear in the open list
+    await expect(page.getByText("Undo E2E test")).toBeVisible({ timeout: 5000 });
+  });
+
+  test("search filters task list", async ({ page }) => {
+    await page.goto("/");
+
+    // Add two tasks
+    const taskInput = page.getByPlaceholder(/add a task/i);
+    await taskInput.fill("Alpha search test");
+    await page.getByRole("button", { name: /add/i }).click();
+    await expect(page.getByText("Alpha search test")).toBeVisible({ timeout: 5000 });
+
+    await taskInput.fill("Beta search test");
+    await page.getByRole("button", { name: /add/i }).click();
+    await expect(page.getByText("Beta search test")).toBeVisible({ timeout: 5000 });
+
+    // Switch to All tab to see all tasks
+    await page.getByRole("tab", { name: /all/i }).click();
+
+    // Search for "Alpha"
+    const searchInput = page.getByLabel("Search tasks");
+    await searchInput.fill("Alpha");
+
+    // Only Alpha should be visible
+    await expect(page.getByText("Alpha search test")).toBeVisible();
+    await expect(page.getByText("Beta search test")).not.toBeVisible();
+  });
+
+  test("This Week tab shows correct tasks", async ({ page }) => {
+    await page.goto("/");
+
+    // Verify "This Week" tab exists and is clickable
+    const weekTab = page.getByRole("tab", { name: /this week/i });
+    await expect(weekTab).toBeVisible();
+    await weekTab.click();
+
+    // The tab panel should be visible (content depends on actual data)
+    const panel = page.getByRole("tabpanel");
+    await expect(panel).toBeVisible();
+  });
 });

@@ -363,6 +363,17 @@ class FailedRefinement(Base):
 # ── Module: Todo ───────────────────────────────────────────────────────────────
 
 
+class TodoLabel(Base):
+    """User-created label for categorizing todos."""
+
+    __tablename__ = "todo_labels"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    color: Mapped[str] = mapped_column(String(7), default="#6750A4")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TodoItem(Base):
     """First-class todo item managed via Discord slash commands.
 
@@ -379,6 +390,7 @@ class TodoItem(Base):
     status: Mapped[str] = mapped_column(String(20), default="open")
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(50), nullable=True)
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     discord_channel_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

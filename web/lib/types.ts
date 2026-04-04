@@ -45,8 +45,16 @@ export interface TodoItem {
   status: "open" | "done" | "cancelled";
   due_date: string | null;
   start_date: string | null;
+  label: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface TodoLabel {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
 }
 
 export interface TodoListResponse {
@@ -68,6 +76,7 @@ export interface TodoCreate {
   priority?: "high" | "normal" | "low";
   due_date?: string;
   start_date?: string;
+  label?: string;
 }
 
 export interface TodoUpdate {
@@ -77,6 +86,7 @@ export interface TodoUpdate {
   start_date?: string | null;
   description?: string;
   reason?: string;
+  label?: string | null;
 }
 
 export interface MemoryItemResponse {

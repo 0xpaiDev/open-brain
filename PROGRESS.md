@@ -1,14 +1,14 @@
 # Open Brain — Progress
 
-**Status**: All phases complete (2026-04-03) — 843 tests (751 backend + 92 Vitest)
-**Project**: 2026-03-13 → 2026-04-03 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
+**Status**: All phases + dashboard update complete (2026-04-04) — 901 tests (752 backend + 142 Vitest + 7 E2E)
+**Project**: 2026-03-13 → 2026-04-04 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
 
 ## Deployment (LIVE since 2026-03-16)
 
 **Server**: GCP e2-small, Ubuntu 24.04, `34.118.15.81`
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0006)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0007)
 **Services**: API + Worker + Discord bot (Docker Compose)
 
 **Cron jobs**:
@@ -29,4 +29,5 @@
 
 ## Next Up
 
-(nothing queued)
+- Deploy dashboard update: run migration 0007 (todo_labels table + label column), rebuild web container
+- Clean up `dash-update-plan.md` (fully implemented)

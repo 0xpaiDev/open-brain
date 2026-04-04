@@ -1,6 +1,6 @@
 # Open Brain Architecture
 
-**Version**: 1.3
+**Version**: 1.4
 **Date**: 2026-04-04
 **Status**: All phases complete (2026-04-03). All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
 
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**16 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**17 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -262,8 +262,9 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **failed_refinements**: Dead letter queue with error reasons, retry count, last output
 
 ### Module: Todo
-- **todo_items**: Todo tasks with priority/status/due_date, Discord message tracking
+- **todo_items**: Todo tasks with priority/status/due_date/label, Discord message tracking
 - **todo_history**: Append-only state change log for todos
+- **todo_labels**: User-defined labels with name (unique) and hex color
 
 ### Module: Daily Pulse
 - **daily_pulse**: One row per calendar day; unique on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped/completed

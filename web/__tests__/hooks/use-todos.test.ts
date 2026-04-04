@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { sortOpenTodos, filterTodayTodos } from "@/hooks/use-todos";
+import { sortOpenTodos, filterTodayTodos, filterThisWeekTodos, groupDoneTodos, PRIORITY_ORDER } from "@/hooks/use-todos";
 import { setApiKey, ApiError } from "@/lib/api";
 import type { TodoItem, TodoListResponse } from "@/lib/types";
 
@@ -12,6 +12,7 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     status: "open",
     due_date: null,
     start_date: null,
+    label: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -131,6 +132,7 @@ const TODO_A: TodoItem = {
   status: "open",
   due_date: null,
   start_date: null,
+  label: null,
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
 };
@@ -138,6 +140,10 @@ const TODO_A: TodoItem = {
 describe("useTodos hook", () => {
   beforeEach(() => {
     setApiKey("test-key");
+    toastFn.mockClear();
+    toastFn.success.mockClear();
+    toastFn.error.mockClear();
+    toastFn.info.mockClear();
   });
 
   afterEach(() => {
@@ -207,6 +213,8 @@ describe("useTodos hook", () => {
       priority: "high",
       status: "open",
       due_date: null,
+      start_date: null,
+      label: null,
       created_at: "2026-04-03T00:00:00Z",
       updated_at: "2026-04-03T00:00:00Z",
     };
@@ -299,7 +307,7 @@ describe("useTodos hook", () => {
     expect(patchBody!.reason).toBe(reason);
   });
 
-  // ── F6: completeTodo undo toast + undoComplete ─────────────────────────────
+  // ── F6: completeTodo undo toast ────────────────────────────────────────────
 
   test("completeTodo shows undo toast on success", async () => {
     vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
@@ -331,47 +339,63 @@ describe("useTodos hook", () => {
     );
   });
 
-  test("undoComplete moves task back to open", async () => {
-    const doneTodo = { ...TODO_A, id: "undo-1", status: "done" as const };
+  // ── Undo via toast (stale closure fix) ────────────────────────────────────
 
+  test("undo via toast restores task to open list", async () => {
     vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
       if (init?.method === "GET" && path.includes("status=open")) {
-        return jsonResponse({ todos: [], total: 0 });
+        return jsonResponse({ todos: [TODO_A], total: 1 });
       }
       if (init?.method === "GET" && path.includes("status=done")) {
-        return jsonResponse({ todos: [doneTodo], total: 1 });
+        return jsonResponse({ todos: [], total: 0 });
       }
-      // PATCH to reopen succeeds
-      return jsonResponse({ ...doneTodo, status: "open" });
+      return jsonResponse({ ...TODO_A, status: "done" });
     }));
 
     const { useTodos } = await import("@/hooks/use-todos");
     const { result } = renderHook(() => useTodos());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.doneTodos).toHaveLength(1);
-    expect(result.current.openTodos).toHaveLength(0);
 
     await act(async () => {
-      await result.current.undoComplete("undo-1");
+      await result.current.completeTodo("a-1");
     });
 
+    expect(result.current.openTodos).toHaveLength(0);
+    expect(result.current.doneTodos).toHaveLength(1);
+
+    // Extract undo callback from toast mock and invoke it
+    const toastCall = toastFn.mock.calls.find(
+      (c: unknown[]) => c[0] === "Task completed",
+    );
+    expect(toastCall).toBeDefined();
+    const undoFn = toastCall![1].action.onClick;
+
+    await act(async () => {
+      undoFn();
+    });
+
+    // Task should be back in openTodos
     expect(result.current.openTodos).toHaveLength(1);
+    expect(result.current.openTodos[0].id).toBe("a-1");
     expect(result.current.openTodos[0].status).toBe("open");
     expect(result.current.doneTodos).toHaveLength(0);
   });
 
-  test("undoComplete rollback on API failure", async () => {
-    const doneTodo = { ...TODO_A, id: "undo-2", status: "done" as const };
+  test("undo via toast sends PATCH {status: 'open'}", async () => {
+    let patchCalls: { path: string; body: Record<string, unknown> }[] = [];
 
     vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
       if (init?.method === "GET" && path.includes("status=open")) {
-        return jsonResponse({ todos: [], total: 0 });
+        return jsonResponse({ todos: [TODO_A], total: 1 });
       }
       if (init?.method === "GET" && path.includes("status=done")) {
-        return jsonResponse({ todos: [doneTodo], total: 1 });
+        return jsonResponse({ todos: [], total: 0 });
       }
-      // PATCH fails
-      return jsonResponse({}, 500);
+      if (init?.method === "PATCH") {
+        patchCalls.push({ path, body: JSON.parse(init.body as string) });
+        return jsonResponse({ ...TODO_A, status: "open" });
+      }
+      return jsonResponse({}, 404);
     }));
 
     const { useTodos } = await import("@/hooks/use-todos");
@@ -379,13 +403,135 @@ describe("useTodos hook", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     await act(async () => {
-      await result.current.undoComplete("undo-2");
+      await result.current.completeTodo("a-1");
     });
 
-    // Rolled back — todo should be back in done
+    const toastCall = toastFn.mock.calls.find(
+      (c: unknown[]) => c[0] === "Task completed",
+    );
+    const undoFn = toastCall![1].action.onClick;
+
+    await act(async () => {
+      undoFn();
+    });
+
+    // Second PATCH should be the undo call
+    const undoPatch = patchCalls.find((c) => c.body.status === "open");
+    expect(undoPatch).toBeDefined();
+    expect(undoPatch!.path).toContain("/v1/todos/a-1");
+    expect(undoPatch!.body).toEqual({ status: "open" });
+  });
+
+  test("undo via toast API failure rolls back (task stays done)", async () => {
+    let patchCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [TODO_A], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "PATCH") {
+        patchCount++;
+        // First PATCH (complete) succeeds, second (undo) fails
+        if (patchCount === 1) return jsonResponse({ ...TODO_A, status: "done" });
+        return jsonResponse({}, 500);
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.completeTodo("a-1");
+    });
+
+    const toastCall = toastFn.mock.calls.find(
+      (c: unknown[]) => c[0] === "Task completed",
+    );
+    const undoFn = toastCall![1].action.onClick;
+
+    await act(async () => {
+      undoFn();
+    });
+
+    // Undo failed — task should remain in doneTodos
     expect(result.current.doneTodos).toHaveLength(1);
+    expect(result.current.doneTodos[0].id).toBe("a-1");
     expect(result.current.openTodos).toHaveLength(0);
     expect(toastFn.error).toHaveBeenCalledWith("Failed to undo");
+  });
+
+  test("complete non-existent todo is no-op", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [TODO_A], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      return jsonResponse({}, 200);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.completeTodo("bogus-id");
+    });
+
+    // No state change, no PATCH call beyond initial fetches
+    expect(result.current.openTodos).toHaveLength(1);
+    expect(result.current.doneTodos).toHaveLength(0);
+  });
+
+  test("rapid complete→undo→complete doesn't corrupt state", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [TODO_A], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      return jsonResponse({ ...TODO_A, status: "done" });
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Complete
+    await act(async () => {
+      await result.current.completeTodo("a-1");
+    });
+
+    // Extract undo and invoke
+    const toastCall = toastFn.mock.calls.find(
+      (c: unknown[]) => c[0] === "Task completed",
+    );
+    const undoFn = toastCall![1].action.onClick;
+    await act(async () => {
+      undoFn();
+    });
+
+    // Should be back in open
+    expect(result.current.openTodos).toHaveLength(1);
+    expect(result.current.doneTodos).toHaveLength(0);
+
+    // Complete again
+    toastFn.mockClear();
+    await act(async () => {
+      await result.current.completeTodo("a-1");
+    });
+
+    // Should be in done again, no duplicates
+    expect(result.current.openTodos).toHaveLength(0);
+    expect(result.current.doneTodos).toHaveLength(1);
+    expect(result.current.doneTodos[0].id).toBe("a-1");
   });
 });
 
@@ -472,5 +618,214 @@ describe("filterTodayTodos", () => {
     const result = filterTodayTodos([overdue, dueToday, future, noDates, activeRange]);
     expect(result).toHaveLength(3);
     expect(result.map((t) => t.description).sort()).toEqual(["overdue", "range", "today"]);
+  });
+});
+
+// ── filterThisWeekTodos ────────────────────────────────────────────────────
+
+describe("filterThisWeekTodos", () => {
+  /** Get the Monday 00:00 of the current ISO week. */
+  function getThisMonday(): Date {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    d.setDate(d.getDate() - diff);
+    return d;
+  }
+
+  function dateInWeek(offsetDays: number): string {
+    const monday = getThisMonday();
+    monday.setDate(monday.getDate() + offsetDays);
+    monday.setHours(12, 0, 0, 0);
+    return monday.toISOString();
+  }
+
+  test("includes tasks due this week (Mon–Sun)", () => {
+    // Due on Wednesday of this week
+    const wed = makeTodo({ due_date: dateInWeek(2) });
+    expect(filterThisWeekTodos([wed])).toHaveLength(1);
+  });
+
+  test("includes tasks due on Monday of this week", () => {
+    const mon = makeTodo({ due_date: dateInWeek(0) });
+    expect(filterThisWeekTodos([mon])).toHaveLength(1);
+  });
+
+  test("includes tasks due on Sunday of this week", () => {
+    const sun = makeTodo({ due_date: dateInWeek(6) });
+    expect(filterThisWeekTodos([sun])).toHaveLength(1);
+  });
+
+  test("excludes tasks due next week", () => {
+    const nextWeek = makeTodo({ due_date: dateInWeek(7) });
+    expect(filterThisWeekTodos([nextWeek])).toHaveLength(0);
+  });
+
+  test("excludes tasks due last week", () => {
+    const lastWeek = makeTodo({ due_date: dateInWeek(-1) });
+    expect(filterThisWeekTodos([lastWeek])).toHaveLength(0);
+  });
+
+  test("excludes tasks with no due_date", () => {
+    const noDue = makeTodo({ due_date: null });
+    expect(filterThisWeekTodos([noDue])).toHaveLength(0);
+  });
+});
+
+// ── groupDoneTodos ─────────────────────────────────────────────────────────
+
+describe("groupDoneTodos", () => {
+  function getThisMonday(): Date {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    d.setDate(d.getDate() - diff);
+    return d;
+  }
+
+  test("returns empty array for no todos", () => {
+    expect(groupDoneTodos([])).toEqual([]);
+  });
+
+  test("groups completed this week under 'This Week'", () => {
+    const thisWeek = getThisMonday();
+    thisWeek.setDate(thisWeek.getDate() + 1); // Tuesday
+    const todo = makeTodo({ status: "done", updated_at: thisWeek.toISOString() });
+    const groups = groupDoneTodos([todo]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("This Week");
+    expect(groups[0].todos).toHaveLength(1);
+  });
+
+  test("groups completed last week under 'Last Week'", () => {
+    const lastWeek = getThisMonday();
+    lastWeek.setDate(lastWeek.getDate() - 3); // Last week Friday
+    const todo = makeTodo({ status: "done", updated_at: lastWeek.toISOString() });
+    const groups = groupDoneTodos([todo]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("Last Week");
+  });
+
+  test("groups older todos by month/year", () => {
+    const oldDate = new Date(2025, 0, 15); // January 2025
+    const todo = makeTodo({ status: "done", updated_at: oldDate.toISOString() });
+    const groups = groupDoneTodos([todo]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toContain("2025");
+  });
+
+  test("multiple groups for mixed completion dates", () => {
+    const thisWeek = getThisMonday();
+    thisWeek.setDate(thisWeek.getDate() + 1);
+    const lastWeek = getThisMonday();
+    lastWeek.setDate(lastWeek.getDate() - 2);
+
+    const todos = [
+      makeTodo({ id: "1", status: "done", updated_at: thisWeek.toISOString() }),
+      makeTodo({ id: "2", status: "done", updated_at: lastWeek.toISOString() }),
+    ];
+    const groups = groupDoneTodos(todos);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].label).toBe("This Week");
+    expect(groups[1].label).toBe("Last Week");
+  });
+});
+
+// ── loadMoreDone pagination ────────────────────────────────────────────────
+
+describe("loadMoreDone pagination", () => {
+  beforeEach(() => {
+    setApiKey("test-key");
+    toastFn.mockClear();
+    toastFn.success.mockClear();
+    toastFn.error.mockClear();
+    toastFn.info.mockClear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("hasMoreDone is true when initial fetch returns full page", async () => {
+    const doneTodos = Array.from({ length: 20 }, (_, i) =>
+      makeTodo({ id: `done-${i}`, status: "done" }),
+    );
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: doneTodos, total: 20 });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.hasMoreDone).toBe(true);
+    expect(result.current.doneTodos).toHaveLength(20);
+  });
+
+  test("hasMoreDone is false when initial fetch returns less than page size", async () => {
+    const doneTodos = [makeTodo({ id: "done-1", status: "done" })];
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: doneTodos, total: 1 });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.hasMoreDone).toBe(false);
+  });
+
+  test("loadMoreDone appends next page and updates hasMoreDone", async () => {
+    const page1 = Array.from({ length: 20 }, (_, i) =>
+      makeTodo({ id: `done-${i}`, status: "done" }),
+    );
+    const page2 = Array.from({ length: 5 }, (_, i) =>
+      makeTodo({ id: `done-extra-${i}`, status: "done" }),
+    );
+
+    let fetchCallCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        fetchCallCount++;
+        if (fetchCallCount === 1) {
+          return jsonResponse({ todos: page1, total: 20 });
+        }
+        return jsonResponse({ todos: page2, total: 5 });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.doneTodos).toHaveLength(20);
+    expect(result.current.hasMoreDone).toBe(true);
+
+    await act(async () => {
+      await result.current.loadMoreDone();
+    });
+
+    expect(result.current.doneTodos).toHaveLength(25);
+    expect(result.current.hasMoreDone).toBe(false);
   });
 });

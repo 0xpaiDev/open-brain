@@ -15,6 +15,7 @@ const OVERDUE_TODO: TodoItem = {
   status: "open",
   due_date: "2020-01-01T00:00:00Z",
   start_date: null,
+  label: null,
   created_at: "2020-01-01T00:00:00Z",
   updated_at: "2020-01-01T00:00:00Z",
 };
