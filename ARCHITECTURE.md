@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 1.2
-**Date**: 2026-03-24
-**Status**: Phase 6 complete. All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
+**Version**: 1.3
+**Date**: 2026-04-04
+**Status**: All phases complete (2026-04-03). All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
 
 ## Phase 6 Module System (complete)
 
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (15 tables)                                    │
+│ Structured Memory (16 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**15 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**16 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -260,6 +260,19 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 ### Processing state
 - **refinement_queue**: Durable job queue with SELECT FOR UPDATE SKIP LOCKED polling
 - **failed_refinements**: Dead letter queue with error reasons, retry count, last output
+
+### Module: Todo
+- **todo_items**: Todo tasks with priority/status/due_date, Discord message tracking
+- **todo_history**: Append-only state change log for todos
+
+### Module: Daily Pulse
+- **daily_pulse**: One row per calendar day; unique on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped/completed
+
+### Module: RAG Chat
+- **rag_conversations**: Persisted conversation buffer; unique on (channel_id, user_id)
+
+### Job monitoring
+- **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis); used by `/v1/jobs/status`
 
 ### Key design patterns
 
@@ -332,13 +345,12 @@ When B is created, set A.is_superseded=true. Keeps full audit trail.
 - ✅ API bound to localhost:8000 (no external network until reverse proxy)
 
 ### Phase 4 (Hardening)
-- TLS termination via Caddy/nginx reverse proxy
-- Rate limiting middleware (requests/IP/key)
-- Request/response logging with structlog
-- Audit trail of schema changes (via Alembic versioning)
-- Data encryption at rest (Supabase handles at infrastructure level; pgcrypto available for column-level encryption if needed)
-- Row-level security for multi-user support
-- Managed backups via Supabase (Pro tier) or manual pg_dump via direct connection
+- ✅ TLS termination via Caddy reverse proxy
+- ✅ Rate limiting on all `/v1/*` routes (`@limiter.limit()` decorator)
+- ✅ Structured request/response logging with structlog
+- ✅ Audit trail of schema changes (Alembic versioning)
+- ✅ Data encryption at rest (Supabase infrastructure-level)
+- ✅ Managed backups via Supabase + daily pg_dump cron (3:30 AM)
 
 ---
 
@@ -364,7 +376,7 @@ Minor changes that do NOT require updates:
 
 ## References
 
-- **Implementation plan**: `/home/shu/projects/open-brain/IMPLEMENTATION_PLAN.md` (task breakdown, phases, file structure)
-- **Collaboration rules**: `/home/shu/projects/open-brain/CLAUDE.md` (code style, escalation, common pitfalls)
-- **Progress tracking**: `/home/shu/projects/open-brain/PROGRESS.md` (checkpoint tracking, verification gates)
+- **Implementation plan**: `./IMPLEMENTATION_PLAN.md` (task breakdown, phases, file structure)
+- **Collaboration rules**: `./CLAUDE.md` (code style, escalation, common pitfalls)
+- **Progress tracking**: `./PROGRESS.md` (checkpoint tracking, verification gates)
 - **Original spec**: `open-brain-implementation-plan.docx` (high-level requirements)
