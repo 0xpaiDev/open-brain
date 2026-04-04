@@ -74,7 +74,7 @@ export function OverdueModal() {
   if (loading || allHandled) return null;
 
   return (
-    <Dialog open dismissible={false}>
+    <Dialog open onOpenChange={() => {}}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Overdue Tasks</DialogTitle>
