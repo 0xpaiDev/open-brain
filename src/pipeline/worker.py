@@ -348,11 +348,12 @@ async def store_memory_item(
     Raises:
         Exception: If any insert fails
     """
-    # Read supersedes side-channel written by ingestion route
+    # Read side-channels written by ingestion route
     _raw_supersedes = (raw.metadata_ or {}).get("supersedes_memory_id")
     supersedes_memory_id: _uuid.UUID | None = (
         _uuid.UUID(_raw_supersedes) if _raw_supersedes else None
     )
+    project: str | None = (raw.metadata_ or {}).get("project")
 
     # Insert memory_item
     memory_item = MemoryItem(
@@ -363,6 +364,7 @@ async def store_memory_item(
         base_importance=extraction.base_importance,
         embedding=embedding,  # Store as JSONB/JSON list
         supersedes_id=supersedes_memory_id,
+        project=project,
     )
     session.add(memory_item)
     await session.flush()  # Get the ID

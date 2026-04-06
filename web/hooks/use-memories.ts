@@ -22,6 +22,7 @@ export function isSearchResult(
 interface UseMemoriesParams {
   typeFilter?: string;
   searchQuery?: string;
+  projectFilter?: string;
 }
 
 interface UseMemoriesReturn {
@@ -43,6 +44,7 @@ interface UseMemoriesReturn {
 export function useMemories({
   typeFilter,
   searchQuery,
+  projectFilter,
 }: UseMemoriesParams = {}): UseMemoriesReturn {
   const [items, setItems] = useState<(MemoryItemResponse | SearchResultItem)[]>(
     [],
@@ -60,7 +62,7 @@ export function useMemories({
 
   // Main fetch effect — resets on filter/search change
   useEffect(() => {
-    const key = `${typeFilter ?? ""}|${searchQuery ?? ""}`;
+    const key = `${typeFilter ?? ""}|${searchQuery ?? ""}|${projectFilter ?? ""}`;
     const isNewKey = key !== fetchKeyRef.current;
     fetchKeyRef.current = key;
 
@@ -80,6 +82,7 @@ export function useMemories({
           // Search mode
           let searchPath = `/v1/search?q=${encodeURIComponent(searchQuery.trim())}&limit=${PAGE_SIZE}`;
           if (typeFilter) searchPath += `&type_filter=${typeFilter}`;
+          if (projectFilter) searchPath += `&project_filter=${encodeURIComponent(projectFilter)}`;
 
           const res = await api<SearchResponse>("GET", searchPath);
           if (!cancelled) {
@@ -90,6 +93,7 @@ export function useMemories({
           // Browse mode
           let browsePath = `/v1/memory/recent?limit=${PAGE_SIZE}&offset=0`;
           if (typeFilter) browsePath += `&type_filter=${typeFilter}`;
+          if (projectFilter) browsePath += `&project_filter=${encodeURIComponent(projectFilter)}`;
 
           const res = await api<MemoryRecentResponse>("GET", browsePath);
           if (!cancelled) {
@@ -108,7 +112,7 @@ export function useMemories({
     return () => {
       cancelled = true;
     };
-  }, [typeFilter, searchQuery]);
+  }, [typeFilter, searchQuery, projectFilter]);
 
   const loadMore = useCallback(async () => {
     if (isSearchMode || loadingMore) return;
@@ -119,6 +123,7 @@ export function useMemories({
     try {
       let path = `/v1/memory/recent?limit=${PAGE_SIZE}&offset=${nextOffset}`;
       if (typeFilter) path += `&type_filter=${typeFilter}`;
+      if (projectFilter) path += `&project_filter=${encodeURIComponent(projectFilter)}`;
 
       const res = await api<MemoryRecentResponse>("GET", path);
       setItems((prev) => [...prev, ...res.items]);
@@ -129,7 +134,7 @@ export function useMemories({
     } finally {
       setLoadingMore(false);
     }
-  }, [isSearchMode, loadingMore, offset, typeFilter]);
+  }, [isSearchMode, loadingMore, offset, typeFilter, projectFilter]);
 
   const refresh = useCallback(() => {
     setOffset(0);
@@ -147,6 +152,7 @@ export function useMemories({
         if (isSearchMode && searchQuery?.trim()) {
           let searchPath = `/v1/search?q=${encodeURIComponent(searchQuery.trim())}&limit=${PAGE_SIZE}`;
           if (typeFilter) searchPath += `&type_filter=${typeFilter}`;
+          if (projectFilter) searchPath += `&project_filter=${encodeURIComponent(projectFilter)}`;
           const res = await api<SearchResponse>("GET", searchPath);
           if (!cancelled) {
             setItems(res.results);
@@ -155,6 +161,7 @@ export function useMemories({
         } else {
           let browsePath = `/v1/memory/recent?limit=${PAGE_SIZE}&offset=0`;
           if (typeFilter) browsePath += `&type_filter=${typeFilter}`;
+          if (projectFilter) browsePath += `&project_filter=${encodeURIComponent(projectFilter)}`;
           const res = await api<MemoryRecentResponse>("GET", browsePath);
           if (!cancelled) {
             setItems(res.items);
@@ -172,7 +179,7 @@ export function useMemories({
     return () => {
       cancelled = true;
     };
-  }, [isSearchMode, searchQuery, typeFilter]);
+  }, [isSearchMode, searchQuery, typeFilter, projectFilter]);
 
   const ingestMemory = useCallback(
     async (

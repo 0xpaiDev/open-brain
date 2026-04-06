@@ -1,6 +1,67 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-04** | 6 phases + dashboard update, 901 tests (752 backend + 142 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-06** | 6 phases + dashboard update + project tagging + chat (backend + frontend), 962 tests (791 backend + 162 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-06 (Chat Frontend UI)
+
+**What changed**:
+- Built full `/chat` page replacing stub: 5 components in `web/components/chat/` (model-selector, chat-sources, chat-thread, external-context-panel, chat-input)
+- Created `useChat` hook (`web/hooks/use-chat.ts`) with sendMessage, resetChat, model persistence (localStorage), history truncation to 20 messages
+- Added 5 chat type interfaces to `web/lib/types.ts` (ChatMessage, ChatSourceItem, ChatRequest, ChatResponse, ChatDisplayMessage)
+- 20 new Vitest tests: 12 hook tests (`use-chat.test.ts`) + 8 component tests (`chat-thread.test.tsx`)
+
+**Decisions made**:
+- Frontend types match actual backend `ChatResponse.response` (not plan doc's `reply`), no `history_length` field
+- Model IDs hardcoded from `.env.example` defaults (Haiku: `claude-haiku-4-5-20251001`, Sonnet: `claude-sonnet-4-6`); `null` sends default
+- Client-side conversation only — resets on page leave, no DB persistence
+- shadcn Select uses `@base-ui/react/select` (not radix) — `onValueChange` returns `string | null`, guarded in ModelSelector
+
+**Gotchas found**: Pre-existing test failure in `task-list.test.tsx:716` (done section grouped collapsibles) — unrelated to chat changes
+**Test count**: 962 total (791 backend + 162 Vitest + 7 E2E + 2 pre-existing skip)
+
+---
+
+## Session — 2026-04-06 (Chat Backend Foundation)
+
+**What changed**:
+- Extracted shared RAG prompt logic from `rag_cog.py` into `src/llm/rag_prompts.py` (system prompt, user message wrapping, query formulation)
+- Created `POST /v1/chat` endpoint (`src/api/routes/chat.py`) with 10-step pipeline: validate → formulate (Haiku) → embed → hybrid search → build context → system prompt → wrap user input → synthesize → commit → respond
+- Added chat rate limiter (30/min) to `src/api/middleware/rate_limit.py`, registered router in `main.py`
+- 25 new tests (`tests/test_chat.py`): 10 unit (prompt utilities) + 15 integration (endpoint)
+
+**Decisions made**:
+- Client-side conversation state only — no DB schema changes, no migrations
+- Query formulation uses Haiku via `complete()` (baked-in model); synthesis uses user-selected model via `complete_with_history(model=...)` override
+- All user messages wrapped in `<user_input>` tags for synthesis; formulated query (system-generated) NOT wrapped
+- Per-request AnthropicClient + VoyageEmbeddingClient creation (same pattern as search.py)
+
+**Gotchas found**: None
+**Test count**: 942 total (791 backend + 142 Vitest + 7 E2E + 2 pre-existing skip)
+
+---
+
+## Session — 2026-04-05 (Memory Project Tagging)
+
+**What changed**:
+- Added project tagging to memory system: `ProjectLabel` model + `project` column on `MemoryItem` (migration 0008)
+- New CRUD API: `POST/GET/DELETE /v1/project-labels` (`src/api/routes/project_labels.py`)
+- Worker pipeline reads `project` from `RawMemory.metadata_` side-channel → stores on `MemoryItem.project`
+- `project_filter` query param added to `GET /v1/memory/recent`, `GET /v1/search`, `GET /v1/search/context`
+- New settings page (`web/app/settings/page.tsx`) with project label CRUD (add, delete, color picker)
+- SmartComposer: project dropdown between source label and submit button
+- Memory cards: project badge pill; sidebar: project filter section on `/memory` route
+- 14 new backend tests (`tests/test_project_labels.py`), +2 new frontend files
+
+**Decisions made**:
+- Project lives on `MemoryItem` (not `RawMemory`) — it's the queryable entity; RawMemory carries it via metadata side-channel (same pattern as `supersedes_memory_id`)
+- No extraction prompt changes — project is user-asserted, not LLM-inferred (entity graph already captures project mentions separately)
+- API-backed project labels (not localStorage) — follows TodoLabel pattern for consistency
+- Soft reference (string, no FK) — deleting a label does NOT null out existing memories
+
+**Gotchas found**: None
+**Test count**: 917 total (766 backend + 142 Vitest + 7 E2E + 2 pre-existing skip)
 
 ---
 

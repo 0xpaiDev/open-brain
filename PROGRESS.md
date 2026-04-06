@@ -1,14 +1,14 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard update complete (2026-04-04) — 901 tests (752 backend + 142 Vitest + 7 E2E)
-**Project**: 2026-03-13 → 2026-04-04 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
+**Status**: All phases + dashboard update + project tagging + chat (backend + frontend) complete (2026-04-06) — 962 tests (791 backend + 162 Vitest + 7 E2E + 2 pre-existing skip)
+**Project**: 2026-03-13 → 2026-04-06 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
 
 ## Deployment (LIVE since 2026-03-16)
 
 **Server**: GCP e2-small, Ubuntu 24.04, `34.118.15.81`
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0007)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0008)
 **Services**: API + Worker + Discord bot (Docker Compose)
 
 **Cron jobs**:
@@ -29,5 +29,7 @@
 
 ## Next Up
 
-- Deploy dashboard update: run migration 0007 (todo_labels table + label column), rebuild web container
-- Clean up `dash-update-plan.md` (fully implemented)
+- Deploy chat backend + frontend + project tagging: run migration 0008, rebuild web + API containers
+- Deploy dashboard update: run migration 0007 if not yet applied (todo_labels table + label column)
+- Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
+- Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)

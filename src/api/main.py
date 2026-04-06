@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from src.api.middleware.auth import APIKeyMiddleware
 from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.api.routes.calendar_api import router as calendar_router
+from src.api.routes.chat import router as chat_router
 from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
@@ -21,6 +22,7 @@ from src.api.routes.pulse import router as pulse_router
 from src.api.routes.queue import router as queue_router
 from src.api.routes.search import router as search_router
 from src.api.routes.tasks import router as tasks_router
+from src.api.routes.project_labels import router as project_labels_router
 from src.api.routes.todo_labels import router as todo_labels_router
 from src.api.routes.todos import router as todos_router
 from src.core.config import get_settings
@@ -87,6 +89,8 @@ app.include_router(decisions_router, tags=["Decisions"])
 app.include_router(queue_router, tags=["Queue"])
 app.include_router(todos_router, tags=["Todos"])
 app.include_router(todo_labels_router, tags=["TodoLabels"])
+app.include_router(project_labels_router, tags=["ProjectLabels"])
 app.include_router(pulse_router, tags=["Pulse"])
 app.include_router(jobs_router, tags=["Jobs"])
 app.include_router(calendar_router, tags=["Calendar"])
+app.include_router(chat_router, tags=["Chat"])

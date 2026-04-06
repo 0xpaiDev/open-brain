@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { useProjectLabels } from "@/hooks/use-project-labels";
 
 interface SmartComposerProps {
   onIngest: (
@@ -17,22 +18,29 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
   const [text, setText] = useState("");
   const [sourceLabel, setSourceLabel] = useState("");
   const [url, setUrl] = useState("");
+  const [selectedProject, setSelectedProject] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const { labels: projectLabels } = useProjectLabels();
 
   async function handleTextSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim() || submitting) return;
 
     setSubmitting(true);
+    const metadata: Record<string, unknown> | undefined = selectedProject
+      ? { project: selectedProject }
+      : undefined;
     const success = await onIngest(
       text.trim(),
       sourceLabel.trim() || "dashboard",
+      metadata,
     );
     setSubmitting(false);
 
     if (success) {
       setText("");
       setSourceLabel("");
+      // Keep selectedProject — user likely wants to keep ingesting to the same project
     }
   }
 
@@ -96,6 +104,20 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
                 placeholder="Source label (optional)"
                 className="flex-1 bg-surface-container-low border-outline-variant/15 text-on-surface placeholder:text-outline/50"
               />
+              {projectLabels.length > 0 && (
+                <select
+                  value={selectedProject}
+                  onChange={(e) => setSelectedProject(e.target.value)}
+                  className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+                >
+                  <option value="">No project</option>
+                  {projectLabels.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 type="submit"
                 disabled={!text.trim() || submitting}

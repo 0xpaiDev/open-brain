@@ -10,6 +10,7 @@ function MemoryContent() {
   const searchParams = useSearchParams();
   const typeFilter = searchParams.get("filter") ?? undefined;
   const searchQuery = searchParams.get("q") ?? undefined;
+  const projectFilter = searchParams.get("project") ?? undefined;
 
   const {
     items,
@@ -19,7 +20,7 @@ function MemoryContent() {
     isSearchMode,
     loadMore,
     ingestMemory,
-  } = useMemories({ typeFilter, searchQuery });
+  } = useMemories({ typeFilter, searchQuery, projectFilter });
 
   return (
     <div className="py-8 space-y-8">
@@ -30,9 +31,13 @@ function MemoryContent() {
         <p className="text-on-surface-variant text-sm">
           {isSearchMode
             ? `Search results for "${searchQuery}"`
-            : typeFilter
-              ? `Showing ${typeFilter} memories`
-              : "Your knowledge graph, one memory at a time."}
+            : typeFilter && projectFilter
+              ? `Showing ${typeFilter} memories in ${projectFilter}`
+              : typeFilter
+                ? `Showing ${typeFilter} memories`
+                : projectFilter
+                  ? `Showing memories in ${projectFilter}`
+                  : "Your knowledge graph, one memory at a time."}
         </p>
       </div>
 

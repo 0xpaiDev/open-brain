@@ -69,6 +69,11 @@ export function MemoryCard({ item }: MemoryCardProps) {
               {config.badge}
             </span>
           )}
+          {item.project && (
+            <span className="text-[10px] font-label font-semibold tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary">
+              {item.project}
+            </span>
+          )}
         </div>
 
         {/* Score pill */}

@@ -84,6 +84,7 @@ class MemoryItemResponse(BaseModel):
     importance_score: float | None
     is_superseded: bool
     supersedes_id: str | None
+    project: str | None = None
     created_at: datetime
 
 
@@ -189,6 +190,7 @@ def _memory_item_to_response(item: MemoryItem) -> MemoryItemResponse:
         ),
         is_superseded=item.is_superseded,
         supersedes_id=str(item.supersedes_id) if item.supersedes_id is not None else None,
+        project=item.project,
         created_at=item.created_at,
     )
 
@@ -200,6 +202,7 @@ async def list_recent_memories(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     type_filter: str | None = Query(default=None),
+    project_filter: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db),
 ) -> MemoryRecentResponse:
     """List recent non-superseded memory items, newest first.
@@ -208,6 +211,7 @@ async def list_recent_memories(
         limit: Maximum items to return (1–100, default 20).
         offset: Pagination offset (default 0).
         type_filter: Optional type filter ("memory", "decision", "task").
+        project_filter: Optional project name filter.
 
     Returns:
         MemoryRecentResponse with items list and total count.
@@ -223,6 +227,10 @@ async def list_recent_memories(
     if type_filter is not None:
         base = base.where(MemoryItem.type == type_filter)
         count_base = count_base.where(MemoryItem.type == type_filter)
+
+    if project_filter is not None:
+        base = base.where(MemoryItem.project == project_filter)
+        count_base = count_base.where(MemoryItem.project == project_filter)
 
     total_result = await session.execute(count_base)
     total = total_result.scalar_one()

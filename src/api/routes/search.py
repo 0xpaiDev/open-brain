@@ -58,6 +58,7 @@ class SearchResultItem(BaseModel):
     type: str
     importance_score: float
     combined_score: float
+    project: str | None = None
 
 
 class SearchResponse(BaseModel):
@@ -96,6 +97,9 @@ async def search_memories(
     date_to: datetime | None = Query(
         default=None, description="Latest created_at (ISO 8601, e.g. 2026-12-31T23:59:59Z)"
     ),
+    project_filter: str | None = Query(
+        default=None, description="Filter by project name"
+    ),
     session: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
     """Hybrid search over memory_items using vector + full-text ranking.
@@ -132,6 +136,7 @@ async def search_memories(
         entity_filter=entity_filter,
         date_from=date_from,
         date_to=date_to,
+        project_filter=project_filter,
     )
 
     await session.commit()
@@ -144,6 +149,7 @@ async def search_memories(
             type=r.type,
             importance_score=r.importance_score,
             combined_score=r.combined_score,
+            project=r.project,
         )
         for r in results
     ]
@@ -179,6 +185,9 @@ async def search_context(
     ),
     date_to: datetime | None = Query(
         default=None, description="Latest created_at (ISO 8601, e.g. 2026-12-31T23:59:59Z)"
+    ),
+    project_filter: str | None = Query(
+        default=None, description="Filter by project name"
     ),
     session: AsyncSession = Depends(get_db),
 ) -> ContextResponse:
@@ -217,6 +226,7 @@ async def search_context(
         entity_filter=entity_filter,
         date_from=date_from,
         date_to=date_to,
+        project_filter=project_filter,
     )
 
     await session.commit()

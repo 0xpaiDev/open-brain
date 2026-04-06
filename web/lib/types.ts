@@ -100,6 +100,7 @@ export interface MemoryItemResponse {
   importance_score: number | null;
   is_superseded: boolean;
   supersedes_id: string | null;
+  project: string | null;
   created_at: string;
 }
 
@@ -121,9 +122,56 @@ export interface SearchResultItem {
   type: string;
   importance_score: number | null;
   combined_score: number;
+  project: string | null;
+}
+
+export interface ProjectLabel {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
 }
 
 export interface SearchResponse {
   query: string;
   results: SearchResultItem[];
+}
+
+/* ── Chat types matching POST /v1/chat ──────────────────────────────────── */
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatSourceItem {
+  id: string;
+  content: string;
+  summary: string | null;
+  type: string;
+  importance_score: number;
+  combined_score: number;
+  project: string | null;
+}
+
+export interface ChatRequest {
+  message: string;
+  history: ChatMessage[];
+  model?: string | null;
+  external_context?: string | null;
+}
+
+export interface ChatResponse {
+  response: string;
+  sources: ChatSourceItem[];
+  model: string;
+  search_query: string;
+}
+
+export interface ChatDisplayMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: ChatSourceItem[];
+  searchQuery?: string;
 }

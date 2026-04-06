@@ -1,7 +1,7 @@
 # Open Brain Architecture
 
-**Version**: 1.4
-**Date**: 2026-04-04
+**Version**: 1.5
+**Date**: 2026-04-05
 **Status**: All phases complete (2026-04-03). All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
 
 ## Phase 6 Module System (complete)
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (16 tables)                                    │
+│ Structured Memory (18 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**17 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**18 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -265,6 +265,9 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **todo_items**: Todo tasks with priority/status/due_date/label, Discord message tracking
 - **todo_history**: Append-only state change log for todos
 - **todo_labels**: User-defined labels with name (unique) and hex color
+
+### Module: Project Tagging
+- **project_labels**: User-defined project labels with name (unique, max 100 chars) and hex color; `memory_items.project` is a soft reference (no FK)
 
 ### Module: Daily Pulse
 - **daily_pulse**: One row per calendar day; unique on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped/completed

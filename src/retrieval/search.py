@@ -36,6 +36,7 @@ class SearchResult:
     importance_score: float
     combined_score: float
     created_at: datetime
+    project: str | None = None
 
 
 async def _execute_hybrid_sql(
@@ -47,6 +48,7 @@ async def _execute_hybrid_sql(
     entity_filter: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    project_filter: str | None = None,
 ) -> list:
     """Execute the hybrid search SQL and return raw rows.
 
@@ -116,6 +118,7 @@ async def _execute_hybrid_sql(
 
     date_from_clause = "AND m.created_at >= :date_from" if date_from else ""
     date_to_clause = "AND m.created_at <= :date_to" if date_to else ""
+    project_clause = "AND m.project = :project_filter" if project_filter else ""
 
     sql = text(f"""
         WITH vector_results AS (
@@ -141,6 +144,7 @@ async def _execute_hybrid_sql(
             m.type,
             COALESCE(m.importance_score, 0.5) AS importance_score,
             m.created_at,
+            m.project,
             COALESCE(v.vector_score, 0.0) AS vector_score,
             COALESCE(k.keyword_score, 0.0) AS keyword_score
         FROM memory_items m
@@ -151,6 +155,7 @@ async def _execute_hybrid_sql(
           {entity_clause}
           {date_from_clause}
           {date_to_clause}
+          {project_clause}
     """)
 
     params: dict = {
@@ -165,6 +170,8 @@ async def _execute_hybrid_sql(
         params["date_from"] = date_from
     if date_to:
         params["date_to"] = date_to
+    if project_filter:
+        params["project_filter"] = project_filter
 
     result = await session.execute(sql, params)
     return result.fetchall()
@@ -179,6 +186,7 @@ async def hybrid_search(
     entity_filter: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    project_filter: str | None = None,
 ) -> list[SearchResult]:
     """Run hybrid search and return ranked results.
 
@@ -200,7 +208,8 @@ async def hybrid_search(
         List of SearchResult, sorted by combined_score descending.
     """
     rows = await _execute_hybrid_sql(
-        session, query_text, query_embedding, limit, type_filter, entity_filter, date_from, date_to
+        session, query_text, query_embedding, limit, type_filter, entity_filter, date_from, date_to,
+        project_filter,
     )
 
     now = datetime.now(tz=timezone.utc)
@@ -238,6 +247,7 @@ async def hybrid_search(
                 importance_score=float(row.importance_score or 0.0),
                 combined_score=score,
                 created_at=row.created_at,
+                project=row.project,
             )
         )
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useProjectLabels } from "@/hooks/use-project-labels";
 
 const navItems = [
   { href: "/dashboard", icon: "today", label: "Today" },
@@ -23,6 +24,8 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const isMemoryRoute = pathname === "/memory";
   const activeFilter = searchParams.get("filter") ?? "";
+  const activeProject = searchParams.get("project") ?? "";
+  const { labels: projectLabels } = useProjectLabels();
 
   return (
     <aside className="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface-container-lowest border-r border-outline-variant/15 p-4 gap-y-4 pt-20 z-40">
@@ -68,7 +71,7 @@ export function Sidebar() {
             Filter
           </span>
           {memoryFilters.map((f) => {
-            const isActive = activeFilter === f.filter;
+            const isActive = activeFilter === f.filter && !activeProject;
             const href = f.filter ? `/memory?filter=${f.filter}` : "/memory";
             return (
               <Link
@@ -90,6 +93,39 @@ export function Sidebar() {
         </div>
       )}
 
+      {/* Project filters — shown only on /memory route when projects exist */}
+      {isMemoryRoute && projectLabels.length > 0 && (
+        <div className="flex flex-col gap-0.5 mt-1">
+          <span className="text-[10px] font-label text-outline uppercase tracking-wider px-3 mb-1">
+            Projects
+          </span>
+          {projectLabels.map((p) => {
+            const isActive = activeProject === p.name;
+            const params = new URLSearchParams();
+            params.set("project", p.name);
+            if (activeFilter) params.set("filter", activeFilter);
+            const href = `/memory?${params.toString()}`;
+            return (
+              <Link
+                key={p.id}
+                href={isActive ? "/memory" : href}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg font-body text-xs transition-all ${
+                  isActive
+                    ? "bg-surface-container-low text-primary font-semibold"
+                    : "text-outline hover:text-on-surface hover:bg-surface-container-low"
+                }`}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: p.color }}
+                />
+                {p.name}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
       <div className="mt-auto flex flex-col gap-1 border-t border-outline-variant/10 pt-4">
         <Link
           href="/memory"
@@ -99,7 +135,7 @@ export function Sidebar() {
           Ingest New Memory
         </Link>
         <Link
-          href="#"
+          href="/settings"
           className="flex items-center gap-3 px-3 py-2 text-outline hover:text-on-surface hover:bg-surface-container-low rounded-lg font-body text-sm transition-all"
         >
           <span className="material-symbols-outlined">settings</span>
