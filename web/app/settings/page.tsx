@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProjectLabels } from "@/hooks/use-project-labels";
+import { ModelSelector } from "@/components/chat/model-selector";
+
+const MODEL_STORAGE_KEY = "ob_chat_model";
+const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 const PRESET_COLORS = [
   "#6750A4", "#E8175D", "#0B57D0", "#0D652D", "#E65100",
@@ -13,6 +17,17 @@ export default function SettingsPage() {
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [submitting, setSubmitting] = useState(false);
+
+  // RAG Chat model preference (read/write localStorage directly)
+  const [chatModel, setChatModel] = useState(DEFAULT_MODEL);
+  useEffect(() => {
+    const stored = localStorage.getItem(MODEL_STORAGE_KEY);
+    if (stored) setChatModel(stored);
+  }, []);
+  function handleModelChange(model: string) {
+    setChatModel(model);
+    localStorage.setItem(MODEL_STORAGE_KEY, model);
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -34,6 +49,26 @@ export default function SettingsPage() {
           Manage your Open Brain configuration.
         </p>
       </div>
+
+      {/* RAG Chat section */}
+      <section className="bg-surface-container rounded-2xl p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-headline font-semibold text-on-surface mb-1">
+            RAG Chat
+          </h2>
+          <p className="text-xs text-outline font-body">
+            Configure the model used for chat conversations.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-on-surface-variant font-body">Model</span>
+          <ModelSelector
+            model={chatModel}
+            onModelChange={handleModelChange}
+            disabled={false}
+          />
+        </div>
+      </section>
 
       {/* Projects section */}
       <section className="bg-surface-container rounded-2xl p-6 space-y-5">
