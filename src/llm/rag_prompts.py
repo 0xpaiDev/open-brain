@@ -26,7 +26,10 @@ def build_rag_system_prompt(context: str) -> str:
     """
     if context.strip():
         return (
-            "You are a knowledgeable assistant with access to the user's personal memory system. "
+            "You are a knowledgeable assistant with access to the user's personal memory system, "
+            "including their active todos and completed tasks. "
+            "When the user asks about priorities, progress, or what to work on, "
+            "check both memory and todo history before responding. "
             "Answer questions using the provided memory context when relevant. "
             "Be concise and accurate. If the context doesn't contain relevant information, "
             "say so honestly — do not invent or extrapolate. "

@@ -26,6 +26,7 @@ from src.llm.rag_prompts import (
     build_rag_system_prompt,
     build_rag_user_message,
 )
+from src.core.models import MemoryItem, RawMemory
 from src.retrieval.search import SearchResult
 
 
@@ -486,3 +487,53 @@ async def test_chat_source_fields(client: AsyncClient, auth_headers: dict, monke
     assert source["importance_score"] == 0.8
     assert source["combined_score"] == 0.75
     assert source["project"] == "learning"
+
+
+# ── Todo visibility via memory sync ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_chat_finds_synced_todo(client: AsyncClient, auth_headers: dict, monkeypatch, async_session):
+    """A todo synced to memory_items appears in chat search results."""
+    # Create a RawMemory + MemoryItem that looks like a synced todo
+    raw = RawMemory(source="todo", raw_text="Todo: Deploy auth service", metadata_={"todo_id": "fake-todo-id"})
+    async_session.add(raw)
+    await async_session.flush()
+
+    mi = MemoryItem(
+        raw_id=raw.id,
+        type="todo",
+        content="Todo: Deploy auth service | Priority: high | Status: open",
+        base_importance=0.7,
+        embedding=[0.1] * 1024,
+    )
+    async_session.add(mi)
+    await async_session.commit()
+
+    # Mock chat deps so hybrid_search returns our todo memory
+    todo_search_result = SearchResult(
+        id=str(mi.id),
+        content=mi.content,
+        summary=None,
+        type="todo",
+        importance_score=0.7,
+        combined_score=0.8,
+        created_at=datetime.now(timezone.utc),
+        project=None,
+    )
+    mock_anthropic, _, _ = _patch_chat_deps(
+        monkeypatch,
+        search_results=[todo_search_result],
+        synthesis_response="You have one open todo: Deploy auth service.",
+    )
+
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "What are my todos?"},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Deploy auth service" in data["response"]
+    assert any(s["type"] == "todo" for s in data["sources"])

@@ -17,6 +17,20 @@ from src.core.models import TodoHistory, TodoItem
 logger = structlog.get_logger(__name__)
 
 
+async def _try_sync(session: AsyncSession, todo: TodoItem, event_type: str) -> None:
+    """Best-effort sync of a todo mutation into memory_items."""
+    try:
+        from src.llm.client import embedding_client
+        from src.pipeline.todo_sync import sync_todo_to_memory
+
+        if not embedding_client:
+            logger.warning("todo_sync_skipped_no_embedding_client", todo_id=str(todo.id))
+            return
+        await sync_todo_to_memory(session, todo, event_type, embedding_client)
+    except Exception:
+        logger.warning("todo_memory_sync_failed", todo_id=str(todo.id), exc_info=True)
+
+
 def _snapshot(todo: TodoItem) -> dict[str, Any]:
     """Return a plain dict snapshot of a todo's mutable fields."""
     return {
@@ -65,6 +79,7 @@ async def create_todo(
     await session.refresh(todo)  # Eagerly reload server-default columns (created_at, updated_at)
 
     logger.info("create_todo", todo_id=str(todo.id))
+    await _try_sync(session, todo, "created")
     return todo
 
 
@@ -155,4 +170,5 @@ async def update_todo(
     await session.refresh(todo)  # Eagerly reload server-side onupdate columns (updated_at)
 
     logger.info("update_todo", todo_id=str(todo.id), event_type=event_type)
+    await _try_sync(session, todo, event_type)
     return todo

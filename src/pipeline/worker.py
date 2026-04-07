@@ -22,6 +22,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
+from src.pipeline.constants import AUTO_CAPTURE_SOURCES
 from src.core.database import get_db_context as get_db
 from src.core.models import (
     Entity,
@@ -197,7 +198,7 @@ async def process_job(
                 # work noise, not intentional personal memory. Real memories ingested
                 # via Discord/CLI/MCP get their full Claude-assigned importance.
                 ceiling = get_settings().auto_capture_importance_ceiling
-                if raw.source == "claude-code" and extraction.base_importance > ceiling:
+                if raw.source in AUTO_CAPTURE_SOURCES and extraction.base_importance > ceiling:
                     logger.debug(
                         "process_job_importance_capped",
                         source=raw.source,
@@ -389,25 +390,32 @@ async def store_memory_item(
         )
         session.add(decision)
 
-    # Insert tasks
+    # Insert tasks (skip for auto-captured sources — they produce noise)
     from src.core.models import Task
 
-    for task_extract in extraction.tasks:
-        task = Task(
-            memory_id=memory_item.id,
-            description=task_extract.description,
-            owner=task_extract.owner,
-            due_date=None,  # Parse ISO date later if provided
+    if raw.source not in AUTO_CAPTURE_SOURCES:
+        for task_extract in extraction.tasks:
+            task = Task(
+                memory_id=memory_item.id,
+                description=task_extract.description,
+                owner=task_extract.owner,
+                due_date=None,  # Parse ISO date later if provided
+            )
+            if task_extract.due_date:
+                try:
+                    task.due_date = datetime.fromisoformat(task_extract.due_date).replace(tzinfo=UTC)
+                except ValueError:
+                    logger.warning(
+                        "invalid_due_date_format",
+                        due_date=task_extract.due_date,
+                    )
+            session.add(task)
+    else:
+        logger.debug(
+            "store_memory_item_skipped_tasks",
+            source=raw.source,
+            count=len(extraction.tasks),
         )
-        if task_extract.due_date:
-            try:
-                task.due_date = datetime.fromisoformat(task_extract.due_date).replace(tzinfo=UTC)
-            except ValueError:
-                logger.warning(
-                    "invalid_due_date_format",
-                    due_date=task_extract.due_date,
-                )
-        session.add(task)
 
     # Mark queue row as done
     queue_row.status = "done"

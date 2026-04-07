@@ -21,9 +21,10 @@ from src.core.models import (
     MemoryItem,
     RawMemory,
     RefinementQueue,
+    Task,
 )
 from src.llm.client import ExtractionFailed
-from src.pipeline.extractor import EntityExtract, ExtractionResult
+from src.pipeline.extractor import EntityExtract, ExtractionResult, TaskExtract
 from src.pipeline.worker import (
     _get_queue_depth,
     claim_batch,
@@ -909,3 +910,87 @@ async def test_exception_log_queue_depth_matches_passed_value(async_session):
     warning_events = [e for e in cap if e.get("event") == "process_job_extraction_failed"]
     assert len(warning_events) == 1
     assert warning_events[0]["queue_depth"] == specific_depth
+
+
+# ── Task extraction gating ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_store_memory_item_skips_tasks_for_auto_capture_source(async_session):
+    """store_memory_item() does NOT create Task rows for auto-capture sources."""
+    raw = RawMemory(source="claude_code_memory", raw_text="session work")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id)
+    async_session.add(queue)
+    await async_session.flush()
+
+    extraction = ExtractionResult(
+        type="memory",
+        content="did some refactoring",
+        tasks=[TaskExtract(description="refactor component")],
+    )
+    embedding = [0.1] * 1024
+
+    await store_memory_item(async_session, raw, queue, extraction, embedding, [])
+
+    # No tasks should be created
+    task_result = await async_session.execute(select(Task))
+    assert task_result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_store_memory_item_creates_tasks_for_intentional_source(async_session):
+    """store_memory_item() creates Task rows for non-auto-capture sources."""
+    raw = RawMemory(source="discord", raw_text="need to buy groceries")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id)
+    async_session.add(queue)
+    await async_session.flush()
+
+    extraction = ExtractionResult(
+        type="memory",
+        content="grocery reminder",
+        tasks=[TaskExtract(description="buy groceries")],
+    )
+    embedding = [0.1] * 1024
+
+    await store_memory_item(async_session, raw, queue, extraction, embedding, [])
+
+    task_result = await async_session.execute(select(Task))
+    tasks = task_result.scalars().all()
+    assert len(tasks) == 1
+    assert tasks[0].description == "buy groceries"
+
+
+@pytest.mark.asyncio
+async def test_process_job_caps_importance_for_all_auto_capture_sources(async_session):
+    """process_job() caps importance for claude_code_memory (not just 'claude-code')."""
+    raw = RawMemory(source="claude_code_memory", raw_text="project notes")
+    async_session.add(raw)
+    await async_session.flush()
+
+    queue = RefinementQueue(raw_id=raw.id, status="processing", attempts=1)
+    async_session.add(queue)
+    await async_session.commit()
+
+    mock_anthropic = AsyncMock()
+    mock_anthropic.complete.return_value = (
+        '{"type": "memory", "content": "project notes", "base_importance": 0.9}'
+    )
+    mock_voyage = AsyncMock()
+    mock_voyage.embed.return_value = [0.1] * 1024
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield async_session
+
+    with patch("src.pipeline.worker.get_db", return_value=mock_get_db()):
+        await process_job(queue, mock_anthropic, mock_voyage)
+
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
+    item = result.scalar_one()
+    assert item.base_importance <= 0.4
