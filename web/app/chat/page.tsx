@@ -17,14 +17,7 @@ export default function ChatPage() {
   } = useChat();
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-4rem)]">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-outline-variant/15 bg-surface-container-lowest shrink-0">
-        <h1 className="text-lg font-headline font-bold text-on-surface">
-          RAG Chat
-        </h1>
-      </div>
-
+    <div className="flex flex-col h-[calc(100dvh-9rem)] md:h-[calc(100dvh-6rem)]">
       {/* Thread */}
       <ChatThread messages={messages} loading={loading} error={error} />
 

@@ -54,7 +54,7 @@ export function ChatInput({
   );
 
   return (
-    <div className="border-t border-outline-variant/15 bg-surface-container-lowest">
+    <div className="border border-outline-variant/15 bg-surface-container-lowest rounded-2xl">
       {exchangeCount >= EXCHANGE_WARNING && (
         <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-700 bg-yellow-50 dark:text-yellow-300 dark:bg-yellow-900/20">
           <span className="material-symbols-outlined text-sm">warning</span>
@@ -125,7 +125,7 @@ export function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about your memories…"
+          placeholder="Ask anything…"
           rows={1}
           disabled={loading}
           className="flex-1 resize-none rounded-xl border border-outline-variant/15 bg-surface-container-low text-on-surface text-sm px-4 py-2.5 outline-none focus:border-primary transition-colors placeholder:text-outline disabled:opacity-50 field-sizing-content max-h-32"
