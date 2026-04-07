@@ -6,6 +6,18 @@ import { ModelSelector } from "@/components/chat/model-selector";
 
 const MODEL_STORAGE_KEY = "ob_chat_model";
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+const VOICE_LANG_KEY = "ob_voice_lang";
+const DEFAULT_VOICE_LANG = "en-US";
+
+const VOICE_LANGUAGES = [
+  { value: "en-US", label: "English (US)" },
+  { value: "lt-LT", label: "Lithuanian" },
+  { value: "de-DE", label: "German" },
+  { value: "ru-RU", label: "Russian" },
+  { value: "pl-PL", label: "Polish" },
+  { value: "fr-FR", label: "French" },
+  { value: "es-ES", label: "Spanish" },
+];
 
 const PRESET_COLORS = [
   "#6750A4", "#E8175D", "#0B57D0", "#0D652D", "#E65100",
@@ -20,13 +32,20 @@ export default function SettingsPage() {
 
   // RAG Chat model preference (read/write localStorage directly)
   const [chatModel, setChatModel] = useState(DEFAULT_MODEL);
+  const [voiceLang, setVoiceLang] = useState(DEFAULT_VOICE_LANG);
   useEffect(() => {
     const stored = localStorage.getItem(MODEL_STORAGE_KEY);
     if (stored) setChatModel(stored);
+    const storedLang = localStorage.getItem(VOICE_LANG_KEY);
+    if (storedLang) setVoiceLang(storedLang);
   }, []);
   function handleModelChange(model: string) {
     setChatModel(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
+  }
+  function handleVoiceLangChange(lang: string) {
+    setVoiceLang(lang);
+    localStorage.setItem(VOICE_LANG_KEY, lang);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -67,6 +86,32 @@ export default function SettingsPage() {
             onModelChange={handleModelChange}
             disabled={false}
           />
+        </div>
+      </section>
+
+      {/* Voice Input section */}
+      <section className="bg-surface-container rounded-2xl p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-headline font-semibold text-on-surface mb-1">
+            Voice Input
+          </h2>
+          <p className="text-xs text-outline font-body">
+            Configure language for voice note transcription.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-on-surface-variant font-body">Language</span>
+          <select
+            value={voiceLang}
+            onChange={(e) => handleVoiceLangChange(e.target.value)}
+            className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+          >
+            {VOICE_LANGUAGES.map((lang) => (
+              <option key={lang.value} value={lang.value}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
         </div>
       </section>
 

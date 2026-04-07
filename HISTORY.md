@@ -1,6 +1,28 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat (backend + frontend + UX cleanup), 962 tests (791 backend + 162 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice note capture, 982 tests (791 backend + 182 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-07 (Voice Note Capture)
+
+**What changed**:
+- Added Voice tab to SmartComposer (`web/components/memory/smart-composer.tsx`) — mic button with pulsing animation, live transcript, elapsed timer, commit/clear actions
+- Created `useSpeechRecognition` hook (`web/hooks/use-speech-recognition.ts`) — Web Speech API wrapper with configurable language, auto-restart on unexpected `onend`, 5-minute auto-stop
+- Added Voice Input language selector to Settings page (`web/app/settings/page.tsx`) — `ob_voice_lang` localStorage key, 7 language presets including Lithuanian
+- Created ambient type declarations (`web/types/speech-recognition.d.ts`) and iOS Shortcut setup guide (`docs/voice-ios-shortcut.md`)
+- 20 new Vitest tests (11 hook + 9 component), all passing — total 182 Vitest
+
+**Decisions made**:
+- Voice tab in SmartComposer (not floating button) — keeps composition UX unified, avoids plumbing `ingestMemory` to layout
+- Zero backend changes — existing `POST /v1/memory` reused with `source: "voice"` and `metadata: { transcription_method: "web_speech_api" }`
+- `source` not `type` for voice provenance — `MemoryItem.type` is determined by Claude extraction, not ingestion source
+
+**Gotchas found**:
+- Web Speech API fires `onend` unexpectedly after silence — hook auto-restarts with retry cap (3) to handle this quirk
+- `vi.fn(() => mock)` arrow functions aren't constructable — must use `vi.fn(function() { return mock })` for `new` calls in tests
+
+**Test count**: 982 total (791 backend + 182 Vitest + 7 E2E + 2 skip)
 
 ---
 

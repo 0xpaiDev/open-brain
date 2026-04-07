@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard update + project tagging + chat (backend + frontend) + chat UX cleanup complete (2026-04-07) — 962 tests (791 backend + 162 Vitest + 7 E2E + 2 pre-existing skip)
+**Status**: All phases + dashboard update + project tagging + chat + voice note capture complete (2026-04-07) — 982 tests (791 backend + 182 Vitest + 7 E2E + 2 pre-existing skip)
 **Project**: 2026-03-13 → 2026-04-07 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -30,6 +30,7 @@
 
 ## Next Up
 
+- Deploy voice note capture (rebuild web container)
 - Update DNS A record at Spaceship: `0xpai.com` → `34.118.55.10`
 - Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)
