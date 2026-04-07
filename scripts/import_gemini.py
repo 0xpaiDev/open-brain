@@ -16,7 +16,7 @@ import time
 
 import requests
 
-API_URL = "http://34.118.15.81:8000/v1/memory"
+API_URL = "http://34.118.55.10:8000/v1/memory"
 API_KEY = "openbrain-demo-secret-key-2026"
 MIN_LENGTH = 300
 MAX_CHUNK = 8000

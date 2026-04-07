@@ -1,7 +1,7 @@
 # Open Brain — System Documentation
 
 **Version**: 1.0 (Post-Phase 5)
-**Deployment**: GCP e2-small · `34.118.15.81` · Supabase (session-mode pooler, port 5432)
+**Deployment**: GCP e2-medium · `34.118.55.10` · Supabase (session-mode pooler, port 5432)
 **Status**: Production · 410 tests passing · All 5 phases complete
 
 ---

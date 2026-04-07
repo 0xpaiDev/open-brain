@@ -1,6 +1,48 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-06** | 6 phases + dashboard update + project tagging + chat (backend + frontend), 962 tests (791 backend + 162 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat (backend + frontend + UX cleanup), 962 tests (791 backend + 162 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-07 (RAG Chat UX/UI Cleanup)
+
+**What changed**:
+- Stripped chat page header to title only — removed model selector and reset button from `web/app/chat/page.tsx`
+- Moved model selector to new "RAG Chat" section on Settings page (`web/app/settings/page.tsx`) — reads/writes same `ob_chat_model` localStorage key
+- Replaced `ExternalContextPanel` collapsible above input with an attach icon button inside `ChatInput` that opens a Dialog (`web/components/chat/chat-input.tsx`)
+- Added reset icon button to input bar (right side, next to exchange counter)
+- Fixed mobile viewport: `100vh` → `100dvh`, subtracted bottom tabs height on mobile (`h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-4rem)]`)
+
+**Decisions made**:
+- Used existing Dialog component for external context (no new shadcn components installed — Popover/DropdownMenu/Drawer not available)
+- Reset as standalone icon button rather than dropdown menu (single action doesn't warrant a menu)
+
+**Gotchas found**:
+- BottomTabs (`fixed bottom-0`) overlaps chat input on mobile — was a pre-existing bug, fixed by accounting for 3.5rem bottom tabs in height calc
+- Available shadcn components are limited (no Popover/DropdownMenu) — Dialog works well as substitute
+
+**Test count**: 962 total (unchanged — 162 Vitest all pass)
+
+---
+
+## Session — 2026-04-06 (Deploy + VM Resize + Static IP)
+
+**What changed**:
+- Committed and pushed all pending work (chat, project labels, RAG prompts) as `8218c4a`
+- Deployed to production: migration 0008, rebuilt API + web containers, force-recreated worker/scheduler/discord-bot
+- Resized GCP VM from e2-small (2 GB) to e2-medium (4 GB) — e2-small was OOM-killing during Next.js Docker builds
+- Reserved static GCP IP `34.118.55.10` (`open-brain-ip`) replacing ephemeral IPs; updated all references in 7 files + SSH config
+- Added `node_modules/` to `.gitignore`
+
+**Decisions made**:
+- VM permanently upgraded to e2-medium (€244 free credits, 69 days remaining — no cost impact)
+- Static IP reserved to avoid DNS updates on every VM restart
+
+**Gotchas found**:
+- Caddy healthcheck shows "unhealthy" because it 308 redirects HTTP `/health` → HTTPS (pre-existing, cosmetic)
+- Domain `0xpai.com` DNS managed at Spaceship (nameservers: `launch1/2.spaceship.net`) — still needs manual A record update
+
+**Test count**: 962 total (unchanged — deploy-only session)
 
 ---
 
@@ -494,7 +536,7 @@ All pre-Phase-3 items resolved. Current technical debt tracked in `tech-debt.md`
 
 ## Deployment (2026-03-16)
 
-**Server**: GCP e2-small, Ubuntu 24.04, `34.118.15.81`
+**Server**: GCP e2-medium, Ubuntu 24.04, `34.118.55.10`
 **Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0002)
 **Services running**: API + Worker (Docker Compose), Discord bot available via `--profile discord`
 **Cron jobs**: importance (3 AM daily), synthesis (2 AM Sunday), backup (3:30 AM daily)
