@@ -5,7 +5,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 const VOICE_LANG_KEY = "ob_voice_lang";
 const DEFAULT_LANG = "en-US";
 const MAX_DURATION_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_RESTART_RETRIES = 3;
+const RESTART_WINDOW_MS = 5_000; // sliding window for restart throttling
+const MAX_RESTARTS_IN_WINDOW = 3;
 
 function getSpeechRecognitionConstructor():
   | (new () => SpeechRecognition)
@@ -38,7 +39,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isListeningRef = useRef(false);
-  const restartCountRef = useRef(0);
+  const restartTimesRef = useRef<number[]>([]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSupported = getSpeechRecognitionConstructor() !== null;
@@ -56,7 +57,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
       recognitionRef.current = null;
     }
     isListeningRef.current = false;
-    restartCountRef.current = 0;
+    restartTimesRef.current = [];
   }, []);
 
   const stopListening = useCallback(() => {
@@ -101,12 +102,16 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
 
       if (finalText) {
         setTranscript((prev) => prev + finalText);
-        restartCountRef.current = 0; // Reset restart counter on successful result
       }
       setInterimTranscript(interim);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      // no-speech is expected during natural pauses in continuous mode
+      if (event.error === "no-speech" && isListeningRef.current) {
+        return;
+      }
+
       const errorMap: Record<string, string> = {
         "not-allowed": "Microphone access denied. Please allow microphone permissions.",
         "no-speech": "No speech detected. Try again.",
@@ -133,9 +138,16 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     recognition.onend = () => {
       setInterimTranscript("");
 
-      // Auto-restart if still supposed to be listening (Web Speech API quirk)
-      if (isListeningRef.current && restartCountRef.current < MAX_RESTART_RETRIES) {
-        restartCountRef.current++;
+      if (!isListeningRef.current) return;
+
+      // Time-windowed restart: allow restarts unless too many happened recently
+      const now = Date.now();
+      restartTimesRef.current = restartTimesRef.current.filter(
+        (t) => now - t < RESTART_WINDOW_MS
+      );
+
+      if (restartTimesRef.current.length < MAX_RESTARTS_IN_WINDOW) {
+        restartTimesRef.current.push(now);
         try {
           recognition.start();
         } catch {
@@ -146,16 +158,14 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
         return;
       }
 
-      if (isListeningRef.current) {
-        // Exhausted retries
-        isListeningRef.current = false;
-        setIsListening(false);
-      }
+      // Exhausted restarts within window — genuine failure
+      isListeningRef.current = false;
+      setIsListening(false);
     };
 
     recognitionRef.current = recognition;
     isListeningRef.current = true;
-    restartCountRef.current = 0;
+    restartTimesRef.current = [];
     setIsListening(true);
 
     // Auto-stop after 5 minutes

@@ -185,6 +185,63 @@ describe("useSpeechRecognition", () => {
     expect(result.current.error).toBeNull();
   });
 
+  test("survives spaced-out speech pauses without stopping", async () => {
+    vi.useFakeTimers();
+
+    const useSpeechRecognition = await importHook();
+    const { result } = renderHook(() => useSpeechRecognition());
+
+    act(() => result.current.startListening());
+    expect(result.current.isListening).toBe(true);
+
+    // Simulate 5 pauses spaced 6 seconds apart (outside the 5s restart window)
+    for (let i = 0; i < 5; i++) {
+      act(() => vi.advanceTimersByTime(6_000));
+      act(() => mockRecognition.onend?.());
+    }
+
+    expect(result.current.isListening).toBe(true);
+    // 1 initial + 5 restarts
+    expect(mockRecognition.start).toHaveBeenCalledTimes(6);
+
+    vi.useRealTimers();
+  });
+
+  test("stops after rapid consecutive restarts", async () => {
+    vi.useFakeTimers();
+
+    const useSpeechRecognition = await importHook();
+    const { result } = renderHook(() => useSpeechRecognition());
+
+    act(() => result.current.startListening());
+
+    // Fire onend 3 times rapidly (within the 5s window)
+    act(() => mockRecognition.onend?.());
+    act(() => mockRecognition.onend?.());
+    act(() => mockRecognition.onend?.());
+
+    // 4th onend should exhaust the window
+    act(() => mockRecognition.onend?.());
+
+    expect(result.current.isListening).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  test("suppresses no-speech error during active listening", async () => {
+    const useSpeechRecognition = await importHook();
+    const { result } = renderHook(() => useSpeechRecognition());
+
+    act(() => result.current.startListening());
+
+    act(() => {
+      mockRecognition.onerror?.({ error: "no-speech", message: "" });
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.isListening).toBe(true);
+  });
+
   test("auto-stops after 5 minute timeout", async () => {
     vi.useFakeTimers();
 

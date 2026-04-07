@@ -1,6 +1,23 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice note capture, 982 tests (791 backend + 182 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice note capture, 985 tests (791 backend + 185 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-07 (Voice Pause Bug Fix)
+
+**What changed**:
+- Fixed voice input stopping on speech pauses — replaced absolute restart counter (max 3 ever) with sliding time window (max 3 per 5s) in `web/hooks/use-speech-recognition.ts`
+- Suppressed `no-speech` error flash during active listening (expected during natural pauses)
+- Added 3 new Vitest tests: pause survival, rapid failure detection, error suppression — total 185 Vitest
+
+**Decisions made**:
+- Time-windowed restart throttle over increasing retry limit — self-resetting without explicit counter management, 5-min hard timeout remains the real guard
+
+**Gotchas found**:
+- Web Speech API `continuous: true` does NOT prevent `onend` on silence — every pause fires it; robust voice input needs unlimited restarts with rate-limiting, not a fixed retry cap
+
+**Test count**: 985 total (791 backend + 185 Vitest + 7 E2E + 2 skip)
 
 ---
 
@@ -19,7 +36,7 @@ Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project ta
 - `source` not `type` for voice provenance — `MemoryItem.type` is determined by Claude extraction, not ingestion source
 
 **Gotchas found**:
-- Web Speech API fires `onend` unexpectedly after silence — hook auto-restarts with retry cap (3) to handle this quirk
+- Web Speech API fires `onend` unexpectedly after silence — fixed in follow-up session with time-windowed restart throttle
 - `vi.fn(() => mock)` arrow functions aren't constructable — must use `vi.fn(function() { return mock })` for `new` calls in tests
 
 **Test count**: 982 total (791 backend + 182 Vitest + 7 E2E + 2 skip)
