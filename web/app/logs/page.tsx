@@ -127,6 +127,7 @@ export default function LogsPage() {
               loadMore={deadLetters.loadMore}
               resolved={resolved}
               setResolved={setResolved}
+              onRetried={deadLetters.refresh}
             />
           </TabsContent>
         </Tabs>

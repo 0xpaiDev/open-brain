@@ -4,6 +4,19 @@ Covering **2026-03-13 to 2026-04-08** | 6 phases + dashboard update + project ta
 
 ---
 
+## Session — 2026-04-08 (/ingest Skill + Dead Letter Retry)
+
+**What changed**:
+- Created `/ingest` skill (`.claude/skills/ingest/SKILL.md`) — replaces automatic stop hook with intentional session capture via `ingest_memory` MCP tool with `source: "claude-code-manual"`
+- Added `TASK_SKIP_SOURCES` constant to `src/pipeline/constants.py`, updated task gating in `src/pipeline/worker.py` to use it — manual ingestions get full importance but skip task creation
+- Removed stop hook from `~/.claude/settings.json` (kept `scripts/capture_claude_code.py` as utility)
+- Added retry button to dead letters tab in logs dashboard (`web/components/logs/dead-letters-tab.tsx`) — calls existing `POST /v1/dead-letters/{id}/retry` endpoint
+**Decisions made**: Separated importance capping (`AUTO_CAPTURE_SOURCES`) from task gating (`TASK_SKIP_SOURCES`) — manual Claude Code ingestions deserve full importance but shouldn't create stale task rows. Skill summarizes from conversation context (not JSONL transcript) since skills run mid-session as expanded prompts.
+**Gotchas found**: none
+**Test count**: 1040 total (832 backend + 201 Vitest + 7 E2E) — unchanged (8 pre-existing failures unrelated)
+
+---
+
 ## Session — 2026-04-08 (Operations Log Dashboard)
 
 **What changed**:

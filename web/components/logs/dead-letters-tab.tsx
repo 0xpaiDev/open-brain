@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { DeadLetterItem } from "@/lib/types";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -18,6 +19,7 @@ interface DeadLettersTabProps {
   loadMore: () => Promise<void>;
   resolved: boolean;
   setResolved: (v: boolean) => void;
+  onRetried?: () => void;
 }
 
 function formatTime(iso: string): string {
@@ -29,8 +31,30 @@ function formatTime(iso: string): string {
   });
 }
 
-function DeadLetterRow({ item }: { item: DeadLetterItem }) {
+function DeadLetterRow({
+  item,
+  onRetried,
+}: {
+  item: DeadLetterItem;
+  onRetried?: () => void;
+}) {
   const hasOutput = !!item.last_output;
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  async function handleRetry(e: React.MouseEvent) {
+    e.stopPropagation();
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await api("POST", `/v1/dead-letters/${item.id}/retry`);
+      onRetried?.();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Retry failed");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   const row = (
     <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container-low transition-colors">
@@ -43,8 +67,25 @@ function DeadLetterRow({ item }: { item: DeadLetterItem }) {
           {formatTime(item.created_at)} &middot; {item.attempt_count} attempt
           {item.attempt_count === 1 ? "" : "s"} &middot; {item.retry_count}{" "}
           retr{item.retry_count === 1 ? "y" : "ies"}
+          {retryError && (
+            <span className="text-error ml-2">{retryError}</span>
+          )}
         </p>
       </div>
+      {!item.resolved_at && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 text-xs h-7 px-2"
+          onClick={handleRetry}
+          disabled={retrying}
+        >
+          <span className="material-symbols-outlined text-sm mr-1">
+            replay
+          </span>
+          {retrying ? "Retrying..." : "Retry"}
+        </Button>
+      )}
       {hasOutput && (
         <span className="material-symbols-outlined text-base text-on-surface-variant">
           expand_more
@@ -81,6 +122,7 @@ export function DeadLettersTab({
   loadMore,
   resolved,
   setResolved,
+  onRetried,
 }: DeadLettersTabProps) {
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -166,7 +208,7 @@ export function DeadLettersTab({
       ) : (
         <div className="space-y-0.5">
           {items.map((item) => (
-            <DeadLetterRow key={item.id} item={item} />
+            <DeadLetterRow key={item.id} item={item} onRetried={onRetried} />
           ))}
         </div>
       )}

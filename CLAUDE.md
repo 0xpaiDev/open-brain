@@ -37,7 +37,8 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 ## Architecture Decisions
 
 - **Todo sync to memory**: Todo mutations sync into `memory_items` via `src/pipeline/todo_sync.py`. This makes todos searchable through RAG chat. The sync is best-effort (wrapped in try/except) — todo writes always succeed even if sync fails.
-- **Auto-capture task gating**: Sources in `AUTO_CAPTURE_SOURCES` (`src/pipeline/constants.py`) skip Task row creation and have importance capped. Add new auto-capture sources there, not as hardcoded strings.
+- **Auto-capture importance capping**: Sources in `AUTO_CAPTURE_SOURCES` (`src/pipeline/constants.py`) have importance capped. Add new auto-capture sources there, not as hardcoded strings.
+- **Task gating**: Sources in `TASK_SKIP_SOURCES` (`src/pipeline/constants.py`) skip Task row creation. This is `AUTO_CAPTURE_SOURCES | {"claude-code-manual"}` — manual ingestions get full importance but no stale tasks.
 - **Immutability**: `raw_memory` is append-only. Corrections create new `memory_items` with `supersedes_memory_id`. No soft deletes.
 - **importance_score is GENERATED**: never UPDATE it directly. Set `base_importance` or `dynamic_importance` and the column recomputes.
 - **Prompt injection defense**: all user input wrapped in `<user_input>...</user_input>` delimiters in LLM prompts.

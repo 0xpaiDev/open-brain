@@ -12,3 +12,7 @@ AUTO_CAPTURE_SOURCES: frozenset[str] = frozenset(
         "claude_code_project",
     }
 )
+
+# Sources that should skip Task row creation. Includes auto-capture sources
+# (noise) plus manual Claude Code ingestions (work already completed in session).
+TASK_SKIP_SOURCES: frozenset[str] = AUTO_CAPTURE_SOURCES | {"claude-code-manual"}

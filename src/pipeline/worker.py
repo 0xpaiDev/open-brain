@@ -22,7 +22,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.pipeline.constants import AUTO_CAPTURE_SOURCES
+from src.pipeline.constants import AUTO_CAPTURE_SOURCES, TASK_SKIP_SOURCES
 from src.core.database import get_db_context as get_db
 from src.core.models import (
     Entity,
@@ -390,10 +390,11 @@ async def store_memory_item(
         )
         session.add(decision)
 
-    # Insert tasks (skip for auto-captured sources — they produce noise)
+    # Insert tasks (skip for auto-captured and manual Claude Code sources —
+    # auto-capture produces noise, manual ingestions describe completed work)
     from src.core.models import Task
 
-    if raw.source not in AUTO_CAPTURE_SOURCES:
+    if raw.source not in TASK_SKIP_SOURCES:
         for task_extract in extraction.tasks:
             task = Task(
                 memory_id=memory_item.id,

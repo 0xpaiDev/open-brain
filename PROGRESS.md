@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard update + project tagging + chat + voice + todo sync + mobile UI fixes + ops log dashboard complete (2026-04-08) — 1040 tests (832 backend + 201 Vitest + 7 E2E)
+**Status**: All phases + dashboard update + project tagging + chat + voice + todo sync + mobile UI fixes + ops log dashboard + /ingest skill complete (2026-04-08) — 1040 tests (832 backend + 201 Vitest + 7 E2E)
 **Project**: 2026-03-13 → 2026-04-08 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -30,7 +30,7 @@
 
 ## Next Up
 
-- Deploy ops log dashboard (rebuild web container)
+- Deploy latest changes (rebuild web + API containers — /ingest skill + dead letter retry)
 - Update DNS A record at Spaceship: `0xpai.com` → `34.118.55.10`
 - Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)
