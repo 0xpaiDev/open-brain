@@ -355,6 +355,7 @@ When B is created, set A.is_superseded=true. Keeps full audit trail.
 - ✅ Audit trail of schema changes (Alembic versioning)
 - ✅ Data encryption at rest (Supabase infrastructure-level)
 - ✅ Managed backups via Supabase + daily pg_dump cron (3:30 AM)
+- ✅ Row-Level Security on all tables (migration 0009) — deny-all for PostgREST anon/authenticated roles; app bypasses via superuser connection
 
 ---
 
