@@ -10,6 +10,7 @@ const navItems = [
   { href: "/chat", icon: "chat", label: "Chat" },
   { href: "/diary", icon: "auto_stories", label: "Diary" },
   { href: "/analytics", icon: "analytics", label: "Analytics" },
+  { href: "/logs", icon: "terminal", label: "Logs" },
 ];
 
 const memoryFilters = [

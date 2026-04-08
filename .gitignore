@@ -69,7 +69,7 @@ dmypy.json
 
 # Logs
 *.log
-logs/
+/logs/
 
 # Build artifacts
 *.tar.gz

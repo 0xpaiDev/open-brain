@@ -175,3 +175,62 @@ export interface ChatDisplayMessage {
   sources?: ChatSourceItem[];
   searchQuery?: string;
 }
+
+/* ── Operations Log types ─────────────────────────────────────────────── */
+
+export interface JobRunItem {
+  id: string;
+  job_name: string;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  error_message: string | null;
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+export interface JobHistoryResponse {
+  items: JobRunItem[];
+  total: number;
+}
+
+export interface JobStatusInfo {
+  last_run: string | null;
+  last_status: string | null;
+  duration_seconds: number | null;
+  error: string | null;
+  overdue: boolean;
+  schedule: string;
+}
+
+export interface JobStatusResponse {
+  jobs: Record<string, JobStatusInfo>;
+  scheduler: { container: string; tip: string };
+  checked_at: string;
+}
+
+export interface QueueStatusResponse {
+  pending: number;
+  processing: number;
+  done: number;
+  failed: number;
+  total: number;
+  oldest_locked_at: string | null;
+}
+
+export interface DeadLetterItem {
+  id: string;
+  raw_id: string;
+  queue_id: string;
+  error_reason: string;
+  attempt_count: number;
+  last_output: string | null;
+  retry_count: number;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface DeadLetterListResponse {
+  items: DeadLetterItem[];
+  total: number;
+}

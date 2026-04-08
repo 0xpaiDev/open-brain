@@ -1,6 +1,19 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice + todo sync, 1017 tests (823 backend + 185 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-08** | 6 phases + dashboard update + project tagging + chat + voice + todo sync + ops log dashboard, 1040 tests (832 backend + 201 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-08 (Operations Log Dashboard)
+
+**What changed**:
+- Added `GET /v1/jobs/history` endpoint to `src/api/routes/jobs.py` — paginated job run history with `job_name`/`status` filters, rate-limited at 30/min
+- Created `/logs` page with 3 tabs: Job Runs (filterable, collapsible error details), Pipeline (queue status count cards + stale worker warning), Dead Letters (resolved toggle, collapsible last_output)
+- Created 4 hooks (`use-job-history.ts`, `use-queue-status.ts`, `use-dead-letters.ts`, `use-job-status.ts`), 4 components (`health-banner.tsx`, `job-runs-tab.tsx`, `pipeline-tab.tsx`, `dead-letters-tab.tsx`)
+- Added "Logs" nav item to sidebar (not bottom tabs — operator page, not daily use)
+**Decisions made**: Manual refresh button instead of auto-polling — simpler, respects 30/min rate limits, no existing polling pattern to follow. Server-side filtering for paginated hooks (vs client-side in use-todos). Native `<select>` elements for filters instead of base-ui Select component. Health banner: green/yellow/red based on overdue jobs + unresolved dead letters.
+**Gotchas found**: base-ui Select uses `value`/`onValueChange` API (not onChange). Tabs use numeric `value` props (0, 1, 2), not strings. 8 pre-existing backend test failures (bot_modules, rate_limit, prevention_scripts) unrelated to this work.
+**Test count**: 1040 total (832 backend + 201 Vitest + 7 E2E) — +23 new (9 backend + 16 Vitest, 4 hook test files)
 
 ---
 
