@@ -36,6 +36,8 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 
 ## Architecture Decisions
 
+- **Todo sync to memory**: Todo mutations sync into `memory_items` via `src/pipeline/todo_sync.py`. This makes todos searchable through RAG chat. The sync is best-effort (wrapped in try/except) — todo writes always succeed even if sync fails.
+- **Auto-capture task gating**: Sources in `AUTO_CAPTURE_SOURCES` (`src/pipeline/constants.py`) skip Task row creation and have importance capped. Add new auto-capture sources there, not as hardcoded strings.
 - **Immutability**: `raw_memory` is append-only. Corrections create new `memory_items` with `supersedes_memory_id`. No soft deletes.
 - **importance_score is GENERATED**: never UPDATE it directly. Set `base_importance` or `dynamic_importance` and the column recomputes.
 - **Prompt injection defense**: all user input wrapped in `<user_input>...</user_input>` delimiters in LLM prompts.
@@ -43,6 +45,7 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 - **Supabase direct connection (port 5432)**: never use the PgBouncer pooler (port 6543) — `SELECT FOR UPDATE SKIP LOCKED` breaks.
 - **Tests run on SQLite, prod on PostgreSQL**: all ORM types need `.with_variant()` for cross-DB compat (JSONB→JSON, Vector→JSON).
 - **Every `/v1/*` route needs `@limiter.limit()`**: no global fallback — undecorated routes are unprotected.
+- **RLS enabled on all tables**: Migration 0009 enables Row-Level Security with deny-all (no policies). App connects as `postgres` superuser (bypasses RLS). New tables must include `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` in their migration.
 
 ## Footguns
 
@@ -55,6 +58,7 @@ These patterns can be re-introduced by new code. The fixes exist but aren't enfo
 - **UUID + raw SQL on SQLite** — SQLite stores UUIDs as 32-char hex (no dashes). Use SQLAlchemy Core (`sa_delete`, `sa_update`) not `text()`.
 - **Alembic, not `create_all()`** — embedding column is JSONB in ORM but `vector(1024)` in DDL. `create_all()` skips the conversion.
 - **Google deps are optional** — guard `google.auth`/`googleapiclient` imports with `try/except ImportError`.
+- **Mobile input font-size ≥ 16px** — Safari/Chrome auto-zoom on inputs with `font-size < 16px`. All `<input>`, `<textarea>`, `<select>` must use `text-base md:text-sm` (not bare `text-sm`). Base components (`input.tsx`, `textarea.tsx`, `select.tsx`) already follow this pattern.
 
 Check directory structure before creating new top-level modules or folders.
 

@@ -41,7 +41,7 @@ export function ExternalContextPanel({
             value={value}
             onChange={(e) => onChange(e.target.value.slice(0, MAX_CHARS))}
             placeholder="Paste meeting notes, documents, or other context here…"
-            className="min-h-20 max-h-40 text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
+            className="min-h-20 max-h-40 text-base md:text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
             disabled={disabled}
           />
           <div className="flex items-center justify-between text-xs text-outline px-1">

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-provider";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -9,6 +9,13 @@ import { Toaster } from "@/components/ui/sonner";
 export const metadata: Metadata = {
   title: "Open Brain",
   description: "Personal memory & knowledge dashboard",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-visual",
 };
 
 export default function RootLayout({
@@ -32,7 +39,7 @@ export default function RootLayout({
         <AuthProvider>
           <TopNav />
           <Sidebar />
-          <main className="ml-0 md:ml-64 pt-16 pb-20 md:pb-8 px-6 md:px-10 max-w-7xl mx-auto">
+          <main className="ml-0 md:ml-64 pt-16 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8 px-6 md:px-10 max-w-7xl mx-auto">
             {children}
           </main>
           <BottomTabs />

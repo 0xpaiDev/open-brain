@@ -1,7 +1,7 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard update + project tagging + chat + voice note capture complete (2026-04-07) — 985 tests (791 backend + 185 Vitest + 7 E2E + 2 pre-existing skip)
-**Project**: 2026-03-13 → 2026-04-07 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
+**Status**: All phases + dashboard update + project tagging + chat + voice + todo sync + mobile UI fixes complete (2026-04-08) — 1017 tests (823 backend + 185 Vitest + 7 E2E + 2 pre-existing skip)
+**Project**: 2026-03-13 → 2026-04-08 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.55.10` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship → needs A record update to `34.118.55.10`)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0008)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0009)
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Cron jobs**:
@@ -30,7 +30,6 @@
 
 ## Next Up
 
-- Deploy voice fix + voice feature (rebuild web container)
 - Update DNS A record at Spaceship: `0xpai.com` → `34.118.55.10`
 - Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)

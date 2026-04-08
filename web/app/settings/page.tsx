@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useProjectLabels } from "@/hooks/use-project-labels";
 import { ModelSelector } from "@/components/chat/model-selector";
 
@@ -31,14 +31,16 @@ export default function SettingsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // RAG Chat model preference (read/write localStorage directly)
-  const [chatModel, setChatModel] = useState(DEFAULT_MODEL);
-  const [voiceLang, setVoiceLang] = useState(DEFAULT_VOICE_LANG);
-  useEffect(() => {
-    const stored = localStorage.getItem(MODEL_STORAGE_KEY);
-    if (stored) setChatModel(stored);
-    const storedLang = localStorage.getItem(VOICE_LANG_KEY);
-    if (storedLang) setVoiceLang(storedLang);
-  }, []);
+  const [chatModel, setChatModel] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem(MODEL_STORAGE_KEY) ?? DEFAULT_MODEL
+      : DEFAULT_MODEL
+  );
+  const [voiceLang, setVoiceLang] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem(VOICE_LANG_KEY) ?? DEFAULT_VOICE_LANG
+      : DEFAULT_VOICE_LANG
+  );
   function handleModelChange(model: string) {
     setChatModel(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
@@ -104,7 +106,7 @@ export default function SettingsPage() {
           <select
             value={voiceLang}
             onChange={(e) => handleVoiceLangChange(e.target.value)}
-            className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+            className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-base md:text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
           >
             {VOICE_LANGUAGES.map((lang) => (
               <option key={lang.value} value={lang.value}>
@@ -188,7 +190,7 @@ export default function SettingsPage() {
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Project name"
               maxLength={100}
-              className="flex-1 bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-primary"
+              className="flex-1 bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           <button

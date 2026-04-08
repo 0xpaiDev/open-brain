@@ -15,7 +15,7 @@ export function BottomTabs() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest border-t border-outline-variant/15 px-2 py-1">
+    <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest border-t border-outline-variant/15 px-2 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom,0px))]">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (

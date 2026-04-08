@@ -158,7 +158,7 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
                 <select
                   value={selectedProject}
                   onChange={(e) => setSelectedProject(e.target.value)}
-                  className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+                  className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-base md:text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
                 >
                   <option value="">No project</option>
                   {projectLabels.map((p) => (

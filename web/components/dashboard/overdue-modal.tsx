@@ -52,7 +52,7 @@ function OverdueTaskRow({
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Why are you deferring? (required)"
-        className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+        className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary resize-none"
         rows={2}
         aria-label="Defer reason"
       />

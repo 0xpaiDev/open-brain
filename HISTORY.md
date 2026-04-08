@@ -1,6 +1,55 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice note capture, 985 tests (791 backend + 185 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-07** | 6 phases + dashboard update + project tagging + chat + voice + todo sync, 1017 tests (823 backend + 185 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-08 (Mobile UI Fixes)
+
+**What changed**:
+- Added Next.js `Viewport` export in `web/app/layout.tsx` — `viewportFit: "cover"`, `interactiveWidget: "resizes-visual"` for layout stability and safe-area support
+- Added `env(safe-area-inset-bottom)` padding to `bottom-tabs.tsx` and main content wrapper — bottom nav clears iOS home indicator
+- Normalized font-size to `text-base md:text-sm` on 9 input/textarea/select elements across 7 files — prevents Safari/Chrome auto-zoom
+- Updated base `SelectTrigger` in `select.tsx` to match `input.tsx`/`textarea.tsx` pattern
+**Decisions made**: Chose `resizes-visual` over `resizes-content` for `interactiveWidget` — keeps ICB stable, keyboard overlays instead of reflowing. Used Tailwind arbitrary values for safe-area calc instead of globals.css utilities.
+**Gotchas found**: `top-nav.tsx` search input is desktop-only (`hidden md:flex`) — no mobile font-size fix needed. Vitest picks up 5 Playwright E2E specs and fails on import (pre-existing, not excluded in vitest config).
+**Test count**: 1017 total (823 backend + 185 Vitest + 7 E2E) — unchanged
+
+---
+
+## Session — 2026-04-08 (Supabase RLS Lockdown)
+
+**What changed**:
+- Created Alembic migration `0009_enable_rls_all_tables.py` — enables Row-Level Security on all 18 tables
+- Ran migration against production Supabase database; verified all tables show RLS ON
+- Created multi-agent prompt `prompts/supabase-rls-lockdown.md` (used for planning)
+**Decisions made**: Deny-all RLS (no policies) since app connects as `postgres` superuser which bypasses RLS. New tables must add `ENABLE ROW LEVEL SECURITY` in their migration.
+**Gotchas found**: `alembic_version` table doesn't need RLS — it's Alembic internal with no sensitive data.
+**Test count**: 1017 total (823 backend + 185 Vitest + 7 E2E) — unchanged, 8 pre-existing failures unrelated
+
+---
+
+## Session — 2026-04-07 (Todo Sync & Task Noise Fix)
+
+**What changed**:
+- Created `src/pipeline/todo_sync.py` — syncs TodoItem mutations into `memory_items` so todos are searchable via RAG chat
+- Created `src/pipeline/constants.py` — `AUTO_CAPTURE_SOURCES` frozenset, used by worker for importance cap + task gating
+- Modified `src/pipeline/worker.py` — importance cap extended to all auto-capture sources (was only `"claude-code"`), task insertion gated to skip auto-capture sources
+- Modified `src/api/services/todo_service.py` — `_try_sync()` called after every create/update commit
+- Modified `src/llm/rag_prompts.py` — system prompt now mentions todos
+- Created `scripts/backfill_todo_memories.py` + ran backfill on prod (14 todos, 0 failures)
+- 32 new backend tests across `test_todo_sync.py`, `test_worker.py`, `test_chat.py`
+- Deployed to production and ran backfill
+
+**Decisions made**:
+- Todos sync as regular `memory_items` (type="todo" / "todo_completion") — zero changes to search or context builder
+- Supersession via `RawMemory.metadata_->>'todo_id'` join, not a new column
+- Best-effort sync (try/except) — todo writes always succeed even if embedding fails
+
+**Gotchas found**:
+- `scripts/` directory is not copied into Docker image — backfill must run inline via `docker compose exec` or the Dockerfile needs updating
+
+**Test count**: 1017 total (823 backend + 185 Vitest + 7 E2E + 2 skip)
 
 ---
 

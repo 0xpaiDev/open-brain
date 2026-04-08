@@ -92,7 +92,7 @@ export function ChatInput({
                       )
                     }
                     placeholder="Paste meeting notes, documents, or other context here…"
-                    className="min-h-32 max-h-60 text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
+                    className="min-h-32 max-h-60 text-base md:text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
                     disabled={loading}
                   />
                   <div className="flex items-center justify-between text-xs text-outline px-1">
@@ -128,7 +128,7 @@ export function ChatInput({
           placeholder="Ask anything…"
           rows={1}
           disabled={loading}
-          className="flex-1 resize-none rounded-xl border border-outline-variant/15 bg-surface-container-low text-on-surface text-sm px-4 py-2.5 outline-none focus:border-primary transition-colors placeholder:text-outline disabled:opacity-50 field-sizing-content max-h-32"
+          className="flex-1 resize-none rounded-xl border border-outline-variant/15 bg-surface-container-low text-on-surface text-base md:text-sm px-4 py-2.5 outline-none focus:border-primary transition-colors placeholder:text-outline disabled:opacity-50 field-sizing-content max-h-32"
         />
 
         {/* Right action buttons */}
