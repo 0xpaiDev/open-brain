@@ -4,6 +4,18 @@ Covering **2026-03-13 to 2026-04-08** | 6 phases + dashboard update + project ta
 
 ---
 
+## Session — 2026-04-08 (Security Investigation + MCP Fix)
+
+**What changed**:
+- Investigated apparent `0xpai.com` script injection in web dashboard HTML — root cause: NordVPN Threat Protection Pro hijacking DNS (`34.118.55.10` proxy instead of real VM `34.118.15.81`) and injecting monitoring scripts via MITM
+- Fixed `.mcp.json`: changed `OPENBRAIN_API_URL` from `http://34.118.15.81:8000` (port 8000 is localhost-only, unreachable externally) to `https://0xpai.com` (routes through Caddy)
+- Corrected VM IP in `PROGRESS.md` from `34.118.55.10` to `34.118.15.81`
+**Decisions made**: none
+**Gotchas found**: NordVPN Threat Protection Pro intercepts DNS and HTTPS even when VPN tunnel is off — causes script injection and wrong IP resolution. Diagnostic sequence: curl from server (clean) → curl from Windows (clean) → browser (injected) → nslookup (wrong IP) → disable TPP (resolved). Port 8000 is bound to `127.0.0.1` in docker-compose, so MCP must route through Caddy (443) not direct IP:8000.
+**Test count**: 1040 total (832 backend + 201 Vitest + 7 E2E) — unchanged
+
+---
+
 ## Session — 2026-04-08 (/ingest Skill + Dead Letter Retry)
 
 **What changed**:

@@ -7,8 +7,9 @@
 
 ## Deployment (LIVE since 2026-03-16)
 
-**Server**: GCP e2-medium, Ubuntu 24.04, `34.118.55.10` (static IP: `open-brain-ip`)
-**Domain**: `0xpai.com` (DNS at Spaceship → needs A record update to `34.118.55.10`)
+**Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
+**Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
+**MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
 **Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0009)
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
@@ -31,7 +32,6 @@
 ## Next Up
 
 - Deploy latest changes (rebuild web + API containers — /ingest skill + dead letter retry)
-- Update DNS A record at Spaceship: `0xpai.com` → `34.118.55.10`
 - Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)
 - Narrow `--forwarded-allow-ips` to exact Docker subnet (S1 tech debt)
