@@ -111,30 +111,22 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
       )}
 
       <Tabs defaultValue={0}>
-        <TabsList>
-          <TabsTrigger value={0} className="px-3 py-1">
-            <span className="material-symbols-outlined text-sm sm:mr-1">
-              edit_note
-            </span>
-            <span className="hidden sm:inline">Text</span>
+        <TabsList className="h-10 rounded-xl p-1">
+          <TabsTrigger value={0} className="rounded-lg px-4 py-1.5 gap-2">
+            <span className="material-symbols-outlined text-lg">edit_note</span>
+            Text
           </TabsTrigger>
-          <TabsTrigger value={1} className="px-3 py-1">
-            <span className="material-symbols-outlined text-sm sm:mr-1">
-              link
-            </span>
-            <span className="hidden sm:inline">Link</span>
+          <TabsTrigger value={1} className="rounded-lg px-4 py-1.5 gap-2">
+            <span className="material-symbols-outlined text-lg">link</span>
+            Link
           </TabsTrigger>
-          <TabsTrigger value={2} className="px-3 py-1">
-            <span className="material-symbols-outlined text-sm sm:mr-1">
-              image
-            </span>
-            <span className="hidden sm:inline">Media</span>
+          <TabsTrigger value={2} className="rounded-lg px-4 py-1.5 gap-2">
+            <span className="material-symbols-outlined text-lg">image</span>
+            Media
           </TabsTrigger>
-          <TabsTrigger value={3} className="px-3 py-1">
-            <span className="material-symbols-outlined text-sm sm:mr-1">
-              mic
-            </span>
-            <span className="hidden sm:inline">Voice</span>
+          <TabsTrigger value={3} className="rounded-lg px-4 py-1.5 gap-2">
+            <span className="material-symbols-outlined text-lg">mic</span>
+            Voice
           </TabsTrigger>
         </TabsList>
 

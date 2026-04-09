@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, type KeyboardEvent } from "react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -10,6 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -54,109 +54,112 @@ export function ChatInput({
   );
 
   return (
-    <div className="border border-outline-variant/15 bg-surface-container-lowest rounded-2xl">
+    <div className="flex flex-col gap-2">
       {exchangeCount >= EXCHANGE_WARNING && (
-        <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-700 bg-yellow-50 dark:text-yellow-300 dark:bg-yellow-900/20">
+        <div className="flex items-center gap-2 px-4 py-2 text-xs text-yellow-300 bg-yellow-900/20 rounded-full">
           <span className="material-symbols-outlined text-sm">warning</span>
-          You&apos;ve reached {exchangeCount} exchanges. Answers may lose early
-          context. Consider resetting.
+          {exchangeCount} exchanges — answers may lose early context.
         </div>
       )}
-      <div className="flex items-end gap-2 p-3">
-        {/* Left action buttons */}
-        <div className="flex items-center gap-1 shrink-0 pb-0.5">
-          {/* External context trigger */}
-          {onExternalContextChange && (
-            <Dialog open={contextOpen} onOpenChange={setContextOpen}>
-              <DialogTrigger
-                className="relative p-1.5 rounded-lg text-outline hover:text-on-surface-variant hover:bg-surface-container-low transition-colors cursor-pointer"
-                title="Attach external context"
-              >
-                <span className="material-symbols-outlined text-lg">
-                  attach_file
-                </span>
-                {externalContext && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary" />
-                )}
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>External Context</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-2">
-                  <Textarea
-                    value={externalContext}
-                    onChange={(e) =>
-                      onExternalContextChange(
-                        e.target.value.slice(0, MAX_CONTEXT_CHARS),
-                      )
-                    }
-                    placeholder="Paste meeting notes, documents, or other context here…"
-                    className="min-h-32 max-h-60 text-base md:text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
-                    disabled={loading}
-                  />
-                  <div className="flex items-center justify-between text-xs text-outline px-1">
-                    <span>
-                      {externalContext.length.toLocaleString()} /{" "}
-                      {MAX_CONTEXT_CHARS.toLocaleString()}
-                    </span>
-                    {externalContext && (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => onExternalContextChange("")}
-                        disabled={loading}
-                      >
-                        <span className="material-symbols-outlined text-xs">
-                          close
-                        </span>
-                        Clear
-                      </Button>
-                    )}
-                  </div>
+
+      <div className="rounded-full bg-surface-container-high/80 backdrop-blur-xl p-2 flex items-center gap-2 ring-1 ring-outline-variant/15 transition-all focus-within:ring-primary/40 shadow-lg">
+        {/* Attach context */}
+        {onExternalContextChange && (
+          <Dialog open={contextOpen} onOpenChange={setContextOpen}>
+            <DialogTrigger
+              className="relative flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-all active:scale-95 shrink-0 cursor-pointer"
+              title="Attach external context"
+            >
+              <span className="material-symbols-outlined">attach_file</span>
+              {externalContext && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary" />
+              )}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>External Context</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Textarea
+                  value={externalContext}
+                  onChange={(e) =>
+                    onExternalContextChange(
+                      e.target.value.slice(0, MAX_CONTEXT_CHARS),
+                    )
+                  }
+                  placeholder="Paste meeting notes, documents, or other context here…"
+                  className="min-h-32 max-h-60 text-base md:text-xs bg-surface-container-lowest border-outline-variant/15 text-on-surface resize-y"
+                  disabled={loading}
+                />
+                <div className="flex items-center justify-between text-xs text-outline px-1">
+                  <span>
+                    {externalContext.length.toLocaleString()} /{" "}
+                    {MAX_CONTEXT_CHARS.toLocaleString()}
+                  </span>
+                  {externalContext && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => onExternalContextChange("")}
+                      disabled={loading}
+                    >
+                      <span className="material-symbols-outlined text-xs">
+                        close
+                      </span>
+                      Clear
+                    </Button>
+                  )}
                 </div>
-              </DialogContent>
-            </Dialog>
-          )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Input */}
+        <div className="flex-1 min-w-0">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything…"
+            rows={1}
+            disabled={loading}
+            className="w-full bg-transparent border-none focus:ring-0 text-on-surface text-base md:text-sm py-2 px-2 outline-none placeholder:text-on-surface-variant/50 disabled:opacity-50 resize-none field-sizing-content max-h-32"
+          />
         </div>
 
-        {/* Textarea */}
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask anything…"
-          rows={1}
-          disabled={loading}
-          className="flex-1 resize-none rounded-xl border border-outline-variant/15 bg-surface-container-low text-on-surface text-base md:text-sm px-4 py-2.5 outline-none focus:border-primary transition-colors placeholder:text-outline disabled:opacity-50 field-sizing-content max-h-32"
-        />
-
-        {/* Right action buttons */}
-        <div className="flex items-center gap-1 shrink-0 pb-0.5">
-          {exchangeCount > 0 && (
-            <span className="text-xs text-outline tabular-nums">
-              {exchangeCount}
-            </span>
-          )}
-          {onReset && (
+        {/* Exchange count + Reset */}
+        {onReset && messagesCount > 0 && (
+          <div className="flex items-center gap-1 shrink-0">
+            {exchangeCount > 0 && (
+              <span className="text-xs text-outline tabular-nums">
+                {exchangeCount}
+              </span>
+            )}
             <button
               onClick={onReset}
-              disabled={messagesCount === 0}
-              className="p-1.5 rounded-lg text-outline hover:text-on-surface-variant hover:bg-surface-container-low transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              className="flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-all active:scale-95"
               title="Reset chat"
             >
-              <span className="material-symbols-outlined text-lg">refresh</span>
+              <span className="material-symbols-outlined">refresh</span>
             </button>
-          )}
-          <Button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            size="icon"
-            className="rounded-xl bg-primary text-on-primary shrink-0"
+          </div>
+        )}
+
+        {/* Send */}
+        <button
+          onClick={handleSend}
+          disabled={loading || !input.trim()}
+          className="flex items-center justify-center w-10 h-10 rounded-full bg-primary text-on-primary shrink-0 transition-all active:scale-90 shadow-lg disabled:opacity-50 disabled:pointer-events-none"
+          aria-label="Send message"
+        >
+          <span
+            className="material-symbols-outlined"
+            style={{ fontVariationSettings: "'FILL' 1" }}
           >
-            <span className="material-symbols-outlined text-lg">send</span>
-          </Button>
-        </div>
+            send
+          </span>
+        </button>
       </div>
     </div>
   );
