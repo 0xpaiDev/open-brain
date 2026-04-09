@@ -111,7 +111,7 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
       )}
 
       <Tabs defaultValue={0}>
-        <TabsList className="h-10 w-full rounded-xl p-1">
+        <TabsList className="h-10 rounded-xl p-1">
           <TabsTrigger value={0} className="rounded-lg px-4 py-1.5 gap-2">
             <span className="material-symbols-outlined text-lg">edit_note</span>
             Text

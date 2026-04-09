@@ -112,17 +112,17 @@ function DeferPopover({
           <button
             type="button"
             aria-label="Defer task"
-            className="min-w-6 min-h-6 md:min-w-8 md:min-h-8 flex items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
+            className="min-w-8 min-h-8 flex items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
           />
         }
       >
-        <span className="material-symbols-outlined text-on-surface-variant text-sm md:text-base">calendar_month</span>
+        <span className="material-symbols-outlined text-on-surface-variant text-base">calendar_month</span>
       </DialogTrigger>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Defer Task</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3 px-2 py-2">
+        <div className="flex flex-col gap-3 py-2">
           <Input
             type="date"
             value={deferDate}
@@ -210,7 +210,7 @@ function DatePickerDialog({
         <DialogHeader>
           <DialogTitle>Due Date</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3 px-2 py-2">
+        <div className="flex flex-col gap-3 px-1 py-2">
           <Input
             type="date"
             value={localDue}
@@ -268,7 +268,7 @@ function TaskRow({
 
   return (
     <div
-      className={`flex flex-wrap md:flex-nowrap items-start md:items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-surface-container-high/50 transition-all ${priorityBorderClass(
+      className={`flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-surface-container-high/50 transition-all ${priorityBorderClass(
         todo.priority
       )} ${completing ? "opacity-50" : ""}`}
     >
@@ -293,7 +293,7 @@ function TaskRow({
       </button>
 
       <span
-        className={`flex-1 basis-[calc(100%-3.5rem)] md:basis-auto text-sm transition-all ${
+        className={`flex-1 text-sm transition-all ${
           completing ? "line-through text-on-surface-variant" : "text-on-surface"
         }`}
       >
@@ -303,13 +303,13 @@ function TaskRow({
       <DeferPopover todoId={todo.id} onDefer={onDefer} />
 
       {todo.label && (
-        <span className="ml-13 md:ml-0 text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-surface-container-high text-on-surface-variant">
+        <span className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-surface-container-high text-on-surface-variant">
           {todo.label}
         </span>
       )}
 
       {badge && (
-        <span className={`ml-13 md:ml-0 text-xs rounded-full px-2 py-0.5 shrink-0 font-label ${badge.className}`}>
+        <span className={`text-xs rounded-full px-2 py-0.5 shrink-0 font-label ${badge.className}`}>
           {badge.label}
         </span>
       )}
