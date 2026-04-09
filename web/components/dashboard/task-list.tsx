@@ -198,7 +198,7 @@ function DatePickerDialog({
           <button
             type="button"
             disabled={disabled}
-            className="flex items-center gap-1 text-sm px-2 py-1 rounded-md border border-outline-variant hover:border-primary transition-colors"
+            className="flex items-center gap-1 text-sm px-3 py-1 h-7 rounded-full border border-input bg-transparent hover:bg-muted transition-colors"
             aria-label="Pick date"
           />
         }
@@ -397,7 +397,7 @@ function AddTaskForm({
 
       <div className="flex items-center gap-2">
         <Select value={priority} onValueChange={(v) => setPriority(v as "high" | "normal" | "low")}>
-          <SelectTrigger size="sm" className="w-24">
+          <SelectTrigger size="sm" className="w-24 rounded-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -409,7 +409,7 @@ function AddTaskForm({
 
         {labels.length > 0 && (
           <Select value={label} onValueChange={(v) => setLabel(v ?? "")}>
-            <SelectTrigger size="sm" className="w-28" aria-label="Label">
+            <SelectTrigger size="sm" className="w-28 rounded-full" aria-label="Label">
               <SelectValue placeholder="Label" />
             </SelectTrigger>
             <SelectContent>
@@ -438,7 +438,7 @@ function AddTaskForm({
           type="submit"
           size="sm"
           disabled={adding || !description.trim()}
-          className="active:scale-95 transition-transform ml-auto"
+          className="rounded-full active:scale-95 transition-transform ml-auto"
         >
           <span className="material-symbols-outlined text-base">add</span>
           Add

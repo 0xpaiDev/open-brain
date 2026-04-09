@@ -45,7 +45,7 @@ const TYPE_CONFIG: Record<
     badge: "TODO",
     className: "bg-surface-container-high border-l-4 border-l-tertiary",
   },
-  "daily-pulse": {
+  daily_pulse: {
     icon: "vitals",
     badge: "PULSE",
     className: "bg-surface-container-high",

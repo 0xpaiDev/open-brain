@@ -111,26 +111,26 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
       )}
 
       <Tabs defaultValue={0}>
-        <TabsList className="overflow-x-auto">
-          <TabsTrigger value={0}>
+        <TabsList>
+          <TabsTrigger value={0} className="px-3 py-1">
             <span className="material-symbols-outlined text-sm sm:mr-1">
               edit_note
             </span>
             <span className="hidden sm:inline">Text</span>
           </TabsTrigger>
-          <TabsTrigger value={1}>
+          <TabsTrigger value={1} className="px-3 py-1">
             <span className="material-symbols-outlined text-sm sm:mr-1">
               link
             </span>
             <span className="hidden sm:inline">Link</span>
           </TabsTrigger>
-          <TabsTrigger value={2}>
+          <TabsTrigger value={2} className="px-3 py-1">
             <span className="material-symbols-outlined text-sm sm:mr-1">
               image
             </span>
             <span className="hidden sm:inline">Media</span>
           </TabsTrigger>
-          <TabsTrigger value={3}>
+          <TabsTrigger value={3} className="px-3 py-1">
             <span className="material-symbols-outlined text-sm sm:mr-1">
               mic
             </span>

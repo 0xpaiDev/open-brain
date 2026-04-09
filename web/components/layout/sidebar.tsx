@@ -18,7 +18,7 @@ const memoryFilters = [
   { label: "Decisions", filter: "decision", icon: "gavel" },
   { label: "Tasks", filter: "task", icon: "task_alt" },
   { label: "Todos", filter: "todo", icon: "checklist" },
-  { label: "Pulse", filter: "daily-pulse", icon: "vitals" },
+  { label: "Pulse", filter: "daily_pulse", icon: "vitals" },
   { label: "Context", filter: "context", icon: "info" },
 ];
 
