@@ -198,7 +198,7 @@ function DatePickerDialog({
           <button
             type="button"
             disabled={disabled}
-            className="flex items-center gap-1 text-sm px-3 py-1 h-7 rounded-full border border-input bg-transparent hover:bg-muted transition-colors"
+            className="flex items-center gap-2 text-sm px-4 py-2.5 rounded-full bg-surface-container hover:bg-surface-container-high transition-colors ring-1 ring-inset ring-outline-variant/10 active:scale-95"
             aria-label="Pick date"
           />
         }
@@ -383,66 +383,84 @@ function AddTaskForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-2 mt-4 pt-4 border-t border-outline-variant/20"
-    >
-      <Input
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Add a task..."
-        className="w-full"
-        disabled={adding}
-      />
+    <form onSubmit={handleSubmit} className="relative group mt-4">
+      {/* Ambient glow */}
+      <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/10 to-transparent rounded-full blur opacity-0 group-focus-within:opacity-20 transition duration-500" />
 
-      <div className="flex items-center gap-2">
-        <Select value={priority} onValueChange={(v) => setPriority(v as "high" | "normal" | "low")}>
-          <SelectTrigger size="sm" className="w-24 rounded-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="normal">Normal</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Main pill container — grid layout for responsive reflow */}
+      <div className="relative bg-surface-container-low p-2 pr-2.5 rounded-2xl sm:rounded-full ring-1 ring-white/5 shadow-xl">
+        <div className="flex flex-wrap items-center gap-y-2">
+          {/* Input */}
+          <div className="flex-1 min-w-0 px-4 sm:px-6 flex items-center">
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add a task..."
+              disabled={adding}
+              className="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-on-surface-variant text-base py-2.5 sm:py-3 outline-none disabled:opacity-50"
+            />
+          </div>
 
-        {labels.length > 0 && (
-          <Select value={label} onValueChange={(v) => setLabel(v ?? "")}>
-            <SelectTrigger size="sm" className="w-28 rounded-full" aria-label="Label">
-              <SelectValue placeholder="Label" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">None</SelectItem>
-              {labels.map((l) => (
-                <SelectItem key={l.name} value={l.name}>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
-                    {l.name}
-                  </span>
-                </SelectItem>
+          {/* Add button — always next to input */}
+          <button
+            type="submit"
+            disabled={adding || !description.trim()}
+            className="w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-dim transition-all shadow-lg active:scale-90 disabled:opacity-50 disabled:pointer-events-none shrink-0 group/add sm:order-last"
+          >
+            <span className="material-symbols-outlined text-xl sm:text-2xl transition-transform group-hover/add:rotate-90">add</span>
+          </button>
+
+          {/* Controls row — full width on mobile, inline on desktop */}
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto px-2 sm:px-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-outline-variant/10 sm:order-2">
+            {/* Priority toggle group */}
+            <div className="flex items-center bg-surface-container p-0.5 sm:p-1 rounded-full gap-0.5 sm:gap-1">
+              {(["high", "normal", "low"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriority(p)}
+                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-label font-medium transition-all active:scale-95 ${
+                    priority === p
+                      ? "bg-primary text-on-primary font-semibold"
+                      : "text-on-surface-variant hover:text-on-surface"
+                  }`}
+                >
+                  {p === "high" ? "High" : p === "normal" ? "Med" : "Low"}
+                </button>
               ))}
-            </SelectContent>
-          </Select>
-        )}
+            </div>
 
-        <DatePickerDialog
-          dueDate={dueDate}
-          startDate={startDate}
-          isRange={isRange}
-          onApply={handleDateApply}
-          disabled={adding}
-        />
+            {/* Label picker */}
+            {labels.length > 0 && (
+              <Select value={label} onValueChange={(v) => setLabel(v ?? "")}>
+                <SelectTrigger size="sm" className="rounded-full bg-surface-container ring-1 ring-inset ring-outline-variant/10 border-none" aria-label="Label">
+                  <SelectValue placeholder="Label" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {labels.map((l) => (
+                    <SelectItem key={l.name} value={l.name}>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                        {l.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
-        <Button
-          type="submit"
-          size="sm"
-          disabled={adding || !description.trim()}
-          className="rounded-full active:scale-95 transition-transform ml-auto"
-        >
-          <span className="material-symbols-outlined text-base">add</span>
-          Add
-        </Button>
+            {/* Date picker */}
+            <DatePickerDialog
+              dueDate={dueDate}
+              startDate={startDate}
+              isRange={isRange}
+              onApply={handleDateApply}
+              disabled={adding}
+            />
+          </div>
+        </div>
       </div>
     </form>
   );
