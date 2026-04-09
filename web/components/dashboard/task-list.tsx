@@ -389,7 +389,7 @@ function AddTaskForm({
 
       {/* Main pill container — grid layout for responsive reflow */}
       <div className="relative bg-surface-container-low p-2 pr-2.5 rounded-2xl sm:rounded-full ring-1 ring-white/5 shadow-xl">
-        <div className="flex flex-wrap items-center gap-y-2">
+        <div className="flex flex-wrap items-center gap-y-2 sm:gap-x-3">
           {/* Input */}
           <div className="flex-1 min-w-0 px-4 sm:px-6 flex items-center">
             <input
