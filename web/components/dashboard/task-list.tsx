@@ -210,7 +210,7 @@ function DatePickerDialog({
         <DialogHeader>
           <DialogTitle>Due Date</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3 py-2">
+        <div className="flex flex-col gap-3 px-1 py-2">
           <Input
             type="date"
             value={localDue}
@@ -412,7 +412,7 @@ function AddTaskForm({
           </button>
 
           {/* Controls row — full width on mobile, inline on desktop */}
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto px-2 sm:px-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-outline-variant/10 sm:order-2">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto px-2 pr-3 sm:px-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-outline-variant/10 sm:order-2">
             {/* Priority toggle group */}
             <div className="flex items-center bg-surface-container p-0.5 sm:p-1 rounded-full gap-0.5 sm:gap-1">
               {(["high", "normal", "low"] as const).map((p) => (
