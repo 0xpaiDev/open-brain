@@ -31,6 +31,6 @@
 
 ## Next Up
 
-- Deploy latest changes (rebuild all containers — pulse sync + /ingest skill + dead letter retry + UI polish sprint)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)
 - Narrow `--forwarded-allow-ips` to exact Docker subnet (S1 tech debt)
+- Mobile polish pass on task input pill bar and chat input pill (test on real devices)

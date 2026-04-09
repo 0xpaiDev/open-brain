@@ -61,6 +61,8 @@ These patterns can be re-introduced by new code. The fixes exist but aren't enfo
 - **Alembic, not `create_all()`** — embedding column is JSONB in ORM but `vector(1024)` in DDL. `create_all()` skips the conversion.
 - **Google deps are optional** — guard `google.auth`/`googleapiclient` imports with `try/except ImportError`.
 - **Mobile input font-size ≥ 16px** — Safari/Chrome auto-zoom on inputs with `font-size < 16px`. All `<input>`, `<textarea>`, `<select>` must use `text-base md:text-sm` (not bare `text-sm`). Base components (`input.tsx`, `textarea.tsx`, `select.tsx`) already follow this pattern.
+- **memory_type uses underscores** — backend stores `daily_pulse`, `todo_completion`, `todo` (not hyphens). Frontend `TYPE_CONFIG` keys must match exactly.
+- **No duplicate DOM for responsive layouts** — JSDOM ignores CSS `hidden`/`sm:hidden`, so duplicate elements (e.g. mobile+desktop controls) break tests. Use single DOM + `flex-wrap` with responsive classes instead.
 
 Check directory structure before creating new top-level modules or folders.
 

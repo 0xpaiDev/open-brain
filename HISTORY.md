@@ -4,6 +4,21 @@ Covering **2026-03-13 to 2026-04-09** | 6 phases + dashboard update + project ta
 
 ---
 
+## Session — 2026-04-09 (UI Polish Sprint + Production Fixes + Redesign)
+
+**What changed**:
+- Initial UI polish: memory type icons (todo/pulse), responsive tabs, tomorrow default due date, History parent collapsible, wider max-w-[1400px] layout
+- Production fixes: pulse type mismatch (`daily-pulse` → `daily_pulse`), added `todo_completion` type, removed tab bar vertical scroll, added tab padding
+- Redesigned SmartComposer tab bar: taller `h-10` rounded-xl container, `px-4` padded triggers, always-visible labels
+- Redesigned chat input as rounded-full pill with inline attach/reset/send buttons, backdrop blur, filled send icon
+- Redesigned task input as pill bar with ambient glow, inline priority toggle group (High/Med/Low), flex-wrap responsive layout (controls in second row on mobile)
+- 8 commits deployed to production across the session
+**Decisions made**: Single DOM instance with `flex-wrap` for responsive layouts (avoids JSDOM test failures from duplicate hidden/shown elements). Priority selector changed from Select dropdown to inline toggle group. Chat input changed from bordered textarea to borderless transparent input inside pill.
+**Gotchas found**: Backend uses underscores in memory_type (`daily_pulse`, `todo_completion`) not hyphens — frontend TYPE_CONFIG must match exactly. CSS `hidden`/`sm:hidden` duplication breaks JSDOM tests since CSS isn't applied — use single instance + flex-wrap instead.
+**Test count**: 1049 total (841 backend + 201 Vitest + 7 E2E) — tests updated but count unchanged
+
+---
+
 ## Session — 2026-04-09 (UI Polish Sprint)
 
 **What changed**:
