@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard update + project tagging + chat + voice + todo sync + pulse sync + mobile UI fixes + ops log dashboard + /ingest skill complete (2026-04-09) — 1049 tests (841 backend + 201 Vitest + 7 E2E)
+**Status**: All phases + dashboard update + project tagging + chat + voice + todo sync + pulse sync + mobile UI fixes + ops log dashboard + /ingest skill + UI polish sprint complete (2026-04-09) — 1049 tests (841 backend + 201 Vitest + 7 E2E)
 **Project**: 2026-03-13 → 2026-04-09 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -31,7 +31,6 @@
 
 ## Next Up
 
-- Deploy latest changes (rebuild API container — pulse sync + /ingest skill + dead letter retry)
-- Fix pre-existing task-list test failure (`web/__tests__/components/task-list.test.tsx:716` — done section grouped collapsibles)
+- Deploy latest changes (rebuild all containers — pulse sync + /ingest skill + dead letter retry + UI polish sprint)
 - Clean up obsolete plan docs (`dash-update-plan.md`, `docs/chat-implementation-plan.md`)
 - Narrow `--forwarded-allow-ips` to exact Docker subnet (S1 tech debt)

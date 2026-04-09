@@ -330,6 +330,12 @@ function DoneTaskRow({ todo }: { todo: TodoItem }) {
   );
 }
 
+function getTomorrowDateString(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0];
+}
+
 function AddTaskForm({
   onAdd,
   labels,
@@ -339,7 +345,7 @@ function AddTaskForm({
 }) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"high" | "normal" | "low">("normal");
-  const [dueDate, setDueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [dueDate, setDueDate] = useState(getTomorrowDateString());
   const [startDate, setStartDate] = useState("");
   const [isRange, setIsRange] = useState(false);
   const [label, setLabel] = useState("");
@@ -360,7 +366,7 @@ function AddTaskForm({
         label || undefined,
       );
       setDescription("");
-      setDueDate(new Date().toISOString().split("T")[0]);
+      setDueDate(getTomorrowDateString());
       setStartDate("");
       setPriority("normal");
       setIsRange(false);
@@ -649,34 +655,42 @@ export function TaskList() {
       )}
 
       {doneTodos.length > 0 && (
-        <div className="mt-3">
-          {doneGroups.map((group) => (
-            <Collapsible key={group.label}>
-              <CollapsibleTrigger className="flex items-center gap-2 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors w-full">
-                <span className="material-symbols-outlined text-base">expand_more</span>
-                {group.label} ({group.todos.length})
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="space-y-0.5 mt-1">
-                  {group.todos.map((todo) => (
-                    <DoneTaskRow key={todo.id} todo={todo} />
-                  ))}
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
-          {hasMoreDone && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="w-full mt-2 text-on-surface-variant"
-            >
-              {loadingMore ? "Loading..." : "Load more"}
-            </Button>
-          )}
-        </div>
+        <Collapsible defaultOpen={false}>
+          <CollapsibleTrigger className="flex items-center gap-2 py-2 text-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors w-full mt-3">
+            <span className="material-symbols-outlined text-base">expand_more</span>
+            History ({doneTodos.length})
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-1">
+              {doneGroups.map((group) => (
+                <Collapsible key={group.label} defaultOpen>
+                  <CollapsibleTrigger className="flex items-center gap-2 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors w-full">
+                    <span className="material-symbols-outlined text-base">expand_more</span>
+                    {group.label} ({group.todos.length})
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="space-y-0.5 mt-1">
+                      {group.todos.map((todo) => (
+                        <DoneTaskRow key={todo.id} todo={todo} />
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              ))}
+              {hasMoreDone && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="w-full mt-2 text-on-surface-variant"
+                >
+                  {loadingMore ? "Loading..." : "Load more"}
+                </Button>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       <AddTaskForm onAdd={addTodo} labels={labels} />

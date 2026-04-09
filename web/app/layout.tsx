@@ -39,7 +39,7 @@ export default function RootLayout({
         <AuthProvider>
           <TopNav />
           <Sidebar />
-          <main className="ml-0 md:ml-64 pt-16 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8 px-6 md:px-10 max-w-7xl mx-auto">
+          <main className="ml-0 md:ml-64 pt-16 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8 px-6 md:px-10 max-w-[1400px] mx-auto">
             {children}
           </main>
           <BottomTabs />

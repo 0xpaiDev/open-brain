@@ -4,6 +4,21 @@ Covering **2026-03-13 to 2026-04-09** | 6 phases + dashboard update + project ta
 
 ---
 
+## Session — 2026-04-09 (UI Polish Sprint)
+
+**What changed**:
+- Added `todo` and `daily-pulse` entries to `TYPE_CONFIG` in `memory-card.tsx` with icons (checklist, vitals), badges, and sidebar filter entries in `sidebar.tsx`
+- Made SmartComposer tab bar responsive — icon-only on mobile (<640px), icon+label on sm+ in `smart-composer.tsx`
+- Changed default due date from today to tomorrow in `AddTaskForm` (`task-list.tsx`) — both initial state and reset-after-submit
+- Wrapped done task groups in parent "History (N)" collapsible (defaultOpen=false) in `task-list.tsx`
+- Widened layout from `max-w-7xl` (1280px) to `max-w-[1400px]` in `layout.tsx`
+- Updated 9 unit tests in `task-list.test.tsx` and 1 E2E test in `todos.spec.ts` to match new defaults
+**Decisions made**: Parent History collapsible defaults closed (declutter). Ephemeral state (no localStorage). Badge colors reuse existing `bg-secondary/20 text-secondary` pattern — badge text ("TODO"/"PULSE") provides distinction. 1400px chosen over 1536px for comfortable margins on 1920px displays.
+**Gotchas found**: The `formatDateButtonText` unit test used a hardcoded date ("2026-04-10") that became "Tomorrow" as time passed — replaced with relative date calculation (today + 10 days) to be date-independent.
+**Test count**: 1049 total (841 backend + 201 Vitest + 7 E2E) — unchanged (tests updated, not added)
+
+---
+
 ## Session — 2026-04-09 (Pulse Memory Sync)
 
 **What changed**:

@@ -84,12 +84,12 @@ test.describe("Task Management", () => {
 
   // ── Step 7: New E2E tests for dashboard update ────────────────────────────
 
-  test("add task — default date is today", async ({ page }) => {
+  test("add task — default date is tomorrow", async ({ page }) => {
     await page.goto("/");
 
-    // Date picker button should show "Today" by default
+    // Date picker button should show "Tomorrow" by default
     const dateBtn = page.getByLabel("Pick date");
-    await expect(dateBtn).toContainText("Today");
+    await expect(dateBtn).toContainText("Tomorrow");
   });
 
   test("complete task → undo via toast → task restored", async ({ page }) => {

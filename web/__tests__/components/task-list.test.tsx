@@ -245,20 +245,20 @@ describe("getDueBadge", () => {
   });
 });
 
-// ── AddTaskForm default date = today ──────────────────────────────────────
+// ── AddTaskForm default date = tomorrow ───────────────────────────────────
 
 describe("AddTaskForm default date", () => {
-  const today = new Date().toISOString().split("T")[0];
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
 
-  test("date button shows Today by default", async () => {
+  test("date button shows Tomorrow by default", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
     const dateBtn = screen.getByLabelText("Pick date");
-    expect(dateBtn.textContent).toContain("Today");
+    expect(dateBtn.textContent).toContain("Tomorrow");
   });
 
-  test("submit without changing date sends today", async () => {
+  test("submit without changing date sends tomorrow", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
@@ -269,7 +269,7 @@ describe("AddTaskForm default date", () => {
     fireEvent.click(addBtn);
 
     await waitFor(() => {
-      expect(mockAddTodo).toHaveBeenCalledWith("Test task", "normal", today, undefined, undefined);
+      expect(mockAddTodo).toHaveBeenCalledWith("Test task", "normal", tomorrow, undefined, undefined);
     });
   });
 
@@ -295,7 +295,7 @@ describe("AddTaskForm default date", () => {
     });
   });
 
-  test("date resets to today after submission", async () => {
+  test("date resets to tomorrow after submission", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
@@ -319,9 +319,9 @@ describe("AddTaskForm default date", () => {
       expect(mockAddTodo).toHaveBeenCalled();
     });
 
-    // Date button should reset to "Today"
+    // Date button should reset to "Tomorrow"
     await waitFor(() => {
-      expect(screen.getByLabelText("Pick date").textContent).toContain("Today");
+      expect(screen.getByLabelText("Pick date").textContent).toContain("Tomorrow");
     });
   });
 });
@@ -424,17 +424,25 @@ describe("AddTaskForm layout", () => {
     expect(form.children).toHaveLength(2);
   });
 
-  test("date button shows 'Today' by default", async () => {
+  test("date button shows 'Tomorrow' by default", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
     const dateBtn = screen.getByLabelText("Pick date");
-    expect(dateBtn.textContent).toContain("Today");
+    expect(dateBtn.textContent).toContain("Tomorrow");
   });
 
   test("date button shows formatted date", async () => {
     const { formatDateButtonText } = await import("@/components/dashboard/task-list");
-    expect(formatDateButtonText("2026-04-10")).toMatch(/Apr\s+10/);
+    // Use a date far enough in the future to avoid "Today"/"Tomorrow" labels
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 10);
+    const dateStr = futureDate.toISOString().split("T")[0];
+    const result = formatDateButtonText(dateStr);
+    // Should show abbreviated month + day (e.g. "Apr 19")
+    expect(result).not.toBe("Today");
+    expect(result).not.toBe("Tomorrow");
+    expect(result).toMatch(/\w{3}\s+\d{1,2}/);
   });
 
   test("priority, label, date, add in correct order in controls row", async () => {
@@ -711,9 +719,15 @@ describe("Grouped done section", () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
+    // Expand the parent History collapsible first
+    const historyTrigger = screen.getByText(/History.*\(2\)/);
+    fireEvent.click(historyTrigger);
+
     // Should see group headers — they are CollapsibleTriggers
-    expect(screen.getByText(/This Week.*\(1\)/)).toBeDefined();
-    expect(screen.getByText(/Last Week.*\(1\)/)).toBeDefined();
+    await waitFor(() => {
+      expect(screen.getByText(/This Week.*\(1\)/)).toBeDefined();
+      expect(screen.getByText(/Last Week.*\(1\)/)).toBeDefined();
+    });
   });
 
   test("done group collapsible expands to show tasks", async () => {
@@ -724,10 +738,11 @@ describe("Grouped done section", () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
-    // Click the group trigger
-    const trigger = screen.getByText(/This Week.*\(1\)/);
-    fireEvent.click(trigger);
+    // Expand the parent History collapsible first
+    const historyTrigger = screen.getByText(/History.*\(1\)/);
+    fireEvent.click(historyTrigger);
 
+    // Child group should be open by default, showing the task
     await waitFor(() => {
       expect(screen.getByText("Recent done")).toBeDefined();
     });
@@ -751,7 +766,11 @@ describe("Load more done", () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
-    expect(screen.getByRole("button", { name: "Load more" })).toBeDefined();
+    // Expand the parent History collapsible first
+    fireEvent.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Load more" })).toBeDefined();
+    });
   });
 
   test("Load more button hidden when hasMoreDone is false", async () => {
@@ -763,7 +782,11 @@ describe("Load more done", () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
-    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    // Expand the parent History collapsible
+    fireEvent.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    });
   });
 
   test("clicking Load more calls loadMoreDone", async () => {
@@ -774,6 +797,12 @@ describe("Load more done", () => {
 
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
+
+    // Expand the parent History collapsible first
+    fireEvent.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Load more" })).toBeDefined();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
