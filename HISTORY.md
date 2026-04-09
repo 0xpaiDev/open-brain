@@ -1,6 +1,20 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-08** | 6 phases + dashboard update + project tagging + chat + voice + todo sync + ops log dashboard, 1040 tests (832 backend + 201 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-09** | 6 phases + dashboard update + project tagging + chat + voice + todo sync + pulse sync + ops log dashboard, 1049 tests (841 backend + 201 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-09 (Pulse Memory Sync)
+
+**What changed**:
+- Created `src/pipeline/pulse_sync.py` — syncs completed/parsed DailyPulse entries into `memory_items` for RAG search visibility, mirroring the todo sync pattern
+- Added `_try_pulse_sync` best-effort wrapper in `src/api/routes/pulse.py`, triggered on PATCH when status reaches "completed" or "parsed"
+- Added "daily-pulse" to `TASK_SKIP_SOURCES` in `src/pipeline/constants.py`
+- Created `scripts/backfill_pulse_memories.py` and ran it — backfilled 13 existing pulses (0 failures)
+- Added 9 tests in `tests/test_pulse_sync.py` (formatting, DB integration, supersession, error handling)
+**Decisions made**: Sync only on terminal success states ("completed", "parsed") — not on every PATCH. Single combined memory item per pulse (not split by field). Static importance 0.5. Source tag "daily-pulse" added to TASK_SKIP_SOURCES.
+**Gotchas found**: none
+**Test count**: 1049 total (841 backend + 201 Vitest + 7 E2E)
 
 ---
 

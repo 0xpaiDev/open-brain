@@ -28,6 +28,23 @@ from src.core.models import DailyPulse, TodoItem
 
 logger = structlog.get_logger(__name__)
 
+
+# ── Memory sync helper ────────────────────────────────────────────────────────
+
+
+async def _try_pulse_sync(session: AsyncSession, pulse: DailyPulse) -> None:
+    """Best-effort sync of a completed pulse into memory_items."""
+    try:
+        from src.llm.client import embedding_client
+        from src.pipeline.pulse_sync import sync_pulse_to_memory
+
+        if not embedding_client:
+            logger.warning("pulse_sync_skipped_no_embedding_client", pulse_id=str(pulse.id))
+            return
+        await sync_pulse_to_memory(session, pulse, embedding_client)
+    except Exception:
+        logger.warning("pulse_memory_sync_failed", pulse_id=str(pulse.id), exc_info=True)
+
 router = APIRouter()
 
 _VALID_STATUSES = {"sent", "replied", "parsed", "parse_failed", "skipped", "expired", "completed"}
@@ -351,6 +368,10 @@ async def update_today_pulse(
     await session.commit()
     await session.refresh(pulse)
     logger.info("update_today_pulse", pulse_id=str(pulse.id), status=pulse.status)
+
+    if pulse.status in {"completed", "parsed"}:
+        await _try_pulse_sync(session, pulse)
+
     return _pulse_to_response(pulse)
 
 
