@@ -45,6 +45,11 @@ const TYPE_CONFIG: Record<
     badge: "TODO",
     className: "bg-surface-container-high border-l-4 border-l-tertiary",
   },
+  todo_completion: {
+    icon: "task_alt",
+    badge: "DONE",
+    className: "bg-surface-container-high border-l-4 border-l-tertiary",
+  },
   daily_pulse: {
     icon: "vitals",
     badge: "PULSE",
