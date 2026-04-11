@@ -28,7 +28,7 @@ from src.core.config import get_settings
 from src.llm.client import ExtractionFailed
 from src.llm.prompts import (
     VOICE_COMPLETE_SYSTEM_PROMPT,
-    VOICE_CREATE_SYSTEM_PROMPT,
+    build_voice_create_system_prompt,
     build_voice_extraction_message,
 )
 
@@ -101,13 +101,19 @@ async def _complete_within_budget(system_prompt: str, user_content: str) -> str:
 async def extract_create_fields(text: str) -> CreateFields:
     """Extract {description, due_date} for a create-todo intent.
 
+    The system prompt is rendered with TODAY'S date so Haiku resolves
+    "today" / "tomorrow" / weekday names against the real current date
+    rather than its training cutoff (observed in prod: "today" became
+    2025-04-09 because Haiku's cutoff is ~April 2025).
+
     Raises:
         VoiceExtractionFailed: on timeout, API error, malformed JSON, or
             a missing/empty description. Callers should fall back to the
             raw dictation as the description.
     """
     user_content = build_voice_extraction_message(text)
-    raw = await _complete_within_budget(VOICE_CREATE_SYSTEM_PROMPT, user_content)
+    system_prompt = build_voice_create_system_prompt(date.today())
+    raw = await _complete_within_budget(system_prompt, user_content)
     payload = _parse_json_object(raw)
 
     description = payload.get("description")
