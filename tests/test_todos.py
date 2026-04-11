@@ -1191,3 +1191,133 @@ async def test_create_todo_label_too_long_422(test_client, api_key_headers) -> N
         headers=api_key_headers,
     )
     assert resp.status_code == 422
+
+
+# ── DELETE /v1/todos/{id} ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_todo_returns_204_and_removes_row(
+    test_client, api_key_headers
+) -> None:
+    """DELETE /v1/todos/{id} returns 204 and the row is gone from GET."""
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "delete me"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    resp = await test_client.delete(f"/v1/todos/{todo_id}", headers=api_key_headers)
+    assert resp.status_code == 204
+
+    get_one = await test_client.get(f"/v1/todos/{todo_id}", headers=api_key_headers)
+    assert get_one.status_code == 404
+
+    get_list = await test_client.get("/v1/todos", headers=api_key_headers)
+    ids = [t["id"] for t in get_list.json()["todos"]]
+    assert todo_id not in ids
+
+
+@pytest.mark.asyncio
+async def test_delete_todo_404_on_unknown_id(test_client, api_key_headers) -> None:
+    """DELETE with a random UUID that does not exist returns 404."""
+    random_id = str(uuid.uuid4())
+    resp = await test_client.delete(
+        f"/v1/todos/{random_id}", headers=api_key_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_todo_invalid_uuid_returns_422(
+    test_client, api_key_headers
+) -> None:
+    """DELETE with a non-UUID id returns 422."""
+    resp = await test_client.delete("/v1/todos/not-a-uuid", headers=api_key_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_todo_supersedes_memory_items(
+    test_client, api_key_headers, async_session
+) -> None:
+    """DELETE marks all matching memory_items is_superseded=True."""
+    from sqlalchemy import select
+
+    from src.core.models import MemoryItem, RawMemory
+
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "had a memory"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Manually seed a memory_item for this todo (the auto-sync is skipped
+    # in tests because no embedding client is configured).
+    raw = RawMemory(
+        source="todo",
+        raw_text=f"Todo: {created['description']}",
+        metadata_={"todo_id": todo_id},
+    )
+    async_session.add(raw)
+    await async_session.flush()
+    mi = MemoryItem(
+        raw_id=raw.id,
+        type="todo",
+        content=f"Todo: {created['description']}",
+        base_importance=0.5,
+    )
+    async_session.add(mi)
+    await async_session.commit()
+
+    resp = await test_client.delete(f"/v1/todos/{todo_id}", headers=api_key_headers)
+    assert resp.status_code == 204
+
+    result = await async_session.execute(select(MemoryItem).where(MemoryItem.id == mi.id))
+    refreshed = result.scalar_one()
+    assert refreshed.is_superseded is True
+
+
+@pytest.mark.asyncio
+async def test_delete_todo_cascades_history(
+    test_client, api_key_headers, async_session
+) -> None:
+    """Deleting a todo removes its TodoHistory rows via FK cascade."""
+    from sqlalchemy import select
+
+    from src.core.models import TodoHistory
+
+    created = (
+        await test_client.post(
+            "/v1/todos",
+            json={"description": "with history"},
+            headers=api_key_headers,
+        )
+    ).json()
+    todo_id = created["id"]
+
+    # Trigger a PATCH so at least one extra history row exists
+    await test_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"description": "edited text"},
+        headers=api_key_headers,
+    )
+
+    pre = await async_session.execute(
+        select(TodoHistory).where(TodoHistory.todo_id == uuid.UUID(todo_id))
+    )
+    assert len(pre.scalars().all()) >= 2  # created + updated
+
+    resp = await test_client.delete(f"/v1/todos/{todo_id}", headers=api_key_headers)
+    assert resp.status_code == 204
+
+    post = await async_session.execute(
+        select(TodoHistory).where(TodoHistory.todo_id == uuid.UUID(todo_id))
+    )
+    assert post.scalars().all() == []

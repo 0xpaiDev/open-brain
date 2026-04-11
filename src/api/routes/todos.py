@@ -20,6 +20,7 @@ from src.api.middleware.rate_limit import limiter, todos_limit
 from src.api.services.todo_service import create_todo, update_todo
 from src.core.database import get_db
 from src.core.models import TodoHistory, TodoItem
+from src.pipeline.todo_sync import supersede_memory_for_todo
 
 logger = structlog.get_logger(__name__)
 
@@ -331,6 +332,39 @@ async def update_todo_route(
     )
     logger.info("update_todo_route", todo_id=str(todo_id))
     return _todo_to_response(todo)
+
+
+# ── DELETE /v1/todos/{id} ──────────────────────────────────────────────────────
+
+
+@router.delete("/v1/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(todos_limit)
+async def delete_todo_route(
+    request: Request,
+    todo_id: _uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    """Hard-delete a todo and supersede its memory items.
+
+    The TodoHistory rows cascade on delete via the FK ``ondelete="CASCADE"``.
+    Memory items tied to this todo are marked ``is_superseded=True`` before
+    the delete so hybrid search no longer surfaces them.
+
+    Raises:
+        404: If no todo with that ID exists.
+    """
+    todo = await session.get(TodoItem, todo_id)
+    if todo is None:
+        raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
+
+    superseded = await supersede_memory_for_todo(session, todo_id)
+    await session.delete(todo)
+    await session.commit()
+    logger.info(
+        "delete_todo_route",
+        todo_id=str(todo_id),
+        superseded_memory_items=superseded,
+    )
 
 
 # ── GET /v1/todos/{id}/history ─────────────────────────────────────────────────

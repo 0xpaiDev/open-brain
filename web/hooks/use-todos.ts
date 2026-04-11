@@ -112,6 +112,8 @@ interface UseTodosReturn {
   completeTodo: (id: string) => Promise<void>;
   addTodo: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string, label?: string) => Promise<void>;
   deferTodo: (id: string, dueDate: string, reason?: string) => Promise<void>;
+  editTodo: (id: string, description: string, dueDate: string | null, reason?: string) => Promise<void>;
+  deleteTodo: (id: string) => Promise<void>;
   loadMoreDone: () => Promise<void>;
   hasMoreDone: boolean;
 }
@@ -227,6 +229,51 @@ export function useTodos(): UseTodosReturn {
     }
   }, [openTodos]);
 
+  const editTodo = useCallback(
+    async (id: string, description: string, dueDate: string | null, reason?: string) => {
+      const prevOpen = openTodos;
+      // Optimistic: apply new description + due_date in place, re-sort
+      setOpenTodos((prev) =>
+        sortOpenTodos(
+          prev.map((t) =>
+            t.id === id ? { ...t, description, due_date: dueDate } : t,
+          ),
+        ),
+      );
+
+      try {
+        const body: Record<string, unknown> = {
+          description,
+          due_date: dueDate,
+        };
+        if (reason) body.reason = reason;
+        await api<TodoItem>("PATCH", `/v1/todos/${id}`, body);
+        toast.success("Task updated");
+      } catch {
+        setOpenTodos(prevOpen);
+        toast.error("Failed to update task");
+      }
+    },
+    [openTodos],
+  );
+
+  const deleteTodo = useCallback(
+    async (id: string) => {
+      const prevOpen = openTodos;
+      // Optimistic: remove immediately
+      setOpenTodos((prev) => prev.filter((t) => t.id !== id));
+
+      try {
+        await api<void>("DELETE", `/v1/todos/${id}`);
+        toast.success("Task deleted");
+      } catch {
+        setOpenTodos(prevOpen);
+        toast.error("Failed to delete task");
+      }
+    },
+    [openTodos],
+  );
+
   const loadMoreDone = useCallback(async () => {
     try {
       const res = await api<TodoListResponse>(
@@ -241,5 +288,5 @@ export function useTodos(): UseTodosReturn {
     }
   }, [doneOffset]);
 
-  return { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, loadMoreDone, hasMoreDone };
+  return { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, editTodo, deleteTodo, loadMoreDone, hasMoreDone };
 }

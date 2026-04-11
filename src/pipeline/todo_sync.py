@@ -6,6 +6,8 @@ so that "what are my todos?" queries work through the existing RAG pipeline.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import structlog
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,3 +115,39 @@ async def sync_todo_to_memory(
         memory_type=memory_type,
         memory_id=str(memory_item.id),
     )
+
+
+async def supersede_memory_for_todo(
+    session: AsyncSession,
+    todo_id: UUID,
+) -> int:
+    """Mark all non-superseded memory_items for a given todo as superseded.
+
+    Returns the number of rows updated. Safe to call before or after the
+    TodoItem row is deleted — the query only touches RawMemory + MemoryItem
+    via the ``todo_id`` key stored in ``RawMemory.metadata_``.
+
+    Used by the hard-delete path in ``DELETE /v1/todos/{todo_id}`` so that
+    vanished todos do not leave orphaned embeddings in hybrid search.
+    """
+    todo_id_str = str(todo_id)
+    result = await session.execute(
+        select(MemoryItem)
+        .join(RawMemory, MemoryItem.raw_id == RawMemory.id)
+        .where(
+            and_(
+                RawMemory.metadata_["todo_id"].as_string() == todo_id_str,
+                MemoryItem.is_superseded.is_(False),
+            )
+        )
+    )
+    items = list(result.scalars())
+    for item in items:
+        item.is_superseded = True
+    if items:
+        logger.info(
+            "todo_memory_superseded",
+            todo_id=todo_id_str,
+            count=len(items),
+        )
+    return len(items)

@@ -42,6 +42,8 @@ const allOpenTodos = [overdueTodo, todayTodo, futureTodo, noDueTodo];
 const mockCompleteTodo = vi.fn(async () => {});
 const mockAddTodo = vi.fn(async () => {});
 const mockDeferTodo = vi.fn(async () => {});
+const mockEditTodo = vi.fn(async () => {});
+const mockDeleteTodo = vi.fn(async () => {});
 const mockLoadMoreDone = vi.fn(async () => {});
 
 let mockOpenTodos = allOpenTodos;
@@ -60,6 +62,8 @@ vi.mock("@/hooks/use-todos", async (importOriginal) => {
       completeTodo: mockCompleteTodo,
       addTodo: mockAddTodo,
       deferTodo: mockDeferTodo,
+      editTodo: mockEditTodo,
+      deleteTodo: mockDeleteTodo,
       loadMoreDone: mockLoadMoreDone,
       hasMoreDone: mockHasMoreDone,
     }),
@@ -808,6 +812,208 @@ describe("Load more done", () => {
 
     await waitFor(() => {
       expect(mockLoadMoreDone).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+// ── Edit todo (desktop inline form) ────────────────────────────────────────
+
+describe("Edit todo — desktop inline form", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenTodos = [
+      makeTodo({
+        id: "e-1",
+        description: "Original task",
+        due_date: "2020-01-01T00:00:00Z",
+      }),
+    ];
+    mockDoneTodos = [];
+    mockHasMoreDone = false;
+  });
+
+  test("edit button opens inline form seeded with current values", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Edit task: Original task"));
+
+    const titleInput = screen.getByLabelText("Edit title: Original task") as HTMLInputElement;
+    expect(titleInput.value).toBe("Original task");
+
+    const dateInput = screen.getByLabelText("Edit due date") as HTMLInputElement;
+    expect(dateInput.value).toBe("2020-01-01");
+  });
+
+  test("save submits edited description via editTodo", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Edit task: Original task"));
+
+    const titleInput = screen.getByLabelText("Edit title: Original task");
+    fireEvent.change(titleInput, { target: { value: "Updated task" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save task edit" }));
+
+    await waitFor(() => {
+      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Updated task", "2020-01-01");
+    });
+  });
+
+  test("clearing the date sends null", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Edit task: Original task"));
+    fireEvent.change(screen.getByLabelText("Edit due date"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save task edit" }));
+
+    await waitFor(() => {
+      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Original task", null);
+    });
+  });
+
+  test("cancel restores values and closes form", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Edit task: Original task"));
+    fireEvent.change(screen.getByLabelText("Edit title: Original task"), {
+      target: { value: "Something else" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel task edit" }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Edit title: Original task")).toBeNull();
+    });
+    expect(mockEditTodo).not.toHaveBeenCalled();
+  });
+
+  test("save button disabled on empty description", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Edit task: Original task"));
+    fireEvent.change(screen.getByLabelText("Edit title: Original task"), {
+      target: { value: "   " },
+    });
+
+    const saveBtn = screen.getByRole("button", { name: "Save task edit" }) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(true);
+  });
+});
+
+// ── Delete todo (desktop one-click) ─────────────────────────────────────────
+
+describe("Delete todo — desktop one-click", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenTodos = [
+      makeTodo({ id: "d-x", description: "Doomed task", due_date: "2020-01-01T00:00:00Z" }),
+    ];
+    mockDoneTodos = [];
+    mockHasMoreDone = false;
+  });
+
+  test("delete button calls deleteTodo with id", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Delete task: Doomed task"));
+
+    await waitFor(() => {
+      expect(mockDeleteTodo).toHaveBeenCalledWith("d-x");
+    });
+  });
+});
+
+// ── Mobile sheet (EditTodoSheet) ────────────────────────────────────────────
+
+describe("Edit todo — mobile bottom sheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOpenTodos = [
+      makeTodo({
+        id: "m-1",
+        description: "Sheet task",
+        due_date: "2020-01-01T00:00:00Z",
+      }),
+    ];
+    mockDoneTodos = [];
+    mockHasMoreDone = false;
+  });
+
+  test("more button opens sheet seeded with current values", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("More actions for task: Sheet task"));
+
+    await waitFor(() => {
+      const title = screen.getByLabelText("Task title") as HTMLInputElement;
+      expect(title.value).toBe("Sheet task");
+      const date = screen.getByLabelText("Task due date") as HTMLInputElement;
+      expect(date.value).toBe("2020-01-01");
+    });
+  });
+
+  test("reason textarea appears only after the date changes", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("More actions for task: Sheet task"));
+
+    await waitFor(() => expect(screen.getByLabelText("Task due date")).toBeDefined());
+    expect(screen.queryByLabelText("Reason for defer")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Task due date"), {
+      target: { value: "2026-05-01" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Reason for defer")).toBeDefined();
+    });
+  });
+
+  test("save sends edits and reason when date changed", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("More actions for task: Sheet task"));
+    await waitFor(() => expect(screen.getByLabelText("Task title")).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.change(screen.getByLabelText("Task due date"), {
+      target: { value: "2026-05-01" },
+    });
+    fireEvent.change(screen.getByLabelText("Reason for defer"), {
+      target: { value: "Need more time" },
+    });
+
+    const saveBtn = screen
+      .getAllByRole("button", { name: "Save" })
+      .find((b) => (b as HTMLButtonElement).offsetParent !== null || true)!;
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(mockEditTodo).toHaveBeenCalledWith("m-1", "Renamed", "2026-05-01", "Need more time");
+    });
+  });
+
+  test("delete button inside sheet calls deleteTodo", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("More actions for task: Sheet task"));
+    await waitFor(() => expect(screen.getByLabelText("Task title")).toBeDefined());
+
+    fireEvent.click(screen.getByLabelText("Delete task"));
+
+    await waitFor(() => {
+      expect(mockDeleteTodo).toHaveBeenCalledWith("m-1");
     });
   });
 });
