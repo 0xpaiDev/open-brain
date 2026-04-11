@@ -1,6 +1,42 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-09** | 6 phases + dashboard update + project tagging + chat + voice + todo sync + pulse sync + ops log dashboard, 1049 tests (841 backend + 201 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-11** | 6 phases + dashboard + chat + todo/pulse sync + ops log dashboard + UI polish + voice command endpoint + web voice unification, ~1098 tests (883 backend + 208 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-11 (Web Voice Unification + Link Tab Removal)
+
+**What changed**:
+- `SmartComposer` voice tab now posts to `POST /v1/voice/command` (same as iOS Siri shortcut) instead of `POST /v1/memory` — wired via new `onVoiceCommand` prop and `submitVoiceCommand` in `use-memories.ts`
+- Added `VoiceCommandResponse` type to `web/lib/types.ts`; `submitVoiceCommand` refreshes memory list only on `action === "memory"` (create/complete touch todos only, ambiguous is a no-op)
+- Removed Link input tab from SmartComposer; renumbered Media→1, Voice→2
+- Updated voice component tests (9→12 tests: 5 action-branch cases + error) and added 4 new `submitVoiceCommand` hook tests
+
+**Decisions made**: Ambiguous response shows `toast.warning` and preserves transcript for rephrase. No refresh for create/complete (memory grid doesn't show todos; acceptable UX trade-off). `onVoiceCommand` is a required prop — no silent fallback to legacy path.
+
+**Gotchas found**: `Input` component in SmartComposer is also used in the Text tab source-label field — cannot remove the import when removing the Link tab.
+
+**Test count**: ~1098 total (883 backend + 208 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-11 (Voice Command Endpoint)
+
+**What changed**:
+- New `POST /v1/voice/command` endpoint (`src/api/routes/voice.py`) routing dictated text into create-todo, complete-todo, save-memory, or ambiguous no-op. Deterministic regex classifier in `src/api/services/voice_intent.py`; Haiku only for field extraction in `src/llm/voice_extractor.py` with 1.5s outer timeout (`voice_command_llm_timeout_seconds` setting)
+- Extracted inlined `/v1/memory` ingest logic into `src/api/services/memory_service.py::ingest_memory` — `/v1/memory` contract unchanged
+- Updated `docs/voice-ios-shortcut.md` with new endpoint + iOS Shortcut wiring; legacy `/v1/memory` shortcut documented at the bottom
+- Added 42 new backend tests (classifier matrix, fuzzy matcher, route dispatch, timeout fallbacks, audit trail, auth, prompt-injection safety)
+- 3 deploys: initial feature, classifier regex broadening (for real Siri phrasings), today's-date anchor injection (fixing Haiku cutoff bug)
+
+**Decisions made**: Reuse `memory_limit` rate limiter instead of adding a new `voice_command_limit` knob. Use stdlib `difflib.SequenceMatcher` (not rapidfuzz, avoids new dep) with 0.70 confidence floor and 0.05 tie-break margin. Voice completions stash original dictation + match score in `todo_history.reason` for audit. Ambiguous completion is a hard no-op (no history row, no memory fallback).
+
+**Gotchas found**:
+- **Haiku training cutoff (~April 2025) breaks relative dates**: without `date.today()` injected into the system prompt, Haiku returns its cutoff date for "today". Observed live: "todo X for today" → `due_date=2025-04-09` instead of `2026-04-11`. Fix: `build_voice_create_system_prompt(today)` formats the ISO date into the template at call time
+- **Siri dictation phrasings are looser than expected**: users say "Create a task", "Make a to-do", "Make it to do" (Siri mishears "make a" as "make it"), "to-do" with hyphen. Initial string-prefix classifier missed all of these — rewritten as a regex accepting `(create|make|add|new) + optional (a|an|it) + (todo|task)`, with `_normalize()` collapsing `to-do`/`to do` → `todo`
+- **Prod health endpoint is `/health`, not `/healthz`** — contrary to what was stored in ops_deployment memory
+
+**Test count**: ~1091 total (883 backend + 201 Vitest + 7 E2E)
 
 ---
 

@@ -48,6 +48,9 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 - **Tests run on SQLite, prod on PostgreSQL**: all ORM types need `.with_variant()` for cross-DB compat (JSONB→JSON, Vector→JSON).
 - **Every `/v1/*` route needs `@limiter.limit()`**: no global fallback — undecorated routes are unprotected.
 - **RLS enabled on all tables**: Migration 0009 enables Row-Level Security with deny-all (no policies). App connects as `postgres` superuser (bypasses RLS). New tables must include `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` in their migration.
+- **Voice command routing is deterministic, not LLM**: `POST /v1/voice/command` (`src/api/routes/voice.py`) classifies intent (create/complete/memory) via regex in `src/api/services/voice_intent.py`. Haiku is only invoked *after* the intent is locked, to extract fields. Keeps the non-LLM path fast and keeps mutations predictable.
+- **Web voice uses the same deterministic endpoint as iOS**: `SmartComposer` voice tab posts to `POST /v1/voice/command` via `submitVoiceCommand` in `web/hooks/use-memories.ts`. Memory list refresh fires only for `action === "memory"` — create/complete only touch todos, not `memory_items`. Ambiguous responses show a warning toast and preserve the transcript.
+- **Memory ingest lives in a service**: `src/api/services/memory_service.py` `ingest_memory()` is the shared helper for `/v1/memory` and `/v1/voice/command`. Do not re-inline dedup/RawMemory/RefinementQueue logic in new routes.
 
 ## Footguns
 
@@ -63,6 +66,8 @@ These patterns can be re-introduced by new code. The fixes exist but aren't enfo
 - **Mobile input font-size ≥ 16px** — Safari/Chrome auto-zoom on inputs with `font-size < 16px`. All `<input>`, `<textarea>`, `<select>` must use `text-base md:text-sm` (not bare `text-sm`). Base components (`input.tsx`, `textarea.tsx`, `select.tsx`) already follow this pattern.
 - **memory_type uses underscores** — backend stores `daily_pulse`, `todo_completion`, `todo` (not hyphens). Frontend `TYPE_CONFIG` keys must match exactly.
 - **No duplicate DOM for responsive layouts** — JSDOM ignores CSS `hidden`/`sm:hidden`, so duplicate elements (e.g. mobile+desktop controls) break tests. Use single DOM + `flex-wrap` with responsive classes instead.
+- **Haiku training cutoff breaks relative dates** — Haiku (`claude-haiku-4-5`) resolves "today"/"tomorrow"/"Friday" to its training-cutoff date (~April 2025), not the real current date, unless the system prompt explicitly anchors on today's ISO date. Any prompt that accepts relative date references must inject `date.today()` at call time. See `src/llm/prompts.py::build_voice_create_system_prompt` for the pattern.
+- **Haiku tolerates Siri dictation variety, the classifier must too** — Siri transcribes voice commands with loose phrasings: "Create a task", "Make a to-do", "Make it to do" (mishearing "make a"), hyphenated "to-do". The `voice_intent.py` regex accepts `(create|make|add|new) + optional (a|an|it) + (todo|task)` and `_normalize()` collapses `to-do`/`to do` → `todo`. When adding new triggers, extend both.
 
 Check directory structure before creating new top-level modules or folders.
 

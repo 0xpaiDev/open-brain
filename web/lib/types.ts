@@ -115,6 +115,14 @@ export interface MemoryIngestResponse {
   supersedes_id: string | null;
 }
 
+export interface VoiceCommandResponse {
+  action: "created" | "completed" | "memory" | "ambiguous";
+  entity_id: string | null;
+  title: string | null;
+  confidence: number;
+  message: string;
+}
+
 export interface SearchResultItem {
   id: string;
   content: string;

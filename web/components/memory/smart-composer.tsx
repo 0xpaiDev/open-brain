@@ -6,6 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useProjectLabels } from "@/hooks/use-project-labels";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { toast } from "sonner";
+import type { VoiceCommandResponse } from "@/lib/types";
 
 interface SmartComposerProps {
   onIngest: (
@@ -13,12 +15,12 @@ interface SmartComposerProps {
     source?: string,
     metadata?: Record<string, unknown>,
   ) => Promise<boolean>;
+  onVoiceCommand: (transcript: string) => Promise<VoiceCommandResponse | null>;
 }
 
-export function SmartComposer({ onIngest }: SmartComposerProps) {
+export function SmartComposer({ onIngest, onVoiceCommand }: SmartComposerProps) {
   const [text, setText] = useState("");
   const [sourceLabel, setSourceLabel] = useState("");
-  const [url, setUrl] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { labels: projectLabels } = useProjectLabels();
@@ -57,12 +59,25 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
   async function handleVoiceSubmit() {
     if (!transcript.trim() || submitting) return;
     setSubmitting(true);
-    const success = await onIngest(transcript.trim(), "voice", {
-      transcription_method: "web_speech_api",
-    });
+    const result = await onVoiceCommand(transcript.trim());
     setSubmitting(false);
-    if (success) {
-      resetTranscript();
+
+    if (result === null) {
+      toast.error("Failed to process voice command");
+      return;
+    }
+
+    switch (result.action) {
+      case "created":
+      case "completed":
+      case "memory":
+        toast.success(result.message);
+        resetTranscript();
+        break;
+      case "ambiguous":
+        toast.warning(result.message);
+        // Keep transcript — user may want to rephrase and retry
+        break;
     }
   }
 
@@ -88,19 +103,6 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
     }
   }
 
-  async function handleLinkSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!url.trim() || submitting) return;
-
-    setSubmitting(true);
-    const success = await onIngest(url.trim(), "web-link", { url: url.trim() });
-    setSubmitting(false);
-
-    if (success) {
-      setUrl("");
-    }
-  }
-
   return (
     <div className="bg-surface-container rounded-2xl p-6 relative overflow-hidden">
       {/* Progress bar */}
@@ -117,14 +119,10 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
             Text
           </TabsTrigger>
           <TabsTrigger value={1} className="rounded-lg px-4 py-1.5 gap-2">
-            <span className="material-symbols-outlined text-lg">link</span>
-            Link
-          </TabsTrigger>
-          <TabsTrigger value={2} className="rounded-lg px-4 py-1.5 gap-2">
             <span className="material-symbols-outlined text-lg">image</span>
             Media
           </TabsTrigger>
-          <TabsTrigger value={3} className="rounded-lg px-4 py-1.5 gap-2">
+          <TabsTrigger value={2} className="rounded-lg px-4 py-1.5 gap-2">
             <span className="material-symbols-outlined text-lg">mic</span>
             Voice
           </TabsTrigger>
@@ -174,31 +172,8 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
           </form>
         </TabsContent>
 
-        {/* Link tab */}
-        <TabsContent value={1}>
-          <form onSubmit={handleLinkSubmit} className="flex flex-col gap-4 pt-4">
-            <Input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://..."
-              className="bg-surface-container-low border-outline-variant/15 text-on-surface placeholder:text-outline/50"
-            />
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={!url.trim() || submitting}
-                className="bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold py-2.5 px-6 rounded-xl text-sm flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(173,198,255,0.3)] transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap"
-              >
-                <span className="material-symbols-outlined text-sm">link</span>
-                Commit Link
-              </button>
-            </div>
-          </form>
-        </TabsContent>
-
         {/* Media tab */}
-        <TabsContent value={2}>
+        <TabsContent value={1}>
           <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-outline-variant/20 rounded-xl mt-4 relative">
             <span className="material-symbols-outlined text-4xl text-outline-variant/40 mb-3">
               cloud_upload
@@ -213,7 +188,7 @@ export function SmartComposer({ onIngest }: SmartComposerProps) {
         </TabsContent>
 
         {/* Voice tab */}
-        <TabsContent value={3}>
+        <TabsContent value={2}>
           <div className="flex flex-col items-center pt-4 gap-4">
             {!speechSupported ? (
               <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-outline-variant/20 rounded-xl w-full">

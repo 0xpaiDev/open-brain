@@ -8,6 +8,7 @@ import type {
   MemoryIngestResponse,
   SearchResultItem,
   SearchResponse,
+  VoiceCommandResponse,
 } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -39,6 +40,7 @@ interface UseMemoriesReturn {
     source?: string,
     metadata?: Record<string, unknown>,
   ) => Promise<boolean>;
+  submitVoiceCommand: (transcript: string) => Promise<VoiceCommandResponse | null>;
 }
 
 export function useMemories({
@@ -210,6 +212,25 @@ export function useMemories({
     [refresh],
   );
 
+  const submitVoiceCommand = useCallback(
+    async (transcript: string): Promise<VoiceCommandResponse | null> => {
+      try {
+        const result = await api<VoiceCommandResponse>(
+          "POST",
+          "/v1/voice/command",
+          { text: transcript },
+        );
+        if (result.action === "memory") {
+          refresh();
+        }
+        return result;
+      } catch {
+        return null;
+      }
+    },
+    [refresh],
+  );
+
   const hasMore = !isSearchMode && items.length < total;
 
   return {
@@ -222,5 +243,6 @@ export function useMemories({
     loadMore,
     refresh,
     ingestMemory,
+    submitVoiceCommand,
   };
 }

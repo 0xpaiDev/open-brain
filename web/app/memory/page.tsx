@@ -20,6 +20,7 @@ function MemoryContent() {
     isSearchMode,
     loadMore,
     ingestMemory,
+    submitVoiceCommand,
   } = useMemories({ typeFilter, searchQuery, projectFilter });
 
   return (
@@ -41,7 +42,7 @@ function MemoryContent() {
         </p>
       </div>
 
-      <SmartComposer onIngest={ingestMemory} />
+      <SmartComposer onIngest={ingestMemory} onVoiceCommand={submitVoiceCommand} />
 
       <MemoryBentoGrid
         items={items}

@@ -7,6 +7,7 @@ import type {
   MemoryRecentResponse,
   MemoryIngestResponse,
   SearchResponse,
+  VoiceCommandResponse,
 } from "@/lib/types";
 
 // ── T-25: isSearchResult type guard ─────────────────────────────────────────
@@ -49,7 +50,7 @@ describe("isSearchResult", () => {
 
 // Mock sonner toast
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 const MEMORY_A: MemoryItemResponse = {
@@ -218,5 +219,118 @@ describe("useMemories hook", () => {
     await waitFor(() => expect(result.current.items).toHaveLength(2));
     expect(result.current.items[0].id).toBe("m-1");
     expect(result.current.items[1].id).toBe("m-2");
+  });
+});
+
+describe("submitVoiceCommand", () => {
+  const browseResponse: MemoryRecentResponse = { items: [], total: 0 };
+
+  beforeEach(() => {
+    setApiKey("test-key");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("action=memory: returns result and triggers refresh (second GET)", async () => {
+    const vcResponse: VoiceCommandResponse = {
+      action: "memory",
+      entity_id: "r-1",
+      title: null,
+      confidence: 1.0,
+      message: "Saved to memory.",
+    };
+    const fetchMock = vi.fn(async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") return jsonResponse(vcResponse, 202);
+      return jsonResponse(browseResponse);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMemories());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const callsBefore = fetchMock.mock.calls.length;
+
+    let vcResult: VoiceCommandResponse | null | undefined;
+    await act(async () => {
+      vcResult = await result.current.submitVoiceCommand("remember this");
+    });
+
+    expect(vcResult).toEqual(vcResponse);
+    // refresh() triggers a second GET — total calls increase by 2 (POST + GET)
+    expect(fetchMock.mock.calls.length).toBe(callsBefore + 2);
+  });
+
+  test("action=created: returns result and does NOT trigger refresh", async () => {
+    const vcResponse: VoiceCommandResponse = {
+      action: "created",
+      entity_id: "todo-1",
+      title: "buy milk",
+      confidence: 1.0,
+      message: 'Added todo: "buy milk"',
+    };
+    const fetchMock = vi.fn(async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") return jsonResponse(vcResponse, 200);
+      return jsonResponse(browseResponse);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMemories());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const callsBefore = fetchMock.mock.calls.length;
+
+    let vcResult: VoiceCommandResponse | null | undefined;
+    await act(async () => {
+      vcResult = await result.current.submitVoiceCommand("remind me to buy milk");
+    });
+
+    expect(vcResult).toEqual(vcResponse);
+    // No extra fetch — refresh not called for non-memory actions
+    expect(fetchMock.mock.calls.length).toBe(callsBefore + 1); // only the POST
+  });
+
+  test("action=ambiguous: returns result and does NOT trigger refresh", async () => {
+    const vcResponse: VoiceCommandResponse = {
+      action: "ambiguous",
+      entity_id: null,
+      title: null,
+      confidence: 0.3,
+      message: 'No confident match for "um hello". Nothing was changed.',
+    };
+    const fetchMock = vi.fn(async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") return jsonResponse(vcResponse, 200);
+      return jsonResponse(browseResponse);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMemories());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const callsBefore = fetchMock.mock.calls.length;
+
+    let vcResult: VoiceCommandResponse | null | undefined;
+    await act(async () => {
+      vcResult = await result.current.submitVoiceCommand("um hello");
+    });
+
+    expect(vcResult).toEqual(vcResponse);
+    expect(fetchMock.mock.calls.length).toBe(callsBefore + 1); // only the POST, no refresh
+  });
+
+  test("fetch error returns null", async () => {
+    const fetchMock = vi.fn(async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") throw new Error("Network error");
+      return jsonResponse(browseResponse);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMemories());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let vcResult: VoiceCommandResponse | null | undefined;
+    await act(async () => {
+      vcResult = await result.current.submitVoiceCommand("some transcript");
+    });
+
+    expect(vcResult).toBeNull();
   });
 });
