@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     rate_limit_search_per_minute: int = 100
     rate_limit_dead_letters_per_minute: int = 5
 
+    # Voice command endpoint — outer timeout for the Haiku field extractor.
+    # The shared AnthropicClient wraps the SDK in a 60s timeout which is far
+    # too loose for the < 2s end-to-end Siri latency budget, so the voice
+    # extractor wraps each call in an outer asyncio.wait_for with this bound.
+    voice_command_llm_timeout_seconds: float = 1.5
+
     # Discord integration (optional — leave blank to disable)
     discord_bot_token: SecretStr = SecretStr("")
     discord_allowed_user_ids: list[int] = []

@@ -12,10 +12,9 @@ text and query for an existing raw_memory with the same hash within the last
 new rows are created and no LLM call is wasted.
 """
 
-import hashlib
 import json
 import uuid as _uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -25,8 +24,18 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, memory_limit
+from src.api.services.memory_service import (
+    SupersedesInvalidUUID,
+    SupersedesNotFound,
+)
+from src.api.services.memory_service import (
+    content_hash as _content_hash,  # re-exported for backward compat with tests
+)
+from src.api.services.memory_service import (
+    ingest_memory as _ingest_memory,
+)
 from src.core.database import get_db
-from src.core.models import MemoryItem, RawMemory, RefinementQueue
+from src.core.models import MemoryItem
 
 logger = structlog.get_logger(__name__)
 
@@ -34,11 +43,7 @@ router = APIRouter()
 
 _MAX_METADATA_BYTES = 8192  # 8 KB limit on serialized metadata
 
-
-def _content_hash(text: str) -> str:
-    """SHA-256 hash of normalized text (lowercase + collapsed whitespace)."""
-    normalized = " ".join(text.lower().split())
-    return hashlib.sha256(normalized.encode()).hexdigest()
+__all__ = ["router", "_content_hash"]
 
 
 class MemoryCreate(BaseModel):
@@ -97,7 +102,7 @@ class MemoryRecentResponse(BaseModel):
 
 @router.post("/v1/memory", status_code=status.HTTP_202_ACCEPTED, response_model=MemoryResponse)
 @limiter.limit(memory_limit)
-async def ingest_memory(
+async def ingest_memory_route(
     request: Request,
     body: MemoryCreate,
     session: AsyncSession = Depends(get_db),
@@ -115,64 +120,26 @@ async def ingest_memory(
         422: body validation failure (missing required fields)
         401: missing or invalid X-API-Key (handled by middleware)
     """
-    content_hash = _content_hash(body.text)
-    window_start = datetime.now(UTC) - timedelta(hours=24)
+    try:
+        result = await _ingest_memory(
+            session,
+            text=body.text,
+            source=body.source,
+            metadata=body.metadata,
+            supersedes_id=body.supersedes_id,
+        )
+    except SupersedesInvalidUUID:
+        raise HTTPException(
+            status_code=422, detail="supersedes_id is not a valid UUID"
+        ) from None
+    except SupersedesNotFound:
+        raise HTTPException(status_code=404, detail="supersedes_id not found") from None
 
-    result = await session.execute(
-        select(RawMemory)
-        .where(RawMemory.content_hash == content_hash)
-        .where(RawMemory.created_at >= window_start)
-        .limit(1)
+    return MemoryResponse(
+        raw_id=result.raw_id,
+        status=result.status,
+        supersedes_id=result.supersedes_id,
     )
-    existing = result.scalar_one_or_none()
-    if existing is not None:
-        logger.info("memory_duplicate_skipped", raw_id=str(existing.id), content_hash=content_hash)
-        return MemoryResponse(raw_id=str(existing.id), status="duplicate")
-
-    # Validate supersedes_id and mark original as superseded
-    superseded_item: MemoryItem | None = None
-    if body.supersedes_id is not None:
-        try:
-            target_uuid = _uuid.UUID(body.supersedes_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="supersedes_id is not a valid UUID"
-            ) from None
-        superseded_item = await session.get(MemoryItem, target_uuid)
-        if superseded_item is None:
-            raise HTTPException(status_code=404, detail="supersedes_id not found")
-
-    # Build metadata: merge caller metadata with side-channel key for worker
-    merged_metadata: dict[str, Any] | None = body.metadata
-    if body.supersedes_id is not None:
-        merged_metadata = dict(body.metadata or {})
-        merged_metadata["supersedes_memory_id"] = body.supersedes_id
-
-    raw = RawMemory(
-        source=body.source,
-        raw_text=body.text,
-        metadata_=merged_metadata,
-        content_hash=content_hash,
-    )
-    session.add(raw)
-    await session.flush()  # populate raw.id before FK use
-
-    if superseded_item is not None:
-        superseded_item.is_superseded = True
-        await session.flush()
-
-    queue_entry = RefinementQueue(raw_id=raw.id)
-    session.add(queue_entry)
-    await session.flush()
-    await session.commit()
-
-    logger.info(
-        "memory_ingested",
-        raw_id=str(raw.id),
-        source=body.source,
-        supersedes_id=body.supersedes_id,
-    )
-    return MemoryResponse(raw_id=str(raw.id), status="queued", supersedes_id=body.supersedes_id)
 
 
 def _memory_item_to_response(item: MemoryItem) -> MemoryItemResponse:
