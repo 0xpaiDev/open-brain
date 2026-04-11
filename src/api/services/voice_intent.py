@@ -19,17 +19,21 @@ from src.core.models import TodoItem
 
 Intent = Literal["create", "complete", "memory"]
 
-# Prefixes that deterministically mark a create intent. Order matters only for
-# logging; matching is set-based.
-CREATE_PREFIXES: tuple[str, ...] = (
-    "todo ",
-    "task ",
-    "remind me to ",
-    "create a todo ",
-    "create todo ",
-    "new todo ",
-    "add a todo ",
-    "add todo ",
+# Create intent is matched by a regex against the normalized dictation so we
+# can accept the variety of phrasings Siri actually produces:
+#   "Create a task to buy milk"
+#   "Make a to-do to call mom"
+#   "Make it to-do for tomorrow ..."   (Siri often mishears "make a" as "make it")
+#   "Add a todo ..."                    "New task ..."
+#   "Remind me to ..."
+# The prefix must appear at the start of the normalized string. "to-do" and
+# "to do" are normalized to "todo" before this regex runs (see _normalize).
+_CREATE_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"remind me to "
+    r"|(?:create|make|add|new)(?: (?:a|an|it))? (?:todo|task)(?: to| for)? "
+    r"|(?:todo|task) "
+    r")"
 )
 
 # Multi-word completion phrases checked before single verbs so "mark done"
@@ -60,14 +64,18 @@ TODO_NOUN_MARKERS: frozenset[str] = frozenset({"todo", "task", "the"})
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _PUNCT_STRIP_RE = re.compile(r"^[\s\.,!\?;:]+|[\s\.,!\?;:]+$")
+# Siri often transcribes "todo" as "to-do" or "to do" — collapse both to the
+# canonical form so downstream matching doesn't have to know.
+_TODO_VARIANTS_RE = re.compile(r"\bto[-\s]do\b", re.IGNORECASE)
 
 
 def _normalize(text: str) -> str:
-    """Lowercase, collapse whitespace, strip outer punctuation."""
+    """Lowercase, collapse whitespace, strip outer punctuation, canonicalize 'todo'."""
     if not text:
         return ""
     stripped = _PUNCT_STRIP_RE.sub("", text)
-    collapsed = _WHITESPACE_RE.sub(" ", stripped)
+    canonicalized = _TODO_VARIANTS_RE.sub("todo", stripped)
+    collapsed = _WHITESPACE_RE.sub(" ", canonicalized)
     return collapsed.lower().strip()
 
 
@@ -77,7 +85,7 @@ def classify_intent(text: str) -> Intent:
     Rules (first match wins):
         1. Normalize the text (lowercase, collapse whitespace, strip outer
            punctuation).
-        2. If it starts with any CREATE_PREFIXES → "create". This makes
+        2. If it matches _CREATE_PREFIX_RE → "create". This makes
            "remind me to close the fridge" resolve as create even though
            "close" appears inside the sentence.
         3. If it contains any COMPLETE_PHRASES or a COMPLETE_VERBS token AND
@@ -92,11 +100,11 @@ def classify_intent(text: str) -> Intent:
     if not normalized:
         return "memory"
 
-    for prefix in CREATE_PREFIXES:
-        # Require the trigger token AND something after it — a bare "todo"
-        # on its own is too short to form a real create command.
-        if normalized.startswith(prefix):
-            return "create"
+    # Create intents are matched by regex. The trailing space in the pattern
+    # guarantees there's something after the trigger, so bare "todo" on its
+    # own falls through to memory.
+    if _CREATE_PREFIX_RE.match(normalized):
+        return "create"
 
     # Phrase-level completion markers (multi-word)
     if any(phrase in normalized for phrase in COMPLETE_PHRASES):

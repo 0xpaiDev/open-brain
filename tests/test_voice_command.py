@@ -45,6 +45,18 @@ from src.llm.voice_extractor import (
         ("create a todo water the plants", "create"),
         ("new todo refactor voice intent", "create"),
         ("add todo go swimming", "create"),
+        # Real Siri dictations captured in prod 2026-04-11 — these regressed
+        # the v1 classifier and drove the regex rewrite.
+        ("Create a task to buy a milk", "create"),
+        ("Create a task buy milk", "create"),
+        ("Make a to-do to test the voice commands for the phone", "create"),
+        ("Make a to-do test voice notes on my iPhone", "create"),
+        ("make it to do for tomorrow I want to implement a logging feature", "create"),
+        ("Add a task to call the dentist", "create"),
+        ("New task refactor voice intent", "create"),
+        # "to-do" and "to do" normalize to "todo"
+        ("to-do buy milk", "create"),
+        ("to do buy milk", "create"),
         # The overlap trap: create prefix wins even if a completion verb
         # appears downstream in the sentence.
         ("remind me to close the fridge", "create"),
