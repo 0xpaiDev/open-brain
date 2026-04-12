@@ -1,6 +1,6 @@
 # Open Brain Architecture
 
-**Version**: 1.7
+**Version**: 1.8
 **Date**: 2026-04-12
 **Status**: All phases + Training & Commitments V1 complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training.
 
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (22 tables)                                    │
+│ Structured Memory (23 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**22 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**23 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -279,7 +279,8 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **commitments**: Challenge definitions with exercise, daily_target, metric (reps/minutes/tss), date range, status (active/completed/abandoned). `cadence` column: "daily" (per-day entries + log) or "aggregate" (period total from Strava). Aggregate has `targets` JSONB (e.g. `{"km": 200}`) and `progress` JSONB (cumulative actuals).
 - **commitment_entries**: One row per commitment per day, pre-generated on creation (daily cadence only); logged_count incremented by log actions; status: pending→hit (auto on target met) or pending→miss (nightly cron)
 - **commitment_activities**: Junction table linking aggregate commitments to Strava activities for dedup and audit; unique constraint on (commitment_id, strava_activity_id); progress recalculated from all linked activities on every change
-- **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response
+- **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response; TSS computed from NP and FTP on ingest
+- **strava_tokens**: Single-row OAuth token store; bootstrapped from env vars on first webhook; auto-refreshed via `_get_valid_access_token()` when expired
 
 ### Job monitoring
 - **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis, commitment_miss); used by `/v1/jobs/status`

@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1 + aggregate commitments, ~1148 tests (909 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration, ~1148 tests (909 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-12 (Strava Token Auto-Refresh & Live Configuration)
+
+**What changed**:
+- Added `strava_tokens` table (migration 0012) for DB-backed OAuth token storage with auto-refresh (`src/core/models.py`, `alembic/versions/0012_strava_tokens.py`)
+- New `_get_valid_access_token()` in `src/api/routes/strava.py` — bootstraps from env vars on first webhook, refreshes via OAuth when expired (60s buffer)
+- Fixed HMAC verification — Strava webhook POSTs don't send `X-Hub-Signature`; was rejecting all events with 403
+- Added TSS calculation from Strava's `weighted_average_watts` (NP) and configurable `STRAVA_FTP` env var (`src/core/config.py`, default 190w)
+- Configured and deployed: Strava API app, env vars (local + prod), webhook subscription (ID: 340388), verified end-to-end activity ingestion
+
+**Files touched**: `src/core/models.py`, `src/core/config.py`, `src/api/routes/strava.py`, `alembic/versions/0012_strava_tokens.py` (new), `.env.example`, `.env` (local + prod)
+
+**Decisions made**: Tokens stored in single-row DB table (not env vars) for auto-refresh. Bootstrap path reads env vars once, then DB is source of truth. TSS calculated server-side from NP and FTP (Strava doesn't expose TSS). HMAC check skipped when no signature header present — Strava webhook security relies on subscription verify_token handshake.
+
+**Gotchas found**: Strava webhook POSTs are NOT HMAC-signed (unlike GitHub webhooks). The `X-Hub-Signature` header is never sent — security model relies entirely on the verify_token handshake during subscription creation. Code that assumes HMAC will reject all legitimate events.
+
+**Test count**: ~1148 total (909 backend + 239 Vitest) — no new tests this session (infra/config session)
 
 ---
 
