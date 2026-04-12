@@ -408,12 +408,13 @@ async def receive_strava_webhook(
     """
     body = await request.body()
 
-    # Verify HMAC signature using client secret
+    # Verify HMAC signature if Strava sends one.
+    # Strava webhook POSTs may not include a signature header — the
+    # subscription is authenticated via the verify_token handshake instead.
     settings = _get_settings()
     client_secret = settings.strava_client_secret.get_secret_value()
-    if client_secret:
-        signature = request.headers.get("X-Hub-Signature", "")
-        # Strava sends signature as "sha256=<hex>"
+    signature = request.headers.get("X-Hub-Signature", "")
+    if signature and client_secret:
         if signature.startswith("sha256="):
             signature = signature[7:]
         if not _verify_hmac(body, signature, client_secret):
