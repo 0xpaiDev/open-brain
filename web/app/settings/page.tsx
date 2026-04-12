@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useProjectLabels } from "@/hooks/use-project-labels";
+import { useCommitments } from "@/hooks/use-commitments";
 import { ModelSelector } from "@/components/chat/model-selector";
 
 const MODEL_STORAGE_KEY = "ob_chat_model";
@@ -24,11 +25,51 @@ const PRESET_COLORS = [
   "#6D4C41", "#546E7A", "#7B1FA2", "#00838F", "#AD1457",
 ];
 
+const METRICS = [
+  { value: "reps", label: "Reps" },
+  { value: "minutes", label: "Minutes" },
+  { value: "tss", label: "TSS" },
+];
+
 export default function SettingsPage() {
   const { labels, loading, createLabel, deleteLabel } = useProjectLabels();
+  const {
+    commitments,
+    loading: commitmentsLoading,
+    createCommitment,
+    abandonCommitment,
+  } = useCommitments("all");
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Commitment form state
+  const [cmtName, setCmtName] = useState("");
+  const [cmtExercise, setCmtExercise] = useState("");
+  const [cmtTarget, setCmtTarget] = useState("");
+  const [cmtMetric, setCmtMetric] = useState("reps");
+  const [cmtStart, setCmtStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [cmtEnd, setCmtEnd] = useState("");
+  const [cmtSubmitting, setCmtSubmitting] = useState(false);
+
+  async function handleCreateCommitment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cmtName.trim() || !cmtExercise.trim() || !cmtTarget || !cmtEnd || cmtSubmitting) return;
+    setCmtSubmitting(true);
+    await createCommitment({
+      name: cmtName.trim(),
+      exercise: cmtExercise.trim(),
+      daily_target: parseInt(cmtTarget, 10),
+      metric: cmtMetric,
+      start_date: cmtStart,
+      end_date: cmtEnd,
+    });
+    setCmtSubmitting(false);
+    setCmtName("");
+    setCmtExercise("");
+    setCmtTarget("");
+    setCmtEnd("");
+  }
 
   // RAG Chat model preference (read/write localStorage directly)
   const [chatModel, setChatModel] = useState(() =>
@@ -115,6 +156,145 @@ export default function SettingsPage() {
             ))}
           </select>
         </div>
+      </section>
+
+      {/* Commitments section */}
+      <section className="bg-surface-container rounded-2xl p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-headline font-semibold text-on-surface mb-1">
+            Commitments
+          </h2>
+          <p className="text-xs text-outline font-body">
+            Create and manage daily training challenges.
+          </p>
+        </div>
+
+        {/* Commitment list */}
+        {commitmentsLoading ? (
+          <div className="flex items-center gap-2 py-4">
+            <div className="h-3 w-32 rounded bg-outline-variant/20 animate-pulse" />
+          </div>
+        ) : commitments.length === 0 ? (
+          <p className="text-sm text-outline py-2">
+            No commitments yet. Create one below.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {commitments.map((c) => {
+              const totalDays = Math.ceil(
+                (new Date(c.end_date).getTime() - new Date(c.start_date).getTime()) / 86400000
+              ) + 1;
+              const hits = c.entries.filter((e) => e.status === "hit").length;
+              return (
+                <li
+                  key={c.id}
+                  className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-surface-container-low transition-colors group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-xs font-body px-2 py-0.5 rounded-full ${
+                      c.status === "active"
+                        ? "bg-streak-hit/20 text-streak-hit"
+                        : c.status === "completed"
+                          ? "bg-primary/20 text-primary"
+                          : "bg-outline/20 text-outline"
+                    }`}>
+                      {c.status}
+                    </span>
+                    <span className="text-sm font-body text-on-surface truncate">
+                      {c.name}
+                    </span>
+                    <span className="text-xs text-on-surface-variant">
+                      {hits}/{totalDays} days · {c.daily_target} {c.metric}/day
+                    </span>
+                  </div>
+                  {c.status === "active" && (
+                    <button
+                      onClick={() => abandonCommitment(c.id)}
+                      className="text-outline hover:text-error opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      title="Abandon commitment"
+                    >
+                      <span className="material-symbols-outlined text-lg">close</span>
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* New commitment form */}
+        <form
+          onSubmit={handleCreateCommitment}
+          className="space-y-3 pt-2 border-t border-outline-variant/10"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={cmtName}
+              onChange={(e) => setCmtName(e.target.value)}
+              placeholder="Challenge name"
+              maxLength={100}
+              className="bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              value={cmtExercise}
+              onChange={(e) => setCmtExercise(e.target.value)}
+              placeholder="Exercise (e.g. push-ups)"
+              maxLength={100}
+              className="bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              type="number"
+              value={cmtTarget}
+              onChange={(e) => setCmtTarget(e.target.value)}
+              placeholder="Daily target"
+              min={1}
+              className="bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <select
+              value={cmtMetric}
+              onChange={(e) => setCmtMetric(e.target.value)}
+              className="bg-surface-container-low border border-outline-variant/15 text-on-surface text-base md:text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+            >
+              {METRICS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <div /> {/* spacer */}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-on-surface-variant mb-1">Start date</label>
+              <input
+                type="date"
+                value={cmtStart}
+                onChange={(e) => setCmtStart(e.target.value)}
+                className="w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-on-surface-variant mb-1">End date</label>
+              <input
+                type="date"
+                value={cmtEnd}
+                onChange={(e) => setCmtEnd(e.target.value)}
+                min={cmtStart}
+                className="w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-3 py-2 text-base md:text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={!cmtName.trim() || !cmtExercise.trim() || !cmtTarget || !cmtEnd || cmtSubmitting}
+            className="bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold py-2 px-5 rounded-xl text-sm flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(173,198,255,0.3)] transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
+            Create Commitment
+          </button>
+        </form>
       </section>
 
       {/* Projects section */}

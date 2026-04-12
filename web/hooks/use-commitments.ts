@@ -5,11 +5,12 @@ import { api } from "@/lib/api";
 import type {
   CommitmentResponse,
   CommitmentListResponse,
+  CommitmentCreate,
   CommitmentEntry,
 } from "@/lib/types";
 import { toast } from "sonner";
 
-export function useCommitments() {
+export function useCommitments(statusFilter: "active" | "all" = "active") {
   const [commitments, setCommitments] = useState<CommitmentResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -17,7 +18,7 @@ export function useCommitments() {
     try {
       const data = await api<CommitmentListResponse>(
         "GET",
-        "/v1/commitments?status=active",
+        `/v1/commitments?status=${statusFilter}`,
       );
       setCommitments(data.commitments);
     } catch {
@@ -25,7 +26,7 @@ export function useCommitments() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   useEffect(() => {
     refresh();
@@ -83,5 +84,24 @@ export function useCommitments() {
     [],
   );
 
-  return { commitments, loading, refresh, logCount, abandonCommitment };
+  const createCommitment = useCallback(
+    async (data: CommitmentCreate) => {
+      try {
+        const created = await api<CommitmentResponse>(
+          "POST",
+          "/v1/commitments",
+          data,
+        );
+        setCommitments((prev) => [created, ...prev]);
+        toast.success("Commitment created!");
+        return created;
+      } catch {
+        toast.error("Failed to create commitment");
+        return null;
+      }
+    },
+    [],
+  );
+
+  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment };
 }
