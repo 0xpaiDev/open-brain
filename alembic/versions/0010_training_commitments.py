@@ -84,13 +84,12 @@ def upgrade() -> None:
     op.add_column("daily_pulse", sa.Column("alcohol", sa.Boolean(), nullable=True))
 
     # ── Extend memory_items with tags ─────────────────────────────────────
-    op.add_column(
-        "memory_items",
-        sa.Column("tags", sa.JSON(), nullable=True, server_default="[]"),
-    )
-    # GIN index for PostgreSQL @> (contains) queries on tags
+    # Use JSONB explicitly — GIN index requires jsonb operator class, not json
     op.execute(
-        "CREATE INDEX ix_memory_items_tags ON memory_items USING GIN (tags) "
+        "ALTER TABLE memory_items ADD COLUMN tags JSONB DEFAULT '[]'"
+    )
+    op.execute(
+        "CREATE INDEX ix_memory_items_tags ON memory_items USING GIN (tags jsonb_ops) "
         "WHERE tags IS NOT NULL"
     )
 
