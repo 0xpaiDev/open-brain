@@ -1,6 +1,26 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1, ~1132 tests (891 backend + 234 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1 + aggregate commitments, ~1148 tests (909 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-12 (Aggregate Period Commitments)
+
+**What changed**:
+- New `cadence`, `targets` (JSONB), `progress` (JSONB) columns on `commitments` table; new `commitment_activities` junction table linking commitments to Strava activities (`src/core/models.py`, `alembic/versions/0011_aggregate_commitments.py`)
+- Strava webhook now links activities to matching aggregate commitments and recalculates progress from scratch — `update_commitment_progress()`, `_link_activity_to_commitments()`, `_unlink_activity_from_commitments()` in `src/api/routes/strava.py`
+- Extended `POST /v1/commitments` with `cadence`/`targets` validation; aggregate skips entry pre-generation; `POST /log` returns 400 for aggregate; pace calculation in GET responses (`src/api/routes/commitments.py`)
+- Miss detection (`src/jobs/commitment_miss.py`) filters daily miss by `cadence=="daily"` and completes aggregate commitments at period end
+- Frontend: `AggregateCommitmentCard` with per-metric progress bars and pace indicator (green/amber/red), cadence toggle in Settings creation form, types extended (`web/components/dashboard/commitment-list.tsx`, `web/app/settings/page.tsx`, `web/lib/types.ts`)
+- +12 backend tests, +5 frontend tests
+
+**Files touched**: `src/core/models.py`, `src/api/routes/commitments.py`, `src/api/routes/strava.py`, `src/jobs/commitment_miss.py`, `alembic/versions/0011_aggregate_commitments.py` (new), `web/lib/types.ts`, `web/components/dashboard/commitment-list.tsx`, `web/app/settings/page.tsx`, `tests/test_commitments.py`, `web/__tests__/components/commitment-list.test.tsx`
+
+**Decisions made**: Aggregate commitments do NOT pre-generate CommitmentEntry rows (avoids false daily misses). Progress always recalculated from scratch via junction table (not incremental — safe against race conditions). Pace formula: `(actual/target) / (elapsed_days/total_days)`, computed server-side. Single-metric form in Settings is MVP — backend supports multi-metric. Training weekly sync silently skips aggregate commitments (Strava totals already shown separately).
+
+**Gotchas found**: Pydantic v2 field validators run in declaration order — `daily_target` validator must come after `cadence` in the model, or use `model_validator(mode="after")` for cross-field validation. Miss detection tests can't call `detect_misses()` directly in test suite (opens its own DB context) — test the query logic through the test session instead.
+
+**Test count**: ~1148 total (909 backend + 239 Vitest)
 
 ---
 

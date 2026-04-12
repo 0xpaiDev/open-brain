@@ -37,46 +37,67 @@ def _get_yesterday() -> date:
 
 
 async def detect_misses() -> int:
-    """Mark yesterday's pending commitment entries as missed.
+    """Mark yesterday's pending commitment entries as missed (daily) and
+    complete aggregate commitments whose period ended yesterday.
 
     Only processes entries for active commitments.
 
     Returns:
-        Number of entries marked as missed.
+        Number of daily entries marked as missed.
     """
     yesterday = _get_yesterday()
 
     async with get_db_context() as session:
-        # Get IDs of active commitments
-        active_result = await session.execute(
-            select(Commitment.id).where(Commitment.status == "active")
-        )
-        active_ids = [row[0] for row in active_result.all()]
-
-        if not active_ids:
-            logger.info("commitment_miss_no_active_commitments")
-            return 0
-
-        # Update pending entries for yesterday
-        stmt = (
-            update(CommitmentEntry)
-            .where(
+        # Get IDs of active DAILY commitments
+        daily_result = await session.execute(
+            select(Commitment.id).where(
                 and_(
-                    CommitmentEntry.commitment_id.in_(active_ids),
-                    CommitmentEntry.entry_date == yesterday,
-                    CommitmentEntry.status == "pending",
+                    Commitment.status == "active",
+                    Commitment.cadence == "daily",
                 )
             )
-            .values(status="miss")
         )
-        result = await session.execute(stmt)
+        daily_ids = [row[0] for row in daily_result.all()]
+
+        count = 0
+        if daily_ids:
+            # Update pending entries for yesterday (daily only)
+            stmt = (
+                update(CommitmentEntry)
+                .where(
+                    and_(
+                        CommitmentEntry.commitment_id.in_(daily_ids),
+                        CommitmentEntry.entry_date == yesterday,
+                        CommitmentEntry.status == "pending",
+                    )
+                )
+                .values(status="miss")
+            )
+            result = await session.execute(stmt)
+            count = result.rowcount
+
+        # Complete aggregate commitments whose period ended yesterday
+        agg_result = await session.execute(
+            select(Commitment).where(
+                and_(
+                    Commitment.status == "active",
+                    Commitment.cadence == "aggregate",
+                    Commitment.end_date == yesterday,
+                )
+            )
+        )
+        agg_completed = 0
+        for commitment in agg_result.scalars():
+            commitment.status = "completed"
+            agg_completed += 1
+
         await session.commit()
 
-        count = result.rowcount
         logger.info(
             "commitment_miss_detected",
             date=str(yesterday),
-            count=count,
+            daily_misses=count,
+            aggregate_completed=agg_completed,
         )
         return count
 

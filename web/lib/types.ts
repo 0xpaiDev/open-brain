@@ -265,6 +265,10 @@ export interface CommitmentResponse {
   exercise: string;
   daily_target: number;
   metric: string;
+  cadence: "daily" | "aggregate";
+  targets: Record<string, number> | null;
+  progress: Record<string, number> | null;
+  pace: Record<string, number> | null;
   start_date: string;
   end_date: string;
   status: "active" | "completed" | "abandoned";
@@ -284,6 +288,8 @@ export interface CommitmentCreate {
   exercise: string;
   daily_target: number;
   metric?: string;
+  cadence?: "daily" | "aggregate";
+  targets?: Record<string, number>;
   start_date: string;
   end_date: string;
 }

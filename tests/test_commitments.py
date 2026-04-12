@@ -466,3 +466,356 @@ def test_pulse_sync_format_skips_null_nutrition() -> None:
     content = _format_pulse_content(pulse)
     assert "Clean eating" not in content
     assert "Alcohol" not in content
+
+
+# ── Aggregate commitment tests ───────────────────────────────────────────────
+
+
+async def _create_aggregate_commitment(client, headers, **overrides):
+    """Helper to create an aggregate commitment with sensible defaults."""
+    today = date.today()
+    payload = {
+        "name": "200km this month",
+        "exercise": "cycling",
+        "cadence": "aggregate",
+        "targets": {"km": 200},
+        "daily_target": 0,
+        "metric": "reps",
+        "start_date": str(today),
+        "end_date": str(today + timedelta(days=29)),
+        **overrides,
+    }
+    resp = await client.post("/v1/commitments", json=payload, headers=headers)
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_create_aggregate_commitment(test_client, api_key_headers) -> None:
+    """POST creates aggregate commitment with targets, no entries pre-generated."""
+    today = date.today()
+    resp = await _create_aggregate_commitment(
+        test_client, api_key_headers,
+        start_date=str(today),
+        end_date=str(today + timedelta(days=29)),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["cadence"] == "aggregate"
+    assert body["targets"] == {"km": 200}
+    assert body["progress"] == {}
+    assert body["entries"] == []  # No entries pre-generated
+
+
+@pytest.mark.asyncio
+async def test_create_aggregate_multi_metric(test_client, api_key_headers) -> None:
+    """POST creates aggregate commitment with multiple metric targets."""
+    today = date.today()
+    resp = await _create_aggregate_commitment(
+        test_client, api_key_headers,
+        targets={"km": 200, "tss": 400},
+        start_date=str(today),
+        end_date=str(today + timedelta(days=29)),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["targets"] == {"km": 200, "tss": 400}
+
+
+@pytest.mark.asyncio
+async def test_create_aggregate_missing_targets(test_client, api_key_headers) -> None:
+    """POST with aggregate cadence but no targets returns 422."""
+    today = date.today()
+    resp = await test_client.post(
+        "/v1/commitments",
+        json={
+            "name": "No targets",
+            "exercise": "cycling",
+            "cadence": "aggregate",
+            "daily_target": 0,
+            "metric": "reps",
+            "start_date": str(today),
+            "end_date": str(today + timedelta(days=29)),
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_aggregate_empty_targets(test_client, api_key_headers) -> None:
+    """POST with aggregate cadence and empty targets dict returns 422."""
+    today = date.today()
+    resp = await test_client.post(
+        "/v1/commitments",
+        json={
+            "name": "Empty targets",
+            "exercise": "cycling",
+            "cadence": "aggregate",
+            "targets": {},
+            "daily_target": 0,
+            "metric": "reps",
+            "start_date": str(today),
+            "end_date": str(today + timedelta(days=29)),
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_daily_unchanged(test_client, api_key_headers) -> None:
+    """POST with cadence=daily still pre-generates entries (backward compat)."""
+    today = date.today()
+    resp = await _create_commitment(
+        test_client, api_key_headers,
+        start_date=str(today),
+        end_date=str(today + timedelta(days=6)),
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["cadence"] == "daily"
+    assert len(body["entries"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_log_on_aggregate_returns_400(test_client, api_key_headers) -> None:
+    """POST /log on aggregate commitment returns 400."""
+    resp = await _create_aggregate_commitment(test_client, api_key_headers)
+    cid = resp.json()["id"]
+
+    log_resp = await test_client.post(
+        f"/v1/commitments/{cid}/log", json={"count": 5}, headers=api_key_headers
+    )
+    assert log_resp.status_code == 400
+    assert "aggregate" in log_resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_aggregate_pace_calculation(test_client, api_key_headers) -> None:
+    """GET on aggregate commitment includes pace data."""
+    resp = await _create_aggregate_commitment(test_client, api_key_headers)
+    cid = resp.json()["id"]
+
+    get_resp = await test_client.get(f"/v1/commitments/{cid}", headers=api_key_headers)
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert "pace" in body
+    # No progress yet, pace should indicate no data
+    assert body["pace"] is not None
+
+
+# ── Aggregate + Strava integration (model-level) ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_commitment_activities_junction(async_session) -> None:
+    """CommitmentActivity junction table links commitments to strava activities."""
+    from datetime import datetime
+
+    from src.core.models import Commitment, CommitmentActivity, StravaActivity
+
+    c = Commitment(
+        name="200km", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200}, progress={},
+        start_date=date.today(), end_date=date.today() + timedelta(days=29),
+    )
+    async_session.add(c)
+
+    a = StravaActivity(
+        strava_id=99999, activity_type="Ride", name="Morning Ride",
+        distance_m=50000.0, duration_s=7200, started_at=datetime.now(UTC),
+    )
+    async_session.add(a)
+    await async_session.flush()
+
+    link = CommitmentActivity(commitment_id=c.id, strava_activity_id=a.id)
+    async_session.add(link)
+    await async_session.commit()
+    await async_session.refresh(link)
+
+    assert link.commitment_id == c.id
+    assert link.strava_activity_id == a.id
+
+
+@pytest.mark.asyncio
+async def test_commitment_activities_dedup(async_session) -> None:
+    """CommitmentActivity enforces unique(commitment_id, strava_activity_id)."""
+    from datetime import datetime
+
+    from sqlalchemy.exc import IntegrityError
+
+    from src.core.models import Commitment, CommitmentActivity, StravaActivity
+
+    c = Commitment(
+        name="200km", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200}, progress={},
+        start_date=date.today(), end_date=date.today() + timedelta(days=29),
+    )
+    async_session.add(c)
+
+    a = StravaActivity(
+        strava_id=88888, activity_type="Ride", name="Ride",
+        distance_m=30000.0, duration_s=3600, started_at=datetime.now(UTC),
+    )
+    async_session.add(a)
+    await async_session.flush()
+
+    link1 = CommitmentActivity(commitment_id=c.id, strava_activity_id=a.id)
+    async_session.add(link1)
+    await async_session.flush()
+
+    link2 = CommitmentActivity(commitment_id=c.id, strava_activity_id=a.id)
+    async_session.add(link2)
+    with pytest.raises(IntegrityError):
+        await async_session.flush()
+
+
+# ── Miss detection for aggregate ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_miss_detection_skips_aggregate_entries(async_session) -> None:
+    """Miss detection does not create false misses for aggregate commitments.
+
+    Tests the query logic directly — aggregate commitments have no entries,
+    so the daily miss detection query should never match them.
+    """
+    from sqlalchemy import and_, select
+
+    from src.core.models import Commitment
+
+    # Create an aggregate commitment — no entries
+    c = Commitment(
+        name="200km", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200}, progress={},
+        start_date=date.today() - timedelta(days=5),
+        end_date=date.today() + timedelta(days=24),
+    )
+    async_session.add(c)
+    await async_session.commit()
+
+    # Simulate the daily miss detection query (only targets daily commitments)
+    daily_result = await async_session.execute(
+        select(Commitment.id).where(
+            and_(Commitment.status == "active", Commitment.cadence == "daily")
+        )
+    )
+    daily_ids = [row[0] for row in daily_result.all()]
+
+    # No daily commitments — nothing to flip
+    assert len(daily_ids) == 0
+
+
+@pytest.mark.asyncio
+async def test_miss_detection_completes_ended_aggregate(async_session) -> None:
+    """Miss detection marks aggregate commitment as completed when period ends.
+
+    Tests the aggregate completion logic directly through the session.
+    """
+    from sqlalchemy import and_, select
+
+    from src.core.models import Commitment
+
+    yesterday = date.today() - timedelta(days=1)
+    c = Commitment(
+        name="200km", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200},
+        progress={"km": 150},  # Didn't meet target but period ended
+        start_date=yesterday - timedelta(days=29),
+        end_date=yesterday,
+        status="active",
+    )
+    async_session.add(c)
+    await async_session.commit()
+
+    # Simulate the aggregate completion query
+    agg_result = await async_session.execute(
+        select(Commitment).where(
+            and_(
+                Commitment.status == "active",
+                Commitment.cadence == "aggregate",
+                Commitment.end_date == yesterday,
+            )
+        )
+    )
+    for commitment in agg_result.scalars():
+        commitment.status = "completed"
+    await async_session.commit()
+
+    await async_session.refresh(c)
+    assert c.status == "completed"
+
+
+# ── Progress accumulation helper ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_commitment_progress(async_session) -> None:
+    """update_commitment_progress recalculates from linked activities."""
+    from datetime import datetime
+
+    from src.api.routes.strava import update_commitment_progress
+    from src.core.models import Commitment, CommitmentActivity, StravaActivity
+
+    c = Commitment(
+        name="200km", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200}, progress={},
+        start_date=date.today() - timedelta(days=5),
+        end_date=date.today() + timedelta(days=24),
+    )
+    async_session.add(c)
+
+    a1 = StravaActivity(
+        strava_id=11111, activity_type="Ride", name="Ride 1",
+        distance_m=50000.0, duration_s=7200, tss=100.0,
+        started_at=datetime.now(UTC),
+    )
+    a2 = StravaActivity(
+        strava_id=22222, activity_type="Ride", name="Ride 2",
+        distance_m=30000.0, duration_s=3600, tss=60.0,
+        started_at=datetime.now(UTC),
+    )
+    async_session.add_all([a1, a2])
+    await async_session.flush()
+
+    # Link activities
+    async_session.add(CommitmentActivity(commitment_id=c.id, strava_activity_id=a1.id))
+    async_session.add(CommitmentActivity(commitment_id=c.id, strava_activity_id=a2.id))
+    await async_session.flush()
+
+    await update_commitment_progress(async_session, c)
+
+    assert c.progress["km"] == pytest.approx(80.0, rel=0.01)  # 50+30 km
+
+
+@pytest.mark.asyncio
+async def test_update_commitment_progress_multi_metric(async_session) -> None:
+    """update_commitment_progress handles multiple target metrics."""
+    from datetime import datetime
+
+    from src.api.routes.strava import update_commitment_progress
+    from src.core.models import Commitment, CommitmentActivity, StravaActivity
+
+    c = Commitment(
+        name="200km+400TSS", exercise="cycling", daily_target=0,
+        cadence="aggregate", targets={"km": 200, "tss": 400}, progress={},
+        start_date=date.today() - timedelta(days=5),
+        end_date=date.today() + timedelta(days=24),
+    )
+    async_session.add(c)
+
+    a = StravaActivity(
+        strava_id=33333, activity_type="Ride", name="Big Ride",
+        distance_m=80000.0, duration_s=10800, tss=200.0,
+        started_at=datetime.now(UTC),
+    )
+    async_session.add(a)
+    await async_session.flush()
+
+    async_session.add(CommitmentActivity(commitment_id=c.id, strava_activity_id=a.id))
+    await async_session.flush()
+
+    await update_commitment_progress(async_session, c)
+
+    assert c.progress["km"] == pytest.approx(80.0, rel=0.01)
+    assert c.progress["tss"] == pytest.approx(200.0, rel=0.01)

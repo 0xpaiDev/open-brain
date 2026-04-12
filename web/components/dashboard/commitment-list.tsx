@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Dumbbell, Flame, X, Plus, Minus } from "lucide-react";
+import { Dumbbell, Flame, TrendingUp } from "lucide-react";
 import { useCommitments } from "@/hooks/use-commitments";
 import type { CommitmentResponse, CommitmentEntry } from "@/lib/types";
 
@@ -153,6 +153,123 @@ function CommitmentCard({
   );
 }
 
+// ── Aggregate commitment card ────────────────────────────────────────────────
+
+function PaceBadge({ pace }: { pace: Record<string, number> | null }) {
+  if (!pace || pace.overall === undefined) {
+    return (
+      <span className="rounded-full px-2 py-0.5 text-xs font-body bg-outline/20 text-outline">
+        No data
+      </span>
+    );
+  }
+
+  const overall = pace.overall;
+  if (overall >= 1.0) {
+    return (
+      <span className="rounded-full px-2 py-0.5 text-xs font-body bg-streak-hit/20 text-streak-hit">
+        Ahead
+      </span>
+    );
+  }
+  if (overall >= 0.7) {
+    return (
+      <span className="rounded-full px-2 py-0.5 text-xs font-body bg-amber-500/20 text-amber-500">
+        Behind
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full px-2 py-0.5 text-xs font-body bg-streak-miss/20 text-streak-miss">
+      Behind
+    </span>
+  );
+}
+
+const METRIC_LABELS: Record<string, string> = {
+  km: "km",
+  tss: "TSS",
+  minutes: "min",
+  hours: "hrs",
+  elevation_m: "m elev",
+};
+
+function AggregateCommitmentCard({ commitment }: { commitment: CommitmentResponse }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const targets = commitment.targets ?? {};
+  const progress = commitment.progress ?? {};
+
+  const totalDays =
+    Math.ceil(
+      (new Date(commitment.end_date).getTime() - new Date(commitment.start_date).getTime()) /
+        (1000 * 60 * 60 * 24),
+    ) + 1;
+  const elapsedDays =
+    Math.ceil(
+      (new Date(today).getTime() - new Date(commitment.start_date).getTime()) /
+        (1000 * 60 * 60 * 24),
+    ) + 1;
+  const dayNumber = Math.max(1, Math.min(elapsedDays, totalDays));
+  const daysLeft = Math.max(0, totalDays - dayNumber);
+
+  return (
+    <div className="bg-surface-container rounded-2xl p-5 space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-primary" />
+          <span className="font-headline text-lg text-on-surface">{commitment.name}</span>
+        </div>
+        <span className="text-on-surface-variant text-sm font-body">
+          Day {dayNumber}/{totalDays}
+        </span>
+      </div>
+
+      {/* Pace badge + deadline */}
+      <div className="flex items-center justify-between">
+        <PaceBadge pace={commitment.pace} />
+        <span className="text-on-surface-variant text-sm font-body">
+          {daysLeft > 0 ? `${daysLeft} days left` : "Ended"}
+        </span>
+      </div>
+
+      {/* Per-metric progress bars */}
+      <div className="space-y-2">
+        {Object.entries(targets).map(([metric, target]) => {
+          const actual = progress[metric] ?? 0;
+          const pct = target > 0 ? Math.min(actual / target, 1) : 0;
+          const metricPace = commitment.pace?.[metric] ?? 0;
+          const barColor =
+            metricPace >= 1.0
+              ? "bg-streak-hit"
+              : metricPace >= 0.7
+                ? "bg-amber-500"
+                : "bg-streak-miss";
+
+          return (
+            <div key={metric}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-on-surface-variant text-sm font-body">
+                  {actual.toFixed(1)}/{target} {METRIC_LABELS[metric] ?? metric}
+                </span>
+                <span className="text-on-surface-variant text-xs font-body">
+                  {(pct * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-surface-container-high overflow-hidden">
+                <div
+                  className={`h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300 motion-safe:ease-out ${barColor}`}
+                  style={{ width: `${pct * 100}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Commitment list (main export) ────────────────────────────────────────────
 
 export function CommitmentList() {
@@ -179,9 +296,13 @@ export function CommitmentList() {
           {commitments.length}
         </span>
       </div>
-      {commitments.map((c) => (
-        <CommitmentCard key={c.id} commitment={c} onLog={logCount} />
-      ))}
+      {commitments.map((c) =>
+        c.cadence === "aggregate" ? (
+          <AggregateCommitmentCard key={c.id} commitment={c} />
+        ) : (
+          <CommitmentCard key={c.id} commitment={c} onLog={logCount} />
+        ),
+      )}
     </div>
   );
 }

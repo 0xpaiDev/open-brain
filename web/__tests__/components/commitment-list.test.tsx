@@ -166,3 +166,115 @@ describe("CommitmentList", () => {
     expect(dots[1].className).toContain("bg-streak-pending"); // today = pending
   });
 });
+
+// ── Aggregate commitment card tests ─────────────────────────────────────────
+
+const AGGREGATE_RESPONSE: CommitmentListResponse = {
+  commitments: [
+    {
+      id: "c-agg",
+      name: "200km this month",
+      exercise: "cycling",
+      daily_target: 0,
+      metric: "reps",
+      cadence: "aggregate",
+      targets: { km: 200 },
+      progress: { km: 120 },
+      pace: { km: 1.15, overall: 1.15 },
+      start_date: YESTERDAY,
+      end_date: new Date(Date.now() + 86400000 * 28).toISOString().slice(0, 10),
+      status: "active",
+      created_at: "2026-04-11T00:00:00Z",
+      updated_at: "2026-04-12T00:00:00Z",
+      current_streak: 0,
+      entries: [],
+    },
+  ],
+  total: 1,
+};
+
+describe("AggregateCommitmentCard", () => {
+  test("renders aggregate commitment with progress", async () => {
+    mockFetch(async () => jsonResponse(AGGREGATE_RESPONSE));
+
+    render(<CommitmentList />);
+
+    await waitFor(() => {
+      expect(screen.getByText("200km this month")).toBeTruthy();
+    });
+    // Should show progress, not daily log buttons
+    expect(screen.getByText(/120.*\/.*200.*km/)).toBeTruthy();
+    // Should NOT show log buttons
+    expect(screen.queryByText("+5")).toBeNull();
+    expect(screen.queryByText("+10")).toBeNull();
+  });
+
+  test("renders pace indicator with correct color for ahead", async () => {
+    mockFetch(async () => jsonResponse(AGGREGATE_RESPONSE));
+
+    const { container } = render(<CommitmentList />);
+
+    await waitFor(() => {
+      expect(screen.getByText("200km this month")).toBeTruthy();
+    });
+
+    // Pace badge should be green (ahead of pace ≥ 1.0)
+    const paceBadge = screen.getByText(/ahead/i);
+    expect(paceBadge).toBeTruthy();
+  });
+
+  test("renders pace indicator amber when behind", async () => {
+    const behindResponse = {
+      ...AGGREGATE_RESPONSE,
+      commitments: [
+        {
+          ...AGGREGATE_RESPONSE.commitments[0],
+          progress: { km: 50 },
+          pace: { km: 0.85, overall: 0.85 },
+        },
+      ],
+    };
+    mockFetch(async () => jsonResponse(behindResponse));
+
+    render(<CommitmentList />);
+
+    await waitFor(() => {
+      expect(screen.getByText("200km this month")).toBeTruthy();
+    });
+
+    const paceBadge = screen.getByText(/behind/i);
+    expect(paceBadge).toBeTruthy();
+  });
+
+  test("does not render streak dots for aggregate", async () => {
+    mockFetch(async () => jsonResponse(AGGREGATE_RESPONSE));
+
+    const { container } = render(<CommitmentList />);
+
+    await waitFor(() => {
+      expect(screen.getByText("200km this month")).toBeTruthy();
+    });
+
+    // No streak dots (w-2 h-2 circles)
+    const dots = container.querySelectorAll("span.rounded-full.w-2.h-2");
+    expect(dots.length).toBe(0);
+  });
+
+  test("renders both daily and aggregate cards", async () => {
+    const mixedResponse: CommitmentListResponse = {
+      commitments: [
+        FAKE_RESPONSE.commitments[0], // daily
+        AGGREGATE_RESPONSE.commitments[0], // aggregate
+      ],
+      total: 2,
+    };
+    mockFetch(async () => jsonResponse(mixedResponse));
+
+    render(<CommitmentList />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Push-ups Challenge")).toBeTruthy();
+      expect(screen.getByText("200km this month")).toBeTruthy();
+    });
+  });
+});

@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments V1 complete (2026-04-12) — ~1132 tests (891 backend + 234 Vitest + 7 E2E)
+**Status**: All phases + dashboard + training/commitments V1 + aggregate commitments complete (2026-04-12) — ~1148 tests (909 backend + 239 Vitest)
 **Project**: 2026-03-13 → 2026-04-12 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -10,7 +10,7 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0010)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0011)
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Cron jobs**:
@@ -32,14 +32,15 @@
 - **T1**: Strava OAuth token refresh is manual (6h expiry). Automate via refresh job post-MVP.
 - **T2**: Commitment miss cron not yet wired into Docker scheduler service.
 - **T3**: `hybrid_search()` tag filtering (tags @> query) not yet wired — column and GIN index exist but no API surface.
+- **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
 
 ---
 
 ## Next Up
 
-- **Deploy**: Run migration 0010 on prod, restart services, schedule commitment_miss cron
+- **Deploy**: Run migration 0011 on prod, restart services
 - Configure Strava API app + env vars (STRAVA_CLIENT_ID/SECRET/VERIFY_TOKEN/ACCESS_TOKEN/REFRESH_TOKEN)
 - Register Strava webhook subscription (`POST /api/v3/push_subscriptions`)
 - Wire commitment_miss job into Docker scheduler (`src/jobs/commitment_miss.py`)
 - Add tag filtering to `hybrid_search()` for training memory queries
-- Settings page section for commitment creation (frontend)
+- Multi-metric aggregate form support in Settings page (currently single metric)

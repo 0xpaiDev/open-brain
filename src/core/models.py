@@ -540,9 +540,12 @@ class JobRun(Base):
 
 
 class Commitment(Base):
-    """A commitment challenge with daily targets and date range.
+    """A commitment challenge with daily or aggregate targets and date range.
 
-    metric: "reps" | "minutes" | "tss"
+    cadence: "daily" (per-day entries + log) | "aggregate" (period total from Strava)
+    metric: "reps" | "minutes" | "tss" (used by daily cadence)
+    targets: JSONB dict of metric→target for aggregate (e.g. {"km": 200, "tss": 400})
+    progress: JSONB dict of metric→actual for aggregate (e.g. {"km": 145.3})
     status: "active" | "completed" | "abandoned"
     """
 
@@ -553,6 +556,9 @@ class Commitment(Base):
     exercise: Mapped[str] = mapped_column(String(100), nullable=False)
     daily_target: Mapped[int] = mapped_column(Integer, nullable=False)
     metric: Mapped[str] = mapped_column(String(20), default="reps")
+    cadence: Mapped[str] = mapped_column(String(20), default="daily")
+    targets: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    progress: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active")
@@ -564,6 +570,9 @@ class Commitment(Base):
     # Relationships
     entries: Mapped[list["CommitmentEntry"]] = relationship(
         "CommitmentEntry", back_populates="commitment", cascade="all, delete-orphan"
+    )
+    linked_activities: Mapped[list["CommitmentActivity"]] = relationship(
+        "CommitmentActivity", back_populates="commitment", cascade="all, delete-orphan"
     )
 
 
@@ -619,3 +628,39 @@ class StravaActivity(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     raw_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    commitment_links: Mapped[list["CommitmentActivity"]] = relationship(
+        "CommitmentActivity", back_populates="strava_activity", cascade="all, delete-orphan"
+    )
+
+
+class CommitmentActivity(Base):
+    """Junction table linking aggregate commitments to Strava activities.
+
+    Used for dedup (prevent double-counting) and audit trail.
+    Unique constraint on (commitment_id, strava_activity_id).
+    """
+
+    __tablename__ = "commitment_activities"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    commitment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
+    )
+    strava_activity_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("strava_activities.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("commitment_id", "strava_activity_id", name="uq_commitment_activity"),
+        Index("ix_commitment_activities_commitment", "commitment_id"),
+        Index("ix_commitment_activities_strava", "strava_activity_id"),
+    )
+
+    # Relationships
+    commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="linked_activities")
+    strava_activity: Mapped["StravaActivity"] = relationship(
+        "StravaActivity", back_populates="commitment_links"
+    )

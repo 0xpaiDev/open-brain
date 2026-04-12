@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, strava_limit
 from src.core.database import get_db
-from src.core.models import StravaActivity
+from src.core.models import Commitment, CommitmentActivity, StravaActivity
 
 logger = structlog.get_logger(__name__)
 
@@ -91,6 +91,125 @@ def _activity_to_response(activity: StravaActivity) -> ActivityResponse:
         started_at=str(activity.started_at),
         created_at=str(activity.created_at),
     )
+
+
+# Metric mapping: target key → StravaActivity field
+_METRIC_FIELD_MAP = {
+    "km": ("distance_m", 0.001),       # distance_m → km
+    "tss": ("tss", 1.0),
+    "minutes": ("duration_s", 1 / 60),  # seconds → minutes
+    "hours": ("duration_s", 1 / 3600),  # seconds → hours
+    "elevation_m": ("elevation_m", 1.0),
+}
+
+
+async def update_commitment_progress(
+    session: AsyncSession, commitment: Commitment
+) -> None:
+    """Recalculate aggregate commitment progress from all linked activities.
+
+    Always recalculates from scratch (not incremental) to stay safe
+    against race conditions and Strava update/delete events.
+    """
+    if not commitment.targets:
+        return
+
+    # Fetch all linked activities
+
+    result = await session.execute(
+        select(StravaActivity)
+        .join(CommitmentActivity, CommitmentActivity.strava_activity_id == StravaActivity.id)
+        .where(CommitmentActivity.commitment_id == commitment.id)
+    )
+    activities = list(result.scalars().all())
+
+    progress: dict[str, float] = {}
+    for metric_key in commitment.targets:
+        mapping = _METRIC_FIELD_MAP.get(metric_key)
+        if not mapping:
+            continue
+        field_name, multiplier = mapping
+        total = sum(
+            (getattr(a, field_name, None) or 0) * multiplier
+            for a in activities
+        )
+        progress[metric_key] = round(total, 2)
+
+    commitment.progress = progress
+
+
+async def _link_activity_to_commitments(
+    session: AsyncSession, activity: StravaActivity
+) -> None:
+    """Find active aggregate commitments matching this activity's date and link them."""
+    activity_date = activity.started_at.date()
+
+    result = await session.execute(
+        select(Commitment).where(
+            Commitment.cadence == "aggregate",
+            Commitment.status == "active",
+            Commitment.start_date <= activity_date,
+            Commitment.end_date >= activity_date,
+        )
+    )
+    commitments = list(result.scalars().all())
+
+    for commitment in commitments:
+        # Insert junction row (ignore if already exists — dedup)
+        existing = await session.execute(
+            select(CommitmentActivity).where(
+                CommitmentActivity.commitment_id == commitment.id,
+                CommitmentActivity.strava_activity_id == activity.id,
+            )
+        )
+        if existing.scalar_one_or_none() is None:
+            session.add(CommitmentActivity(
+                commitment_id=commitment.id,
+                strava_activity_id=activity.id,
+            ))
+            await session.flush()
+
+        # Recalculate progress
+        await update_commitment_progress(session, commitment)
+
+    if commitments:
+        await session.commit()
+        logger.info(
+            "commitment_progress_updated",
+            strava_id=activity.strava_id,
+            commitment_count=len(commitments),
+        )
+
+
+async def _unlink_activity_from_commitments(
+    session: AsyncSession, strava_activity_id
+) -> None:
+    """Remove junction rows for a deleted activity and recalculate progress."""
+    from sqlalchemy import delete as sa_delete
+
+    # Find affected commitments before removing links
+    result = await session.execute(
+        select(CommitmentActivity.commitment_id).where(
+            CommitmentActivity.strava_activity_id == strava_activity_id
+        )
+    )
+    affected_commitment_ids = [row[0] for row in result.all()]
+
+    if not affected_commitment_ids:
+        return
+
+    # Delete junction rows
+    await session.execute(
+        sa_delete(CommitmentActivity).where(
+            CommitmentActivity.strava_activity_id == strava_activity_id
+        )
+    )
+
+    # Recalculate progress for affected commitments
+    for cid in affected_commitment_ids:
+        commitment = await session.get(Commitment, cid)
+        if commitment and commitment.status == "active":
+            await update_commitment_progress(session, commitment)
 
 
 async def _fetch_and_upsert_activity(
@@ -237,13 +356,16 @@ async def receive_strava_webhook(
         return {"status": "ignored"}
 
     if event.aspect_type in ("create", "update"):
-        await _fetch_and_upsert_activity(session, event.object_id)
+        activity = await _fetch_and_upsert_activity(session, event.object_id)
+        if activity:
+            await _link_activity_to_commitments(session, activity)
     elif event.aspect_type == "delete":
         result = await session.execute(
             select(StravaActivity).where(StravaActivity.strava_id == event.object_id)
         )
         existing = result.scalar_one_or_none()
         if existing:
+            await _unlink_activity_from_commitments(session, existing.id)
             await session.delete(existing)
             await session.commit()
             logger.info("strava_activity_deleted", strava_id=event.object_id)

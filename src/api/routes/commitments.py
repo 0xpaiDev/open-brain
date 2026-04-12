@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,8 @@ router = APIRouter()
 
 _VALID_STATUSES = {"active", "completed", "abandoned"}
 _VALID_METRICS = {"reps", "minutes", "tss"}
+_VALID_CADENCES = {"daily", "aggregate"}
+_VALID_TARGET_KEYS = {"km", "tss", "minutes", "hours", "elevation_m"}
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -36,10 +38,19 @@ _VALID_METRICS = {"reps", "minutes", "tss"}
 class CommitmentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     exercise: str = Field(..., min_length=1, max_length=100)
-    daily_target: int = Field(..., gt=0)
+    cadence: str = "daily"
+    daily_target: int = Field(0, ge=0)
     metric: str = "reps"
+    targets: dict[str, float] | None = None
     start_date: date
     end_date: date
+
+    @field_validator("cadence")
+    @classmethod
+    def validate_cadence(cls, v: str) -> str:
+        if v not in _VALID_CADENCES:
+            raise ValueError(f"cadence must be one of {sorted(_VALID_CADENCES)}")
+        return v
 
     @field_validator("metric")
     @classmethod
@@ -55,6 +66,21 @@ class CommitmentCreate(BaseModel):
         if start and v < start:
             raise ValueError("end_date must be on or after start_date")
         return v
+
+    @model_validator(mode="after")
+    def validate_cadence_fields(self) -> CommitmentCreate:
+        if self.cadence == "daily":
+            if self.daily_target <= 0:
+                raise ValueError("daily_target must be > 0 for daily commitments")
+        elif self.cadence == "aggregate":
+            if not self.targets or len(self.targets) == 0:
+                raise ValueError("aggregate commitments require at least one target")
+            for key, val in self.targets.items():
+                if key not in _VALID_TARGET_KEYS:
+                    raise ValueError(f"target key must be one of {sorted(_VALID_TARGET_KEYS)}")
+                if val <= 0:
+                    raise ValueError("target values must be positive")
+        return self
 
 
 class CommitmentUpdate(BaseModel):
@@ -88,6 +114,10 @@ class CommitmentResponse(BaseModel):
     exercise: str
     daily_target: int
     metric: str
+    cadence: str = "daily"
+    targets: dict[str, float] | None = None
+    progress: dict[str, float] | None = None
+    pace: dict[str, float] | None = None
     start_date: date
     end_date: date
     status: str
@@ -151,23 +181,69 @@ def _entry_to_response(entry: CommitmentEntry) -> EntryResponse:
     )
 
 
+def _compute_pace(
+    targets: dict[str, float] | None,
+    progress: dict[str, float] | None,
+    start_date: date,
+    end_date: date,
+    today: date,
+) -> dict[str, float] | None:
+    """Compute pace ratios for an aggregate commitment."""
+    if not targets:
+        return None
+
+    total_days = (end_date - start_date).days + 1
+    elapsed_days = min((today - start_date).days + 1, total_days)
+
+    if elapsed_days <= 0:
+        # Commitment hasn't started
+        return {**dict.fromkeys(targets, 0.0), "overall": 0.0}
+
+    elapsed_fraction = elapsed_days / total_days
+    prog = progress or {}
+
+    pace: dict[str, float] = {}
+    for metric, target in targets.items():
+        actual = prog.get(metric, 0.0)
+        if target > 0 and elapsed_fraction > 0:
+            pace[metric] = round((actual / target) / elapsed_fraction, 2)
+        else:
+            pace[metric] = 0.0
+
+    # Overall = minimum pace (conservative — weakest metric)
+    pace["overall"] = min(pace.values()) if pace else 0.0
+    return pace
+
+
 def _commitment_to_response(
     commitment: Commitment, entries: list[CommitmentEntry] | None = None, today: date | None = None
 ) -> CommitmentResponse:
     entry_list = entries or []
     t = today or _get_today()
+
+    pace = None
+    if commitment.cadence == "aggregate":
+        pace = _compute_pace(
+            commitment.targets, commitment.progress,
+            commitment.start_date, commitment.end_date, t,
+        )
+
     return CommitmentResponse(
         id=str(commitment.id),
         name=commitment.name,
         exercise=commitment.exercise,
         daily_target=commitment.daily_target,
         metric=commitment.metric,
+        cadence=commitment.cadence,
+        targets=commitment.targets,
+        progress=commitment.progress or ({} if commitment.cadence == "aggregate" else None),
+        pace=pace,
         start_date=commitment.start_date,
         end_date=commitment.end_date,
         status=commitment.status,
         created_at=str(commitment.created_at),
         updated_at=str(commitment.updated_at),
-        current_streak=_compute_streak(entry_list, t),
+        current_streak=_compute_streak(entry_list, t) if commitment.cadence == "daily" else 0,
         entries=[_entry_to_response(e) for e in entry_list],
     )
 
@@ -182,29 +258,33 @@ async def create_commitment(
     body: CommitmentCreate,
     session: AsyncSession = Depends(get_db),
 ) -> CommitmentResponse:
-    """Create a commitment and pre-generate daily entries."""
+    """Create a commitment and pre-generate daily entries (for daily cadence)."""
     commitment = Commitment(
         name=body.name,
         exercise=body.exercise,
         daily_target=body.daily_target,
         metric=body.metric,
+        cadence=body.cadence,
+        targets=body.targets if body.cadence == "aggregate" else None,
+        progress={} if body.cadence == "aggregate" else None,
         start_date=body.start_date,
         end_date=body.end_date,
     )
     session.add(commitment)
     await session.flush()
 
-    # Pre-generate entries for each day in the range
+    # Pre-generate entries only for daily cadence
     entries = []
-    current = body.start_date
-    while current <= body.end_date:
-        entry = CommitmentEntry(
-            commitment_id=commitment.id,
-            entry_date=current,
-        )
-        session.add(entry)
-        entries.append(entry)
-        current += timedelta(days=1)
+    if body.cadence == "daily":
+        current = body.start_date
+        while current <= body.end_date:
+            entry = CommitmentEntry(
+                commitment_id=commitment.id,
+                entry_date=current,
+            )
+            session.add(entry)
+            entries.append(entry)
+            current += timedelta(days=1)
 
     await session.commit()
     await session.refresh(commitment)
@@ -215,6 +295,7 @@ async def create_commitment(
         "commitment_created",
         commitment_id=str(commitment.id),
         name=commitment.name,
+        cadence=body.cadence,
         days=len(entries),
     )
     return _commitment_to_response(commitment, entries, _get_today())
@@ -328,6 +409,11 @@ async def log_count(
     commitment = await session.get(Commitment, commitment_id)
     if commitment is None:
         raise HTTPException(status_code=404, detail="Commitment not found")
+    if commitment.cadence == "aggregate":
+        raise HTTPException(
+            status_code=400,
+            detail="Aggregate commitments are tracked via Strava, not manual logging",
+        )
     if commitment.status != "active":
         raise HTTPException(status_code=400, detail="Commitment is not active")
 
