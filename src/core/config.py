@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     strava_verify_token: str = ""
     strava_access_token: SecretStr = SecretStr("")
     strava_refresh_token: SecretStr = SecretStr("")
+    strava_ftp: int = 190  # Functional Threshold Power (watts) for TSS calculation
 
     # ── Feature flags ──────────────────────────────────────────────────────────
     module_todo_enabled: bool = True

@@ -293,6 +293,7 @@ async def _fetch_and_upsert_activity(
     session: AsyncSession, activity_id: int
 ) -> StravaActivity | None:
     """Fetch activity details from Strava API and upsert into database."""
+    settings = _get_settings()
     access_token = await _get_valid_access_token(session)
     if not access_token:
         logger.warning("strava_no_access_token")
@@ -327,11 +328,21 @@ async def _fetch_and_upsert_activity(
 
     started = datetime.fromisoformat(data.get("start_date", "").replace("Z", "+00:00"))
 
+    # Calculate TSS from normalized power (weighted_average_watts) and FTP
+    np_watts = data.get("weighted_average_watts")
+    moving_time = data.get("moving_time")
+    ftp = settings.strava_ftp
+    tss = None
+    if np_watts and moving_time and ftp:
+        intensity_factor = np_watts / ftp
+        tss = round((moving_time * np_watts * intensity_factor) / (ftp * 3600) * 100, 1)
+
     if existing:
         existing.activity_type = data.get("type")
         existing.name = data.get("name")
         existing.distance_m = data.get("distance")
         existing.duration_s = data.get("moving_time")
+        existing.tss = tss
         existing.avg_power_w = data.get("average_watts")
         existing.avg_hr = data.get("average_heartrate")
         existing.elevation_m = data.get("total_elevation_gain")
@@ -345,6 +356,7 @@ async def _fetch_and_upsert_activity(
             name=data.get("name"),
             distance_m=data.get("distance"),
             duration_s=data.get("moving_time"),
+            tss=tss,
             avg_power_w=data.get("average_watts"),
             avg_hr=data.get("average_heartrate"),
             elevation_m=data.get("total_elevation_gain"),
