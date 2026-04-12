@@ -664,3 +664,23 @@ class CommitmentActivity(Base):
     strava_activity: Mapped["StravaActivity"] = relationship(
         "StravaActivity", back_populates="commitment_links"
     )
+
+
+class StravaToken(Base):
+    """Single-row table storing Strava OAuth tokens with auto-refresh.
+
+    Bootstrapped from env vars on first use. Updated in-place when tokens
+    are refreshed via the Strava OAuth refresh_token grant.
+    """
+
+    __tablename__ = "strava_tokens"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    athlete_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, strava_limit
 from src.core.database import get_db
-from src.core.models import Commitment, CommitmentActivity, StravaActivity
+from src.core.models import Commitment, CommitmentActivity, StravaActivity, StravaToken
 
 logger = structlog.get_logger(__name__)
 
@@ -212,12 +212,88 @@ async def _unlink_activity_from_commitments(
             await update_commitment_progress(session, commitment)
 
 
+async def _get_valid_access_token(session: AsyncSession) -> str | None:
+    """Return a valid Strava access token, refreshing if needed.
+
+    On first call, bootstraps from env vars into the strava_tokens table.
+    On subsequent calls, refreshes via OAuth if the token has expired.
+    """
+    settings = _get_settings()
+
+    # Look for existing token row
+    result = await session.execute(select(StravaToken).limit(1))
+    token_row = result.scalar_one_or_none()
+
+    if token_row is None:
+        # Bootstrap from env vars
+        access = settings.strava_access_token.get_secret_value()
+        refresh = settings.strava_refresh_token.get_secret_value()
+        if not access or not refresh:
+            logger.warning("strava_no_env_tokens")
+            return None
+        token_row = StravaToken(
+            access_token=access,
+            refresh_token=refresh,
+            # Assume env token is fresh; will refresh on next expiry
+            expires_at=datetime.now(timezone.utc),
+        )
+        session.add(token_row)
+        await session.commit()
+        await session.refresh(token_row)
+        logger.info("strava_tokens_bootstrapped")
+
+    # Check if token is still valid (60s buffer)
+    now = datetime.now(timezone.utc)
+    if token_row.expires_at.tzinfo is None:
+        expires = token_row.expires_at.replace(tzinfo=timezone.utc)
+    else:
+        expires = token_row.expires_at
+
+    if expires > now + timedelta(seconds=60):
+        return token_row.access_token
+
+    # Refresh the token
+    try:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://www.strava.com/api/v3/oauth/token",
+                data={
+                    "client_id": settings.strava_client_id,
+                    "client_secret": settings.strava_client_secret.get_secret_value(),
+                    "grant_type": "refresh_token",
+                    "refresh_token": token_row.refresh_token,
+                },
+                timeout=10.0,
+            )
+            if resp.status_code != 200:
+                logger.warning("strava_token_refresh_failed", status=resp.status_code)
+                # Fall back to current token (might still work)
+                return token_row.access_token
+
+            data = resp.json()
+            token_row.access_token = data["access_token"]
+            token_row.refresh_token = data["refresh_token"]
+            token_row.expires_at = datetime.fromtimestamp(
+                data["expires_at"], tz=timezone.utc
+            )
+            if data.get("athlete", {}).get("id"):
+                token_row.athlete_id = data["athlete"]["id"]
+            await session.commit()
+            await session.refresh(token_row)
+            logger.info("strava_token_refreshed", expires_at=str(token_row.expires_at))
+            return token_row.access_token
+    except Exception:
+        logger.warning("strava_token_refresh_error", exc_info=True)
+        return token_row.access_token
+
+
 async def _fetch_and_upsert_activity(
     session: AsyncSession, activity_id: int
 ) -> StravaActivity | None:
     """Fetch activity details from Strava API and upsert into database."""
-    settings = _get_settings()
-    access_token = settings.strava_access_token.get_secret_value()
+    access_token = await _get_valid_access_token(session)
     if not access_token:
         logger.warning("strava_no_access_token")
         return None
