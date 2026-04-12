@@ -286,7 +286,7 @@ def _build_todo_view(
     all_todos: list[dict[str, Any]],
     tab: str,
     today: date,
-) -> tuple[discord.Embed, "TodoView"]:
+) -> tuple[discord.Embed, TodoView]:
     """Build (embed, view) for the given tab. Single source of truth for rendering.
 
     Every code path — /todo list, tab switch, done, defer, add — calls this.

@@ -10,13 +10,12 @@ Tests run on SQLite (in-memory) via conftest.py fixtures.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import httpx
 import pytest
-import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.models import RagConversation
@@ -29,7 +28,6 @@ from src.integrations.modules.rag_cog import (
     _parse_model_override,
     _trim_buffer,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -188,13 +186,13 @@ def test_trim_buffer_removes_oldest() -> None:
 
 def test_is_conversation_expired_fresh() -> None:
     """Conversation from 5 minutes ago is NOT expired with 24h TTL."""
-    recent = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    recent = datetime.now(tz=UTC) - timedelta(minutes=5)
     assert _is_conversation_expired(recent, ttl_hours=24) is False
 
 
 def test_is_conversation_expired_old() -> None:
     """Conversation from 25 hours ago IS expired with 24h TTL."""
-    old = datetime.now(tz=timezone.utc) - timedelta(hours=25)
+    old = datetime.now(tz=UTC) - timedelta(hours=25)
     assert _is_conversation_expired(old, ttl_hours=24) is True
 
 
@@ -269,7 +267,7 @@ async def test_load_or_create_conversation_ttl_expiry_resets(async_session: Asyn
         discord_user_id="u2",
         messages=[{"role": "user", "content": "old"}],
         model_name="claude-sonnet-4-6",
-        last_active_at=datetime.now(tz=timezone.utc) - timedelta(hours=2),
+        last_active_at=datetime.now(tz=UTC) - timedelta(hours=2),
     )
     async_session.add(conv)
     await async_session.flush()
@@ -290,7 +288,7 @@ async def test_load_or_create_conversation_model_preserved(async_session: AsyncS
         discord_user_id="u3",
         messages=[],
         model_name="claude-sonnet-4-6",
-        last_active_at=datetime.now(tz=timezone.utc) - timedelta(minutes=5),
+        last_active_at=datetime.now(tz=UTC) - timedelta(minutes=5),
     )
     async_session.add(conv)
     await async_session.flush()

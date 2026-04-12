@@ -5,7 +5,7 @@ history append-only invariant. All tests use in-memory SQLite via conftest.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -66,6 +66,7 @@ async def test_create_todo_invalid_priority(test_client, api_key_headers) -> Non
 async def test_create_todo_writes_history_row(test_client, api_key_headers, async_session) -> None:
     """Creating a todo writes a 'created' history entry automatically."""
     from sqlalchemy import select
+
     from src.core.models import TodoHistory
 
     resp = await test_client.post(
@@ -213,6 +214,7 @@ async def test_get_todo_invalid_uuid(test_client, api_key_headers) -> None:
 async def test_patch_todo_done(test_client, api_key_headers, async_session) -> None:
     """PATCH status=done marks todo done and appends a 'completed' history row."""
     from sqlalchemy import select
+
     from src.core.models import TodoHistory
 
     created = (
@@ -240,6 +242,7 @@ async def test_patch_todo_done(test_client, api_key_headers, async_session) -> N
 async def test_patch_todo_defer_with_reason(test_client, api_key_headers, async_session) -> None:
     """PATCH with due_date + reason appends a 'deferred' history row with reason."""
     from sqlalchemy import select
+
     from src.core.models import TodoHistory
 
     created = (
@@ -1006,7 +1009,7 @@ async def test_overdue_undeferred_includes_deferred_yesterday(
         .where(TodoHistory.event_type == "deferred")
     )
     deferred_row = result.scalar_one()
-    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    yesterday = datetime.now(UTC) - timedelta(days=1)
     deferred_row.created_at = yesterday
     await async_session.commit()
 

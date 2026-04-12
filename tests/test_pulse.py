@@ -16,19 +16,16 @@ All LLM calls and Discord API calls are mocked. Tests run on SQLite.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _today_midnight() -> datetime:
@@ -418,8 +415,8 @@ async def test_list_pulses_returns_empty_list(test_client, api_key_headers):
 async def test_list_pulses_returns_newest_first(test_client, api_key_headers):
     """Pulses are returned in descending order by pulse_date."""
     # Create two pulses on different days
-    day1 = datetime(2026, 3, 1, tzinfo=timezone.utc).isoformat()
-    day2 = datetime(2026, 3, 2, tzinfo=timezone.utc).isoformat()
+    day1 = datetime(2026, 3, 1, tzinfo=UTC).isoformat()
+    day2 = datetime(2026, 3, 2, tzinfo=UTC).isoformat()
 
     await test_client.post("/v1/pulse", json={"pulse_date": day1}, headers=api_key_headers)
     await test_client.post("/v1/pulse", json={"pulse_date": day2}, headers=api_key_headers)
@@ -435,7 +432,7 @@ async def test_list_pulses_returns_newest_first(test_client, api_key_headers):
 @pytest.mark.asyncio
 async def test_list_pulses_pagination(test_client, api_key_headers):
     """limit and offset parameters work correctly."""
-    dates = [datetime(2026, 3, i, tzinfo=timezone.utc).isoformat() for i in range(1, 6)]
+    dates = [datetime(2026, 3, i, tzinfo=UTC).isoformat() for i in range(1, 6)]
     for d in dates:
         await test_client.post("/v1/pulse", json={"pulse_date": d}, headers=api_key_headers)
 
@@ -459,7 +456,7 @@ async def test_list_pulses_requires_auth(test_client):
 @pytest.mark.asyncio
 async def test_get_pulse_by_date_success(test_client, api_key_headers):
     """Returns pulse for a specific date."""
-    specific_date = datetime(2026, 3, 15, tzinfo=timezone.utc)
+    specific_date = datetime(2026, 3, 15, tzinfo=UTC)
     await test_client.post(
         "/v1/pulse",
         json={"pulse_date": specific_date.isoformat(), "status": "parsed"},
@@ -498,11 +495,11 @@ async def test_get_pulse_by_date_requires_auth(test_client):
 @pytest.mark.asyncio
 async def test_today_midnight_utc_respects_configured_timezone(monkeypatch):
     """_today_midnight_utc uses pulse_timezone to compute local midnight in UTC."""
-    from src.api.routes.pulse import _today_midnight_utc
-
     # Freeze "now" in Vilnius timezone: 2026-04-03 01:30 EET (UTC+3)
     # Local midnight = 2026-04-03T00:00 EET = 2026-04-02T21:00 UTC
     from zoneinfo import ZoneInfo
+
+    from src.api.routes.pulse import _today_midnight_utc
 
     frozen = datetime(2026, 4, 3, 1, 30, tzinfo=ZoneInfo("Europe/Vilnius"))
     monkeypatch.setenv("PULSE_TIMEZONE", "Europe/Vilnius")
@@ -759,7 +756,6 @@ async def test_pulse_guard_skips_non_dm_messages(monkeypatch):
 
 def test_pulse_guard_skips_wrong_user():
     """Guard does not fire when author.id != discord_pulse_user_id."""
-    import discord
 
     settings = MagicMock()
     settings.module_pulse_enabled = True

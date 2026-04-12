@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 1.5
-**Date**: 2026-04-05
-**Status**: All phases complete (2026-04-03). All modules implemented: Foundation, Todo, RAG Chat, Morning Pulse.
+**Version**: 1.6
+**Date**: 2026-04-12
+**Status**: All phases + Training & Commitments V1 complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training.
 
 ## Phase 6 Module System (complete)
 
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (18 tables)                                    │
+│ Structured Memory (21 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**18 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**21 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -275,8 +275,13 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 ### Module: RAG Chat
 - **rag_conversations**: Persisted conversation buffer; unique on (channel_id, user_id)
 
+### Module: Training & Commitments
+- **commitments**: Challenge definitions with exercise, daily_target, metric (reps/minutes/tss), date range, status (active/completed/abandoned)
+- **commitment_entries**: One row per commitment per day, pre-generated on creation; logged_count incremented by log actions; status: pending→hit (auto on target met) or pending→miss (nightly cron)
+- **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response
+
 ### Job monitoring
-- **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis); used by `/v1/jobs/status`
+- **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis, commitment_miss); used by `/v1/jobs/status`
 
 ### Key design patterns
 

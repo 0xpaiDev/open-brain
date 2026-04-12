@@ -76,6 +76,10 @@ def main() -> int:
         "embedding_dimensions",  # Used only for DDL in Alembic, not at runtime
         "importance_base_default",  # Placeholder for importance scoring (not yet used)
         "search_default_limit",  # Placeholder for search limits (not yet used)
+        "strava_client_id",  # Strava OAuth (manual token refresh for MVP)
+        "strava_client_secret",  # Strava OAuth (manual token refresh for MVP)
+        "strava_refresh_token",  # Strava OAuth (manual token refresh for MVP)
+        "module_training_enabled",  # Feature flag for training module (wired post-MVP)
     }
 
     dead_fields = []

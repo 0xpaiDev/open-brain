@@ -87,6 +87,42 @@ function NoPulse({ onCreate }: { onCreate: () => void }) {
   );
 }
 
+function SegmentedToggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm font-label text-on-surface-variant">{label}</span>
+      <div className="flex gap-1">
+        {[
+          { text: "Yes", val: true },
+          { text: "No", val: false },
+        ].map(({ text, val }) => (
+          <button
+            key={text}
+            type="button"
+            onClick={() => onChange(val)}
+            className={`h-9 px-4 rounded-full text-base md:text-sm font-body transition-all active:scale-95 cursor-pointer ${
+              value === val
+                ? "bg-primary text-on-primary"
+                : "bg-surface-container-high text-on-surface-variant"
+            }`}
+            aria-label={`${label}: ${text}`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PulseForm({
   aiQuestion,
   onSubmit,
@@ -98,6 +134,8 @@ function PulseForm({
     energy_level?: number;
     ai_question_response?: string;
     notes?: string;
+    clean_meal?: boolean;
+    alcohol?: boolean;
   }) => Promise<void>;
 }) {
   const [wakeTime, setWakeTime] = useState("");
@@ -105,6 +143,8 @@ function PulseForm({
   const [energyLevel, setEnergyLevel] = useState(0);
   const [answer, setAnswer] = useState("");
   const [notes, setNotes] = useState("");
+  const [cleanMeal, setCleanMeal] = useState<boolean | null>(null);
+  const [alcohol, setAlcohol] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -117,6 +157,8 @@ function PulseForm({
         energy_level: energyLevel || undefined,
         ai_question_response: answer || undefined,
         notes: notes || undefined,
+        clean_meal: cleanMeal ?? undefined,
+        alcohol: alcohol ?? undefined,
       });
     } finally {
       setSubmitting(false);
@@ -202,6 +244,8 @@ function PulseForm({
               labels={ENERGY_LABELS}
             />
           </div>
+          <SegmentedToggle label="Clean eating" value={cleanMeal} onChange={setCleanMeal} />
+          <SegmentedToggle label="Alcohol" value={alcohol} onChange={setAlcohol} />
         </div>
       </div>
 
@@ -281,6 +325,20 @@ function PulseSummary({ pulse }: { pulse: NonNullable<ReturnType<typeof usePulse
                 bolt
               </span>
             ))}
+          </div>
+        )}
+
+        {pulse.clean_meal !== null && pulse.clean_meal !== undefined && (
+          <div className="flex items-center gap-1.5 text-on-surface-variant">
+            <span className="material-symbols-outlined text-base">restaurant</span>
+            <span>{pulse.clean_meal ? "Clean" : "Cheat"}</span>
+          </div>
+        )}
+
+        {pulse.alcohol !== null && pulse.alcohol !== undefined && (
+          <div className="flex items-center gap-1.5 text-on-surface-variant">
+            <span className="material-symbols-outlined text-base">local_bar</span>
+            <span>{pulse.alcohol ? "Drank" : "Sober"}</span>
           </div>
         )}
       </div>

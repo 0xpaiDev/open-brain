@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_context as get_db
 from src.core.models import RagConversation
-from src.integrations.kernel import _get_settings, ingest_memory, search_memories
+from src.integrations.kernel import ingest_memory, search_memories
 from src.llm.rag_prompts import build_rag_system_prompt, build_rag_user_message
 
 logger = structlog.get_logger(__name__)
@@ -101,9 +101,9 @@ def _is_conversation_expired(last_active_at: datetime, ttl_hours: int) -> bool:
     Returns:
         True if the conversation has expired, False otherwise
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     if last_active_at.tzinfo is None:
-        last_active_at = last_active_at.replace(tzinfo=timezone.utc)
+        last_active_at = last_active_at.replace(tzinfo=UTC)
     return (now - last_active_at).total_seconds() > ttl_hours * 3600
 
 
@@ -208,11 +208,11 @@ async def _handle_rag_message(
 
             # ── Rate limit: only if conversation already has history ──────────
             if conv.messages:
-                now = datetime.now(tz=timezone.utc)
+                now = datetime.now(tz=UTC)
                 last_active = conv.last_active_at
                 if last_active is not None:
                     if last_active.tzinfo is None:
-                        last_active = last_active.replace(tzinfo=timezone.utc)
+                        last_active = last_active.replace(tzinfo=UTC)
                     elapsed = (now - last_active).total_seconds()
                     if elapsed < _RATE_LIMIT_SECONDS:
                         await message.reply(
@@ -279,7 +279,7 @@ async def _handle_rag_message(
 
             conv.messages = new_history
             conv.model_name = effective_model
-            conv.last_active_at = datetime.now(tz=timezone.utc)
+            conv.last_active_at = datetime.now(tz=UTC)
             await session.flush()
             await session.commit()
             await session.refresh(conv)

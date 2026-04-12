@@ -6,11 +6,10 @@ Google API calls are always mocked.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +28,7 @@ def test_is_within_reply_window_true():
     """Message within window returns True."""
     from src.integrations.modules.pulse_cog import _is_within_reply_window
 
-    created_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    created_at = datetime.now(UTC) - timedelta(minutes=30)
     assert _is_within_reply_window(created_at, window_minutes=120) is True
 
 
@@ -37,7 +36,7 @@ def test_is_within_reply_window_false_expired():
     """Message outside window returns False."""
     from src.integrations.modules.pulse_cog import _is_within_reply_window
 
-    created_at = datetime.now(timezone.utc) - timedelta(minutes=180)
+    created_at = datetime.now(UTC) - timedelta(minutes=180)
     assert _is_within_reply_window(created_at, window_minutes=120) is False
 
 
@@ -45,7 +44,7 @@ def test_is_within_reply_window_boundary():
     """Message at exact boundary (window_minutes ago) is outside window."""
     from src.integrations.modules.pulse_cog import _is_within_reply_window
 
-    created_at = datetime.now(timezone.utc) - timedelta(minutes=120, seconds=1)
+    created_at = datetime.now(UTC) - timedelta(minutes=120, seconds=1)
     assert _is_within_reply_window(created_at, window_minutes=120) is False
 
 
@@ -53,7 +52,7 @@ def test_is_within_reply_window_just_inside():
     """Message 1 second before the boundary is inside window."""
     from src.integrations.modules.pulse_cog import _is_within_reply_window
 
-    created_at = datetime.now(timezone.utc) - timedelta(minutes=119, seconds=59)
+    created_at = datetime.now(UTC) - timedelta(minutes=119, seconds=59)
     assert _is_within_reply_window(created_at, window_minutes=120) is True
 
 
@@ -127,7 +126,7 @@ async def test_fetch_returns_events_on_success():
 
     today_str = datetime.now().date().isoformat()
     mock_state = CalendarState(
-        fetched_at=datetime.now(timezone.utc).isoformat(),
+        fetched_at=datetime.now(UTC).isoformat(),
         date=today_str,
         events=[
             CalendarEvent(title="Standup", start="09:00", end="09:30", all_day=False),

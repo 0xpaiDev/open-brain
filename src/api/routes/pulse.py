@@ -80,6 +80,8 @@ class PulseUpdate(BaseModel):
     ai_question_response: str | None = None
     notes: str | None = None
     status: str | None = None
+    clean_meal: bool | None = None
+    alcohol: bool | None = None
 
     @field_validator("sleep_quality", "energy_level")
     @classmethod
@@ -109,6 +111,8 @@ class PulseResponse(BaseModel):
     notes: str | None
     status: str
     discord_message_id: str | None
+    clean_meal: bool | None
+    alcohol: bool | None
     created_at: datetime
     updated_at: datetime
 
@@ -135,6 +139,8 @@ def _pulse_to_response(pulse: DailyPulse) -> PulseResponse:
         notes=pulse.notes,
         status=pulse.status,
         discord_message_id=pulse.discord_message_id,
+        clean_meal=pulse.clean_meal,
+        alcohol=pulse.alcohol,
         created_at=pulse.created_at,
         updated_at=pulse.updated_at,
     )
@@ -363,6 +369,10 @@ async def update_today_pulse(
         pulse.notes = body.notes
     if body.status is not None:
         pulse.status = body.status
+    if body.clean_meal is not None:
+        pulse.clean_meal = body.clean_meal
+    if body.alcohol is not None:
+        pulse.alcohol = body.alcohol
 
     await session.flush()
     await session.commit()

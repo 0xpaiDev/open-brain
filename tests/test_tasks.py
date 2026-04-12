@@ -7,7 +7,7 @@ Covers:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -15,7 +15,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from src.core.models import MemoryItem, RawMemory, Task
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -154,13 +153,13 @@ async def test_list_tasks_filter_by_due_before(client, auth_headers, async_sessi
     past = Task(
         memory_id=memory_item.id,
         description="Past task",
-        due_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        due_date=datetime(2020, 1, 1, tzinfo=UTC),
         status="open",
     )
     future = Task(
         memory_id=memory_item.id,
         description="Future task",
-        due_date=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        due_date=datetime(2099, 1, 1, tzinfo=UTC),
         status="open",
     )
     async_session.add(past)

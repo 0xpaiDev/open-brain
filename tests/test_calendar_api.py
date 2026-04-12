@@ -136,6 +136,7 @@ async def test_calendar_today_cache_expired_triggers_refetch(
 
         # Expire the cache by backdating the timestamp
         from datetime import timedelta
+
         from src.api.routes import calendar_api
 
         calendar_api._cache["fetched_at"] = datetime.now(UTC) - timedelta(minutes=6)

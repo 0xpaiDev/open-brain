@@ -12,7 +12,7 @@ exactly. Any deviation causes a full table scan.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -212,7 +212,7 @@ async def hybrid_search(
         project_filter,
     )
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     results: list[SearchResult] = []
 
     for row in rows:
@@ -220,7 +220,7 @@ async def hybrid_search(
         created_at = row.created_at
         if created_at is not None and hasattr(created_at, "tzinfo"):
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=UTC)
             age_days = (now - created_at).total_seconds() / 86400
         else:
             age_days = 0.0

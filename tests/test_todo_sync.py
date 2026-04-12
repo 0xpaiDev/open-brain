@@ -13,7 +13,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,7 +26,6 @@ from src.pipeline.todo_sync import (
     sync_todo_to_memory,
 )
 
-
 # ── Unit tests ───────────────────────────────────────────────────────────────
 
 
@@ -36,7 +35,7 @@ def test_format_todo_content_open():
     todo.description = "Fix deployment script"
     todo.priority = "high"
     todo.status = "open"
-    todo.due_date = datetime(2026, 4, 10, tzinfo=timezone.utc)
+    todo.due_date = datetime(2026, 4, 10, tzinfo=UTC)
     todo.label = "work"
 
     content, memory_type = _format_todo_content(todo, "created")
@@ -54,7 +53,7 @@ def test_format_todo_content_completed():
     todo = MagicMock()
     todo.description = "Fix deployment script"
     todo.priority = "high"
-    todo.updated_at = datetime(2026, 4, 7, tzinfo=timezone.utc)
+    todo.updated_at = datetime(2026, 4, 7, tzinfo=UTC)
     todo.label = "work"
 
     content, memory_type = _format_todo_content(todo, "completed")
@@ -165,7 +164,7 @@ async def test_sync_completion_creates_both_memories(async_session):
 
     # Complete the todo
     todo.status = "done"
-    todo.updated_at = datetime(2026, 4, 7, tzinfo=timezone.utc)
+    todo.updated_at = datetime(2026, 4, 7, tzinfo=UTC)
     await async_session.commit()
 
     with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024):

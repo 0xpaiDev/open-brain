@@ -13,6 +13,7 @@ from src.api.middleware.auth import APIKeyMiddleware
 from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.api.routes.calendar_api import router as calendar_router
 from src.api.routes.chat import router as chat_router
+from src.api.routes.commitments import router as commitments_router
 from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
@@ -22,9 +23,11 @@ from src.api.routes.project_labels import router as project_labels_router
 from src.api.routes.pulse import router as pulse_router
 from src.api.routes.queue import router as queue_router
 from src.api.routes.search import router as search_router
+from src.api.routes.strava import router as strava_router
 from src.api.routes.tasks import router as tasks_router
 from src.api.routes.todo_labels import router as todo_labels_router
 from src.api.routes.todos import router as todos_router
+from src.api.routes.training import router as training_router
 from src.api.routes.voice import router as voice_router
 from src.core.config import get_settings
 from src.core.database import close_db, init_db
@@ -96,3 +99,6 @@ app.include_router(jobs_router, tags=["Jobs"])
 app.include_router(calendar_router, tags=["Calendar"])
 app.include_router(chat_router, tags=["Chat"])
 app.include_router(voice_router, tags=["Voice"])
+app.include_router(commitments_router, tags=["Commitments"])
+app.include_router(strava_router, tags=["Strava"])
+app.include_router(training_router, tags=["Training"])

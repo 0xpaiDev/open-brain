@@ -22,7 +22,6 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.pipeline.constants import AUTO_CAPTURE_SOURCES, TASK_SKIP_SOURCES
 from src.core.database import get_db_context as get_db
 from src.core.models import (
     Entity,
@@ -40,6 +39,7 @@ from src.llm.client import (
     anthropic_client,
     embedding_client,
 )
+from src.pipeline.constants import AUTO_CAPTURE_SOURCES, TASK_SKIP_SOURCES
 from src.pipeline.embedder import embed_text
 from src.pipeline.entity_resolver import resolve_entities
 from src.pipeline.extractor import extract

@@ -12,23 +12,22 @@ Tests run on SQLite (in-memory) via conftest.py fixtures.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.models import MemoryItem, RawMemory
 from src.llm.rag_prompts import (
     QUERY_FORMULATION_SYSTEM,
     build_query_formulation_content,
     build_rag_system_prompt,
     build_rag_user_message,
 )
-from src.core.models import MemoryItem, RawMemory
 from src.retrieval.search import SearchResult
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -66,7 +65,7 @@ def _mock_search_results() -> list[SearchResult]:
             type="memory",
             importance_score=0.8,
             combined_score=0.75,
-            created_at=datetime(2026, 1, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 1, 15, tzinfo=UTC),
             project="learning",
         ),
         SearchResult(
@@ -76,7 +75,7 @@ def _mock_search_results() -> list[SearchResult]:
             type="decision",
             importance_score=0.9,
             combined_score=0.85,
-            created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 2, 1, tzinfo=UTC),
             project=None,
         ),
     ]
@@ -518,7 +517,7 @@ async def test_chat_finds_synced_todo(client: AsyncClient, auth_headers: dict, m
         type="todo",
         importance_score=0.7,
         combined_score=0.8,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         project=None,
     )
     mock_anthropic, _, _ = _patch_chat_deps(

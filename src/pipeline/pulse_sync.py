@@ -38,6 +38,10 @@ def _format_pulse_content(pulse: DailyPulse) -> str:
         parts.append(f"Notes: {pulse.notes}")
     if pulse.ai_question and pulse.ai_question_response:
         parts.append(f"AI question: {pulse.ai_question} Response: {pulse.ai_question_response}")
+    if pulse.clean_meal is not None:
+        parts.append(f"Clean eating: {'yes' if pulse.clean_meal else 'no'}.")
+    if pulse.alcohol is not None:
+        parts.append(f"Alcohol: {'yes' if pulse.alcohol else 'no'}.")
 
     return " ".join(parts)
 

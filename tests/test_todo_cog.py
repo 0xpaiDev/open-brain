@@ -5,7 +5,7 @@ slash commands, button callbacks, modals, and the on_message prefix listener.
 All httpx calls are mocked — no real API is hit.
 """
 
-from datetime import date
+from datetime import UTC, date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -32,7 +32,6 @@ from src.integrations.modules.todo_cog import (
     format_todo_line,
     parse_natural_date,
 )
-
 
 # ── parse_natural_date ────────────────────────────────────────────────────────
 
@@ -140,9 +139,9 @@ def test_humanize_age_none() -> None:
 
 
 def test_humanize_age_today() -> None:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now_iso = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_iso = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert _humanize_age(now_iso) == "created today"
 
 

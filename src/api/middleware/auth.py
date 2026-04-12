@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 # Paths that do not require authentication
-_PUBLIC_PATHS = {"/health", "/ready"}
+_PUBLIC_PATHS = {"/health", "/ready", "/v1/strava/webhook"}
 
 
 def _get_api_key() -> str:

@@ -11,6 +11,8 @@ export interface PulseResponse {
   energy_level: number | null;
   notes: string | null;
   parsed_data: Record<string, unknown> | null;
+  clean_meal: boolean | null;
+  alcohol: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +71,8 @@ export interface PulseUpdate {
   ai_question_response?: string;
   notes?: string;
   status?: string;
+  clean_meal?: boolean;
+  alcohol?: boolean;
 }
 
 export interface TodoCreate {
@@ -241,4 +245,45 @@ export interface DeadLetterItem {
 export interface DeadLetterListResponse {
   items: DeadLetterItem[];
   total: number;
+}
+
+/* ── Commitment types ────────────────────────────────────────────────── */
+
+export interface CommitmentEntry {
+  id: string;
+  commitment_id: string;
+  entry_date: string;
+  logged_count: number;
+  status: "pending" | "hit" | "miss";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommitmentResponse {
+  id: string;
+  name: string;
+  exercise: string;
+  daily_target: number;
+  metric: string;
+  start_date: string;
+  end_date: string;
+  status: "active" | "completed" | "abandoned";
+  created_at: string;
+  updated_at: string;
+  current_streak: number;
+  entries: CommitmentEntry[];
+}
+
+export interface CommitmentListResponse {
+  commitments: CommitmentResponse[];
+  total: number;
+}
+
+export interface CommitmentCreate {
+  name: string;
+  exercise: string;
+  daily_target: number;
+  metric?: string;
+  start_date: string;
+  end_date: string;
 }

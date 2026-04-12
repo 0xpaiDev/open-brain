@@ -15,14 +15,17 @@ When changing the formula for importance_score, you must:
 This is documented in IMPLEMENTATION_PLAN.md.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     UUID,
+    BigInteger,
+    Boolean,
     Computed,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -150,6 +153,7 @@ class MemoryItem(Base):
     )
     is_superseded: Mapped[bool] = mapped_column(default=False)
     project: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    tags: Mapped[list | None] = mapped_column(JSON_TYPE, nullable=True, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -471,6 +475,8 @@ class DailyPulse(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="sent")
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    clean_meal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    alcohol: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -528,3 +534,88 @@ class JobRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_job_runs_name_started", "job_name", started_at.desc()),)
+
+
+# ── Module: Training & Commitments ───────────────────────────────────────────
+
+
+class Commitment(Base):
+    """A commitment challenge with daily targets and date range.
+
+    metric: "reps" | "minutes" | "tss"
+    status: "active" | "completed" | "abandoned"
+    """
+
+    __tablename__ = "commitments"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    exercise: Mapped[str] = mapped_column(String(100), nullable=False)
+    daily_target: Mapped[int] = mapped_column(Integer, nullable=False)
+    metric: Mapped[str] = mapped_column(String(20), default="reps")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    entries: Mapped[list["CommitmentEntry"]] = relationship(
+        "CommitmentEntry", back_populates="commitment", cascade="all, delete-orphan"
+    )
+
+
+class CommitmentEntry(Base):
+    """One row per commitment per day. Pre-generated on commitment creation.
+
+    status: "pending" | "hit" | "miss"
+    logged_count is incremented by log actions — additive, not replacement.
+    """
+
+    __tablename__ = "commitment_entries"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    commitment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
+    )
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    logged_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("commitment_id", "entry_date", name="uq_commitment_entry_date"),
+        Index("ix_commitment_entries_commitment_date", "commitment_id", "entry_date"),
+    )
+
+    # Relationships
+    commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="entries")
+
+
+class StravaActivity(Base):
+    """Cached Strava activity data ingested via webhook.
+
+    strava_id is Strava's activity ID — UNIQUE to prevent duplicate inserts
+    from webhook retries. raw_data stores the full API response for future use.
+    """
+
+    __tablename__ = "strava_activities"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    strava_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    activity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_power_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elevation_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -8,7 +8,7 @@ GET    /v1/todos/{id}/history — state change log
 """
 
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -214,7 +214,7 @@ async def list_todos(
         count_stmt = count_stmt.where(TodoItem.label == label)
     if due_before is not None:
         if due_before.tzinfo is None:
-            due_before = due_before.replace(tzinfo=timezone.utc)
+            due_before = due_before.replace(tzinfo=UTC)
         stmt = stmt.where(TodoItem.due_date <= due_before)
         count_stmt = count_stmt.where(TodoItem.due_date <= due_before)
 
@@ -246,7 +246,7 @@ async def list_overdue_undeferred(
     Returns:
         List of TodoResponse for overdue, un-deferred tasks.
     """
-    start_of_today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     deferred_today_sub = (
         select(TodoHistory.todo_id)

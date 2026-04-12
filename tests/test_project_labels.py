@@ -5,7 +5,6 @@ Covers label CRUD, validation, duplicates, and auth.
 
 import pytest
 
-
 # ── POST /v1/project-labels ──────────────────────────────────────────────────
 
 

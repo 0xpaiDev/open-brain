@@ -4,7 +4,6 @@ Extracted from discord_bot.py to keep the main bot loader thin.
 All commands use the shared kernel helpers.
 """
 
-from typing import Any
 
 import discord
 import httpx

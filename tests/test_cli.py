@@ -8,10 +8,8 @@ functions (_ingest_async, _search_async, etc.) with AsyncMock.
 Naming convention: test_<command>_<scenario>
 """
 
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from cli.ob import app
@@ -55,7 +53,7 @@ def test_ingest_async_prints_queued():
         async def side_effect(text, source):
             import typer
 
-            typer.echo(f"Ingested. raw_id=aaaa-bbbb status=queued")
+            typer.echo("Ingested. raw_id=aaaa-bbbb status=queued")
 
         mock_fn.side_effect = side_effect
         result = runner.invoke(app, ["ingest", "new memory text"])
@@ -372,8 +370,8 @@ def test_worker_help():
 
 def test_cli_reads_correct_api_url_env_var():
     """CLI reads OPEN_BRAIN_API_URL (not OPENBRAIN_API_URL)."""
-    import os
     import importlib
+    import os
 
     # Clear any existing env vars
     os.environ.pop("OPEN_BRAIN_API_URL", None)

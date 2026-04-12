@@ -86,6 +86,18 @@ def _get_chat_rate() -> str:
     return "30/minute"
 
 
+def _get_commitments_rate() -> str:
+    return "30/minute"
+
+
+def _get_strava_rate() -> str:
+    return "30/minute"
+
+
+def _get_training_rate() -> str:
+    return "30/minute"
+
+
 # Module-level limiter — shared across all routes that import it.
 # key_func=get_remote_address uses the client IP (or X-Forwarded-For when
 # --proxy-headers is active, which we enable in docker-compose.yml).
@@ -103,3 +115,6 @@ tasks_limit = _get_tasks_rate
 pulse_limit = _get_pulse_rate
 calendar_limit = _get_calendar_rate
 chat_limit = _get_chat_rate
+commitments_limit = _get_commitments_rate
+strava_limit = _get_strava_rate
+training_limit = _get_training_rate

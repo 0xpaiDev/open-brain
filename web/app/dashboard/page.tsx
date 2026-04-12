@@ -2,6 +2,7 @@
 
 import { MorningPulse } from "@/components/dashboard/morning-pulse";
 import { CalendarStrip } from "@/components/dashboard/calendar-strip";
+import { CommitmentList } from "@/components/dashboard/commitment-list";
 import { TaskList } from "@/components/dashboard/task-list";
 import { OverdueModal } from "@/components/dashboard/overdue-modal";
 
@@ -21,6 +22,7 @@ export default function DashboardPage() {
       </div>
       <MorningPulse />
       <CalendarStrip />
+      <CommitmentList />
       <TaskList />
     </div>
   );

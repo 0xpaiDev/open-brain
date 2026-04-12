@@ -12,12 +12,9 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import pytest_asyncio
-from sqlalchemy import select
 
 from src.core.models import MemoryItem, RawMemory, RetrievalEvent
 from src.jobs.importance import NORMALIZATION_FACTOR, _compute_weighted_score, run_importance_job
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

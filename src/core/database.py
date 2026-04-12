@@ -10,7 +10,6 @@ from sqlalchemy.orm import sessionmaker
 # Forward declaration — populated after init_db() so callers can do:
 #   from src.core.database import get_db_context
 #   async with get_db_context() as session: ...
-
 from src.core.config import get_settings
 
 async_engine: AsyncEngine | None = None

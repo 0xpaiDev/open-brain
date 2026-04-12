@@ -10,8 +10,6 @@ import math
 from src.core.config import get_settings
 
 
-
-
 def recency_score(age_days: float) -> float:
     """Exponential decay score based on memory age.
 

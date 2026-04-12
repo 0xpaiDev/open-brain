@@ -98,8 +98,8 @@ async def test_client(async_session: AsyncSession):
     """
     try:
         from httpx import ASGITransport, AsyncClient
-        from src.api.main import app  # deferred
 
+        from src.api.main import app  # deferred
         from src.core.database import get_db  # deferred
     except ImportError as e:
         pytest.skip(f"API module not implemented yet: {e}")

@@ -4,11 +4,11 @@ Validates that the validation scripts correctly identify dead code and
 configuration inconsistencies.
 """
 
+import shutil
 import subprocess
 import sys
-from pathlib import Path
 import tempfile
-import shutil
+from pathlib import Path
 
 
 def test_check_config_passes_with_clean_code() -> None:

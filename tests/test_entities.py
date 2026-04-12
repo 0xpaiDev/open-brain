@@ -14,8 +14,14 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from src.core.models import Entity, EntityAlias, EntityRelation, MemoryEntityLink, MemoryItem, RawMemory
-
+from src.core.models import (
+    Entity,
+    EntityAlias,
+    EntityRelation,
+    MemoryEntityLink,
+    MemoryItem,
+    RawMemory,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

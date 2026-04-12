@@ -6,7 +6,7 @@ Covers:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -14,7 +14,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from src.core.models import FailedRefinement, RawMemory, RefinementQueue
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -60,7 +59,7 @@ async def _make_dead_letter(
         error_reason="extraction failed",
         attempt_count=3,
         retry_count=retry_count,
-        resolved_at=datetime.now(timezone.utc) if resolved else None,
+        resolved_at=datetime.now(UTC) if resolved else None,
     )
     async_session.add(failed)
     await async_session.flush()

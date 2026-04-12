@@ -9,7 +9,6 @@ import pytest
 
 from src.retrieval.ranking import combined_score, recency_score
 
-
 # ── recency_score ─────────────────────────────────────────────────────────────
 
 

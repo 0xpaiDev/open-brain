@@ -77,10 +77,18 @@ class Settings(BaseSettings):
     # Open Brain API URL (used by integrations to call the local API)
     open_brain_api_url: str = "http://localhost:8000"
 
+    # ── Strava integration ────────────────────────────────────────────────────
+    strava_client_id: str = ""
+    strava_client_secret: SecretStr = SecretStr("")
+    strava_verify_token: str = ""
+    strava_access_token: SecretStr = SecretStr("")
+    strava_refresh_token: SecretStr = SecretStr("")
+
     # ── Feature flags ──────────────────────────────────────────────────────────
     module_todo_enabled: bool = True
     module_pulse_enabled: bool = True
     module_rag_chat_enabled: bool = True
+    module_training_enabled: bool = True
 
     # ── Todo ───────────────────────────────────────────────────────────────────
     discord_todo_channel_id: int = 0  # channel ID for prefix listener; 0 = disabled

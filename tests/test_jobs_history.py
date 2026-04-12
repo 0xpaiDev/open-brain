@@ -3,14 +3,13 @@
 Covers pagination, filtering by job_name and status, ordering, and auth.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from src.core.models import JobRun
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +46,7 @@ async def _make_job_run(
     duration_seconds: float = 1.5,
 ) -> JobRun:
     """Helper to create a JobRun row."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     started = started_at or now
     run = JobRun(
         job_name=job_name,
@@ -133,7 +132,7 @@ async def test_job_history_pagination(client, auth_headers, async_session):
     for i in range(5):
         await _make_job_run(
             async_session,
-            started_at=datetime(2026, 1, 1 + i, tzinfo=timezone.utc),
+            started_at=datetime(2026, 1, 1 + i, tzinfo=UTC),
         )
 
     resp = await client.get("/v1/jobs/history?limit=2&offset=1", headers=auth_headers)
@@ -147,11 +146,11 @@ async def test_job_history_pagination(client, auth_headers, async_session):
 async def test_job_history_ordered_by_started_at_desc(client, auth_headers, async_session):
     early = await _make_job_run(
         async_session,
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     late = await _make_job_run(
         async_session,
-        started_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
 
     resp = await client.get("/v1/jobs/history", headers=auth_headers)

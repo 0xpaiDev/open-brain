@@ -6,7 +6,7 @@ so no real Discord connection is required. httpx.AsyncClient is always mocked
 — we never hit the real API in tests.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -17,7 +17,6 @@ from src.integrations.discord_bot import (
     search_memories,
     trigger_digest,
 )
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 

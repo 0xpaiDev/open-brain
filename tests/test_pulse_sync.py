@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -20,14 +20,13 @@ from sqlalchemy import select
 from src.core.models import DailyPulse, MemoryItem, RawMemory
 from src.pipeline.pulse_sync import _format_pulse_content, sync_pulse_to_memory
 
-
 # ── Unit tests: content formatting ──────────────────────────────────────────
 
 
 def test_format_pulse_content_all_fields():
     """Pulse with all fields produces a complete natural-language string."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=4,
         energy_level=3,
         wake_time="07:30",
@@ -51,7 +50,7 @@ def test_format_pulse_content_all_fields():
 def test_format_pulse_content_minimal():
     """Pulse with only sleep_quality omits missing-field clauses."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=3,
         status="completed",
     )
@@ -69,7 +68,7 @@ def test_format_pulse_content_minimal():
 def test_format_pulse_content_no_data():
     """Pulse with no data fields produces a date-only string."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         status="completed",
     )
 
@@ -81,7 +80,7 @@ def test_format_pulse_content_no_data():
 def test_format_pulse_content_ai_question_without_response():
     """AI question without response is omitted (both must be present)."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=4,
         ai_question="What's one thing you want to accomplish today?",
         status="completed",
@@ -100,7 +99,7 @@ def test_format_pulse_content_ai_question_without_response():
 async def test_sync_creates_raw_memory_and_memory_item(async_session):
     """sync_pulse_to_memory() creates RawMemory(source='daily-pulse') and MemoryItem(type='daily_pulse')."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=4,
         energy_level=3,
         wake_time="07:30",
@@ -136,7 +135,7 @@ async def test_sync_creates_raw_memory_and_memory_item(async_session):
 async def test_sync_supersedes_on_re_sync(async_session):
     """Re-syncing a pulse supersedes the old memory_item."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=3,
         status="completed",
     )
@@ -171,7 +170,7 @@ async def test_sync_supersedes_on_re_sync(async_session):
 async def test_sync_raises_on_embedding_failure(async_session):
     """sync_pulse_to_memory() raises on embedding failure (caller catches)."""
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=3,
         status="completed",
     )
@@ -190,7 +189,7 @@ async def test_try_pulse_sync_catches_exceptions(async_session):
     from src.api.routes.pulse import _try_pulse_sync
 
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=3,
         status="completed",
     )
@@ -216,7 +215,7 @@ async def test_try_pulse_sync_skips_without_embedding_client(async_session):
     from src.api.routes.pulse import _try_pulse_sync
 
     pulse = DailyPulse(
-        pulse_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
         sleep_quality=3,
         status="completed",
     )

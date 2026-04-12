@@ -1,6 +1,49 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-11** | 6 phases + dashboard + chat + todo/pulse sync + ops log dashboard + UI polish + voice command endpoint + web voice unification, ~1098 tests (883 backend + 208 Vitest + 7 E2E)
+Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1, ~1132 tests (891 backend + 234 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-12 (Training & Commitments V1)
+
+**What changed**:
+- 3 new ORM models (`Commitment`, `CommitmentEntry`, `StravaActivity` in `src/core/models.py`) + `tags` JSONB column on `memory_items` + `clean_meal`/`alcohol` booleans on `daily_pulse`
+- Migration `0010_training_commitments.py`: 3 new tables, 3 new columns, GIN index on tags, RLS on new tables
+- 3 new API route files: `src/api/routes/commitments.py` (CRUD + log), `src/api/routes/strava.py` (webhook + activities), `src/api/routes/training.py` (weekly-sync + summary)
+- Training sync pipeline (`src/pipeline/training_sync.py`) + commitment miss cron (`src/jobs/commitment_miss.py`)
+- Frontend: `CommitmentList` dashboard component (`web/components/dashboard/commitment-list.tsx`) with streak dots, progress bars, quick-log; nutrition toggles in `morning-pulse.tsx`; `useCommitments` hook
+- Pulse nutrition extension: `clean_meal`/`alcohol` in PulseUpdate/PulseResponse schemas, PATCH handler, `_format_pulse_content()`
+- Config: Strava env vars, `module_training_enabled` flag, `TASK_SKIP_SOURCES` extended
+- +26 backend tests, +16 frontend tests
+
+**Files touched**: `src/core/models.py`, `src/core/config.py`, `src/pipeline/constants.py`, `src/pipeline/pulse_sync.py`, `src/pipeline/training_sync.py` (new), `src/api/main.py`, `src/api/middleware/auth.py`, `src/api/middleware/rate_limit.py`, `src/api/routes/commitments.py` (new), `src/api/routes/strava.py` (new), `src/api/routes/training.py` (new), `src/api/routes/pulse.py`, `src/jobs/commitment_miss.py` (new), `alembic/versions/0010_training_commitments.py` (new), `web/lib/types.ts`, `web/hooks/use-commitments.ts` (new), `web/hooks/use-pulse.ts`, `web/components/dashboard/commitment-list.tsx` (new), `web/components/dashboard/morning-pulse.tsx`, `web/app/dashboard/page.tsx`, `web/app/globals.css`, `.env.example`, `scripts/check_config.py`, `tests/test_commitments.py` (new), `web/__tests__/hooks/use-commitments.test.ts` (new), `web/__tests__/components/commitment-list.test.tsx` (new), `web/__tests__/components/morning-pulse-nutrition.test.tsx` (new)
+
+**Decisions made**: Strava OAuth token refresh is manual for MVP (env vars, not DB). Commitment entries pre-generated on creation (not created on-the-fly). Training sync follows pulse_sync direct-create pattern (bypasses refinement queue). HMAC webhook validation uses client_secret (not verify_token). Strava webhook POST is rate-limited even though public.
+
+**Gotchas found**: Route params for UUID PKs must use `uuid.UUID` type (not `str`) or SQLite tests break with `'str' object has no attribute 'hex'`. Strava HMAC should validate against client_secret, not verify_token. Verify_token comparison needs `hmac.compare_digest()` for timing safety. `date.today()` in training routes must use pulse_timezone, not system TZ.
+
+**Test count**: ~1132 total (891 backend + 234 Vitest + 7 E2E)
+
+---
+
+## Session — 2026-04-11 (Todo Edit + Hard-Delete)
+
+**What changed**:
+- New `DELETE /v1/todos/{todo_id}` endpoint in `src/api/routes/todos.py` — 204 on success, supersedes memory_items via new `supersede_memory_for_todo()` helper in `src/pipeline/todo_sync.py`, then hard-deletes the row (TodoHistory cascades via FK)
+- `web/hooks/use-todos.ts` gains `editTodo(id, desc, due, reason?)` and `deleteTodo(id)` with optimistic + rollback-on-error patterns
+- New `web/components/ui/bottom-sheet.tsx` — thin wrapper over Dialog that anchors content to the bottom with a handle bar
+- `TaskRow` in `web/components/dashboard/task-list.tsx` refactored: desktop hover-reveal cluster (edit + delete icons) + inline edit form; mobile replaces always-visible defer with a single "more" icon that opens a unified `EditTodoSheet` (title, due date, optional defer reason, Save/Delete/Cancel)
+- +5 backend tests (204/404/422/supersession/cascade) and +11 frontend tests (desktop edit save/cancel/disabled, desktop delete, mobile sheet open/reason/save/delete)
+
+**Decisions made**: Mobile ditches the prompt's swipe-to-delete gesture in favor of one unified "more" button (user preference — better accessibility, no gesture library, no vertical-scroll conflict). Desktop delete is one-click with no confirm (permanence softened by memory_item supersession leaving the final state in `raw_memory`). No new event_type for delete — cascade erases history anyway.
+
+**Gotchas found**:
+- Health endpoint is `/ready`, not `/healthz` (404) — previous session's memory entry was wrong again; ops memory corrected
+- `sync_todo_to_memory()` flips `is_superseded` but does NOT set `supersedes_memory_id` pointer despite CLAUDE.md rule saying corrections should wire it — added as M1 tech debt
+- `GET /v1/todos` response shape is `{todos, total}`, not `{items, total}` — caught in the first test run
+- Every todo edit triggers a fresh Voyage embedding call via the append-only sync path; noted as footgun in CLAUDE.md
+
+**Test count**: ~1113 total (888 backend + 218 Vitest + 7 E2E)
 
 ---
 

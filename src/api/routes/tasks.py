@@ -6,7 +6,7 @@ PATCH /v1/tasks/{task_id}    — update task status
 """
 
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -125,7 +125,7 @@ async def list_tasks(
     if due_before is not None:
         # Coerce naive datetime to UTC for timezone-aware DB column
         if due_before.tzinfo is None:
-            due_before = due_before.replace(tzinfo=timezone.utc)
+            due_before = due_before.replace(tzinfo=UTC)
         stmt = stmt.where(Task.due_date <= due_before)
         count_stmt = count_stmt.where(Task.due_date <= due_before)
 

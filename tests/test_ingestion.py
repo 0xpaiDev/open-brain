@@ -8,16 +8,12 @@ DB side effects: raw_memory + refinement_queue rows created
 import uuid
 from unittest.mock import AsyncMock, patch
 
-from sqlalchemy import func
-
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.core.models import MemoryItem, RawMemory, RefinementQueue
-from src.api.routes.memory import _content_hash
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
