@@ -87,11 +87,34 @@ async def detect_misses() -> int:
             )
         )
         agg_completed = 0
+        completed_commitments = []
         for commitment in agg_result.scalars():
             commitment.status = "completed"
             agg_completed += 1
+            completed_commitments.append(commitment)
 
         await session.commit()
+
+        # Best-effort: sync commitment completion summaries to memory
+        if completed_commitments:
+            try:
+                from src.llm.client import embedding_client
+                from src.pipeline.training_sync import sync_commitment_summary_to_memory
+
+                if embedding_client:
+                    for commitment in completed_commitments:
+                        try:
+                            await sync_commitment_summary_to_memory(
+                                session, commitment, embedding_client
+                            )
+                        except Exception:
+                            logger.warning(
+                                "commitment_summary_sync_failed",
+                                commitment_id=str(commitment.id),
+                                exc_info=True,
+                            )
+            except Exception:
+                logger.warning("commitment_summary_import_failed", exc_info=True)
 
         logger.info(
             "commitment_miss_detected",

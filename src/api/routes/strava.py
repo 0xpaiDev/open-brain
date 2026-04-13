@@ -448,12 +448,39 @@ async def receive_strava_webhook(
         activity = await _fetch_and_upsert_activity(session, event.object_id)
         if activity:
             await _link_activity_to_commitments(session, activity)
+
+            # Best-effort: sync activity to memory for RAG search
+            try:
+                from src.llm.client import embedding_client
+                from src.pipeline.training_sync import sync_strava_activity_to_memory
+
+                if embedding_client:
+                    await sync_strava_activity_to_memory(session, activity, embedding_client)
+            except Exception:
+                logger.warning(
+                    "strava_activity_memory_sync_failed",
+                    strava_id=event.object_id,
+                    exc_info=True,
+                )
+
     elif event.aspect_type == "delete":
         result = await session.execute(
             select(StravaActivity).where(StravaActivity.strava_id == event.object_id)
         )
         existing = result.scalar_one_or_none()
         if existing:
+            # Supersede memory before deleting the activity
+            try:
+                from src.pipeline.training_sync import supersede_memory_for_strava_activity
+
+                await supersede_memory_for_strava_activity(session, existing.strava_id)
+            except Exception:
+                logger.warning(
+                    "strava_memory_supersede_failed",
+                    strava_id=event.object_id,
+                    exc_info=True,
+                )
+
             await _unlink_activity_from_commitments(session, existing.id)
             await session.delete(existing)
             await session.commit()

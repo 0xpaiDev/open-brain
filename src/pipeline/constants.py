@@ -10,6 +10,7 @@ AUTO_CAPTURE_SOURCES: frozenset[str] = frozenset(
         "claude_code_memory",
         "claude_code_history",
         "claude_code_project",
+        "strava-activity",
     }
 )
 
@@ -20,4 +21,5 @@ TASK_SKIP_SOURCES: frozenset[str] = AUTO_CAPTURE_SOURCES | {
     "daily-pulse",
     "training-weekly",
     "strava-activity",
+    "commitment-summary",
 }

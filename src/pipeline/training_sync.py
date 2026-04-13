@@ -235,3 +235,243 @@ async def sync_weekly_training(
         week_start=week_start_str,
     )
     return str(memory_item.id)
+
+
+# ── Strava activity memory sync ──────────────────────────────────────────────
+
+
+def _format_strava_activity_content(activity: StravaActivity) -> str:
+    """Build a natural-language string from a Strava activity for embedding."""
+    date_str = activity.started_at.strftime("%Y-%m-%d")
+    parts = [f"Strava {activity.activity_type or 'activity'}: {activity.name or 'Untitled'} on {date_str}."]
+
+    if activity.distance_m is not None and activity.distance_m > 0:
+        parts.append(f"Distance: {activity.distance_m / 1000:.1f} km.")
+    if activity.duration_s is not None and activity.duration_s > 0:
+        hours = activity.duration_s // 3600
+        minutes = (activity.duration_s % 3600) // 60
+        if hours > 0:
+            parts.append(f"Duration: {hours}h {minutes}m.")
+        else:
+            parts.append(f"Duration: {minutes}m.")
+    if activity.tss is not None:
+        parts.append(f"TSS: {activity.tss:.1f}.")
+    if activity.avg_power_w is not None:
+        parts.append(f"Avg power: {activity.avg_power_w:.0f}W.")
+    if activity.avg_hr is not None:
+        parts.append(f"Avg HR: {activity.avg_hr} bpm.")
+    if activity.elevation_m is not None and activity.elevation_m > 0:
+        parts.append(f"Elevation: {activity.elevation_m:.0f}m.")
+
+    return " ".join(parts)
+
+
+async def sync_strava_activity_to_memory(
+    session: AsyncSession,
+    activity: StravaActivity,
+    voyage_client,
+) -> str | None:
+    """Sync a StravaActivity into memory_items for hybrid search.
+
+    Follows the direct-create pattern: embed → supersede → RawMemory → MemoryItem → commit.
+    Uses strava_id (Strava's numeric ID) as the lookup key for superseding.
+
+    Returns:
+        The memory_item ID if created, None if activity has no type/name.
+    """
+    strava_id_str = str(activity.strava_id)
+    content = _format_strava_activity_content(activity)
+
+    embedding = await embed_text(content, voyage_client)
+
+    # Supersede previous memory for the same Strava activity
+    existing = await session.execute(
+        select(MemoryItem)
+        .join(RawMemory, MemoryItem.raw_id == RawMemory.id)
+        .where(
+            and_(
+                RawMemory.metadata_["strava_activity_id"].as_string() == strava_id_str,
+                RawMemory.source == "strava-activity",
+                MemoryItem.is_superseded.is_(False),
+            )
+        )
+    )
+    for old_item in existing.scalars():
+        old_item.is_superseded = True
+
+    # Create raw memory
+    raw = RawMemory(
+        source="strava-activity",
+        raw_text=content,
+        metadata_={"strava_activity_id": strava_id_str},
+    )
+    session.add(raw)
+    await session.flush()
+
+    # Build tags
+    tags = ["training:strava"]
+    if activity.activity_type:
+        tags.append(f"strava:{activity.activity_type.lower()}")
+
+    # Create memory item
+    memory_item = MemoryItem(
+        raw_id=raw.id,
+        type="strava_activity",
+        content=content,
+        base_importance=0.4,
+        embedding=embedding,
+        tags=tags,
+    )
+    session.add(memory_item)
+    await session.commit()
+
+    logger.info(
+        "strava_activity_synced_to_memory",
+        strava_id=strava_id_str,
+        memory_id=str(memory_item.id),
+    )
+    return str(memory_item.id)
+
+
+async def supersede_memory_for_strava_activity(
+    session: AsyncSession,
+    strava_id: int,
+) -> int:
+    """Mark all non-superseded memory_items for a Strava activity as superseded.
+
+    Used on activity delete events. Does not create a new embedding.
+    """
+    strava_id_str = str(strava_id)
+    result = await session.execute(
+        select(MemoryItem)
+        .join(RawMemory, MemoryItem.raw_id == RawMemory.id)
+        .where(
+            and_(
+                RawMemory.metadata_["strava_activity_id"].as_string() == strava_id_str,
+                RawMemory.source == "strava-activity",
+                MemoryItem.is_superseded.is_(False),
+            )
+        )
+    )
+    items = list(result.scalars())
+    for item in items:
+        item.is_superseded = True
+    if items:
+        logger.info(
+            "strava_activity_memory_superseded",
+            strava_id=strava_id_str,
+            count=len(items),
+        )
+    return len(items)
+
+
+# ── Commitment summary memory sync ───────────────────────────────────────────
+
+
+def _format_commitment_summary_content(
+    commitment: Commitment, entries: list[CommitmentEntry]
+) -> str:
+    """Build a natural-language completion summary for a commitment."""
+    parts = [
+        f"Commitment completed: {commitment.name} ({commitment.exercise}, "
+        f"{commitment.start_date} to {commitment.end_date})."
+    ]
+    parts.append(f"Cadence: {commitment.cadence}.")
+
+    if commitment.cadence == "daily" and entries:
+        hits = sum(1 for e in entries if e.status == "hit")
+        misses = sum(1 for e in entries if e.status == "miss")
+        total = len(entries)
+        pct = round(hits / total * 100) if total > 0 else 0
+        parts.append(f"{hits}/{total} days hit ({pct}%), {misses} missed.")
+
+        # Longest streak
+        sorted_entries = sorted(entries, key=lambda e: e.entry_date)
+        longest = 0
+        current = 0
+        for e in sorted_entries:
+            if e.status == "hit":
+                current += 1
+                longest = max(longest, current)
+            else:
+                current = 0
+        parts.append(f"Longest streak: {longest} days.")
+
+    elif commitment.cadence == "aggregate":
+        if commitment.targets:
+            target_parts = [f"{k}: {v}" for k, v in commitment.targets.items()]
+            parts.append(f"Targets: {', '.join(target_parts)}.")
+        if commitment.progress:
+            progress_parts = [f"{k}: {v}" for k, v in commitment.progress.items()]
+            parts.append(f"Final progress: {', '.join(progress_parts)}.")
+
+    return " ".join(parts)
+
+
+async def sync_commitment_summary_to_memory(
+    session: AsyncSession,
+    commitment: Commitment,
+    voyage_client,
+) -> str | None:
+    """Generate and store a commitment completion summary as a memory item.
+
+    Called when a commitment transitions to completed status.
+    Follows the direct-create pattern.
+    """
+    commitment_id_str = str(commitment.id)
+
+    # Fetch entries for daily commitments
+    entries: list[CommitmentEntry] = []
+    if commitment.cadence == "daily":
+        entries_result = await session.execute(
+            select(CommitmentEntry)
+            .where(CommitmentEntry.commitment_id == commitment.id)
+            .order_by(CommitmentEntry.entry_date)
+        )
+        entries = list(entries_result.scalars().all())
+
+    content = _format_commitment_summary_content(commitment, entries)
+    embedding = await embed_text(content, voyage_client)
+
+    # Supersede previous summary for the same commitment
+    existing = await session.execute(
+        select(MemoryItem)
+        .join(RawMemory, MemoryItem.raw_id == RawMemory.id)
+        .where(
+            and_(
+                RawMemory.metadata_["commitment_id"].as_string() == commitment_id_str,
+                RawMemory.source == "commitment-summary",
+                MemoryItem.is_superseded.is_(False),
+            )
+        )
+    )
+    for old_item in existing.scalars():
+        old_item.is_superseded = True
+
+    # Create raw memory
+    raw = RawMemory(
+        source="commitment-summary",
+        raw_text=content,
+        metadata_={"commitment_id": commitment_id_str},
+    )
+    session.add(raw)
+    await session.flush()
+
+    # Create memory item
+    memory_item = MemoryItem(
+        raw_id=raw.id,
+        type="commitment_summary",
+        content=content,
+        base_importance=0.7,
+        embedding=embedding,
+        tags=["training:commitment", "commitment:completed"],
+    )
+    session.add(memory_item)
+    await session.commit()
+
+    logger.info(
+        "commitment_summary_synced",
+        commitment_id=commitment_id_str,
+        memory_id=str(memory_item.id),
+    )
+    return str(memory_item.id)

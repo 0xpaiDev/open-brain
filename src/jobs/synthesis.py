@@ -164,7 +164,7 @@ async def _call_synthesis_llm(
         response_text = await client.complete(
             system_prompt=SYNTHESIS_SYSTEM_PROMPT,
             user_content=user_message,
-            max_tokens=4096,
+            max_tokens=8192,
         )
     except Exception as e:
         raise ExtractionFailed(f"Synthesis LLM call failed: {e}") from e

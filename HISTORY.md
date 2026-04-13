@@ -1,6 +1,28 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-12** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration, ~1148 tests (909 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-13** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration, ~1161 tests (922 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-13 (Training Data Memory Integration)
+
+**What changed**:
+- New `sync_strava_activity_to_memory()` + `supersede_memory_for_strava_activity()` in `src/pipeline/training_sync.py` — every Strava activity now searchable via RAG; `strava-activity` added to `AUTO_CAPTURE_SOURCES`
+- New `sync_commitment_summary_to_memory()` in `src/pipeline/training_sync.py` — generates completion narrative (hit rate, streak, targets vs progress) when a commitment completes
+- `detect_misses()` (`src/jobs/commitment_miss.py`) now triggers commitment summary sync best-effort after aggregate commitment completion
+- Strava webhook handler (`src/api/routes/strava.py`) calls `sync_strava_activity_to_memory()` best-effort after upsert; supersedes memory on delete
+- New `src/jobs/training_weekly.py` — weekly training summary job wrapping `sync_weekly_training()` in `run_tracked()`
+- `crontab` updated: `commitment_miss` (00:30 UTC daily) and `training_weekly` (01:00 UTC Monday) — needs deploy to activate
+- `"commitment-summary"` added to `TASK_SKIP_SOURCES` in `src/pipeline/constants.py`
+- +13 backend tests (`tests/test_training_sync.py`)
+
+**Files touched**: `src/pipeline/training_sync.py`, `src/pipeline/constants.py`, `src/jobs/commitment_miss.py`, `src/jobs/training_weekly.py` (new), `src/api/routes/strava.py`, `crontab`, `tests/test_training_sync.py` (new)
+
+**Decisions made**: Strava memory sync inline in webhook handler (not queue) — Voyage typical latency <1s acceptable given existing Strava API call; failure-isolated. Commitment summary triggered from `detect_misses()` not from PATCH route — aggregate completions only happen via cron. Supersede uses strava_id (Strava's numeric ID) not internal UUID as lookup key.
+
+**Gotchas found**: `detect_misses()` accesses committed Commitment objects after `session.commit()` — safe because `get_db_context()` sets `expire_on_commit=False`. New job wrappers must import `embedding_client` lazily (inside the function), not at module level — module-level import at Docker startup can fail if env vars not yet set.
+
+**Test count**: 922 backend (was 909) + 239 Vitest = 1161 total
 
 ---
 
