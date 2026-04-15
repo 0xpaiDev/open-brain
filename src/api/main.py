@@ -18,6 +18,8 @@ from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
 from src.api.routes.jobs import router as jobs_router
+from src.api.routes.learning import modules_router
+from src.api.routes.learning import router as learning_router
 from src.api.routes.memory import router as memory_router
 from src.api.routes.project_labels import router as project_labels_router
 from src.api.routes.pulse import router as pulse_router
@@ -102,3 +104,5 @@ app.include_router(voice_router, tags=["Voice"])
 app.include_router(commitments_router, tags=["Commitments"])
 app.include_router(strava_router, tags=["Strava"])
 app.include_router(training_router, tags=["Training"])
+app.include_router(learning_router, tags=["Learning"])
+app.include_router(modules_router, tags=["Modules"])

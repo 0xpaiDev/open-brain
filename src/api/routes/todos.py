@@ -63,6 +63,8 @@ class TodoUpdate(BaseModel):
     status: str | None = None
     reason: str | None = Field(None, max_length=500)  # stored in history only
     label: str | None = Field(None, max_length=50)
+    learning_feedback: str | None = Field(None, max_length=2000)
+    learning_notes: str | None = Field(None, max_length=4000)
 
     @field_validator("priority")
     @classmethod
@@ -87,6 +89,7 @@ class TodoResponse(BaseModel):
     due_date: datetime | None
     start_date: datetime | None
     label: str | None
+    learning_item_id: str | None
     discord_message_id: str | None
     discord_channel_id: str | None
     created_at: datetime
@@ -120,6 +123,7 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         due_date=todo.due_date,
         start_date=todo.start_date,
         label=todo.label,
+        learning_item_id=str(todo.learning_item_id) if todo.learning_item_id else None,
         discord_message_id=todo.discord_message_id,
         discord_channel_id=todo.discord_channel_id,
         created_at=todo.created_at,
@@ -329,6 +333,8 @@ async def update_todo_route(
         reason=body.reason,
         label=body.label,
         fields_set=body.model_fields_set,
+        learning_feedback=body.learning_feedback,
+        learning_notes=body.learning_notes,
     )
     logger.info("update_todo_route", todo_id=str(todo_id))
     return _todo_to_response(todo)

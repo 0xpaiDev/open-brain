@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 1.8
-**Date**: 2026-04-12
-**Status**: All phases + Training & Commitments V1 complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training.
+**Version**: 1.9
+**Date**: 2026-04-15
+**Status**: All phases + Training & Commitments V1 + Learning Library V1 complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -281,6 +281,12 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **commitment_activities**: Junction table linking aggregate commitments to Strava activities for dedup and audit; unique constraint on (commitment_id, strava_activity_id); progress recalculated from all linked activities on every change
 - **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response; TSS computed from NP and FTP on ingest
 - **strava_tokens**: Single-row OAuth token store; bootstrapped from env vars on first webhook; auto-refreshed via `_get_valid_access_token()` when expired
+
+### Module: Learning Library
+- **learning_topics**: Top-level learning subjects with `depth` (`foundational`|`deep`), `is_active` flag (cron draws only from active topics; deactivation preserves all progress), `position` for ordering
+- **learning_sections**: Grouping of items under a topic; FK to `learning_topics` with `ON DELETE CASCADE`
+- **learning_items**: Leaf units with `status` (`pending`|`done`), `feedback` (free text; calibration signal for LLM selector), `notes` (personal reference), `completed_at`; FK to `learning_sections` with `ON DELETE CASCADE`
+- **todo_items.learning_item_id**: FK column added by migration 0013 (`ON DELETE SET NULL`); distinguishes cron-generated learning todos from regular ones. Learning items DO NOT sync to `memory_items`; the derived todos DO, via existing `todo_sync.py`.
 
 ### Job monitoring
 - **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis, commitment_miss); used by `/v1/jobs/status`

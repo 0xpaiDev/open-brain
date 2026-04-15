@@ -1,7 +1,7 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments V1 + aggregate commitments + training memory integration complete (2026-04-13) — ~1161 tests (922 backend + 239 Vitest)
-**Project**: 2026-03-13 → 2026-04-12 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 complete (2026-04-15) — ~1185 tests (946 backend + 239 Vitest)
+**Project**: 2026-03-13 → 2026-04-15 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
 
@@ -10,7 +10,7 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0012)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0013, **needs deploy**)
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
@@ -22,6 +22,7 @@
 - `pulse` — 05:00 UTC daily
 - `commitment_miss` — 00:30 UTC daily (**newly added to crontab**)
 - `training_weekly` — 01:00 UTC Monday (**newly added to crontab**)
+- `learning_daily` — 04:30 UTC daily (**newly added to crontab**; runs before pulse)
 
 ---
 
@@ -35,12 +36,15 @@
 - **T2**: ~~Commitment miss cron not yet wired~~ — resolved. Crontab updated; needs deploy to activate.
 - **T3**: `hybrid_search()` tag filtering (tags @> query) not yet wired — column and GIN index exist but no API surface.
 - **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
+- **L5**: Learning cron uses two-commit pattern in `_create_learning_todo` (`src/jobs/learning_daily.py`) — todo created then FK set. Non-atomic but low-probability; worst case one extra todo on next run. Consolidate into one transaction if this ever manifests.
+- **L6**: Web sidebar `/learning` link is hardcoded, not gated by `/v1/modules`. When `module_learning_enabled=False` clicking shows 404 gracefully. Acceptable for single-user; fix if multi-user.
+- **L7**: `/v1/learning/*` routes return `dict[str, Any]` rather than Pydantic response models. Matches modules endpoint style; tighten to models if stricter OpenAPI spec is needed.
 
 ---
 
 ## Next Up
 
-- Deploy to activate new crontab entries (commitment_miss + training_weekly)
+- Deploy to run migration 0013 + activate new crontab entries (commitment_miss + training_weekly + learning_daily) (`alembic/versions/0013_learning_library.py`, `crontab`)
+- Seed first learning topics + sections + items via new routes or Claude Code skill (TBD) — feature is live but empty
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)
 - Multi-metric aggregate form support in Settings page (`web/app/settings/page.tsx`)
-- Strava webhook entry-point logging now live — check prod logs next ride to verify webhook delivery

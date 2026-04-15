@@ -1,6 +1,27 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-15** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback, ~1161 tests (922 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-15** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1, ~1185 tests (946 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-15 (Learning Library V1 — multi-agent prompt executed end-to-end)
+
+**What changed**:
+- New Learning Library feature: `learning_topics` → `learning_sections` → `learning_items` hierarchy + daily cron that injects 2–3 learning todos into `/today` from active topics (`src/jobs/learning_daily.py`)
+- New `todo_items.learning_item_id` FK column, best-effort cascade on todo completion (status→done propagates to `learning_items.status` with feedback/notes passthrough), matching-todo cancellation when item checked off directly on `/learning`
+- New routes: `/v1/learning` (tree), `/v1/learning/topics|sections|items` CRUD, `/v1/learning/refresh` (manual trigger, 10/min), `/v1/modules` (feature-flag exposure)
+- New `/learning` web page with tree view, toggle-active, inline feedback/notes, refresh button; "Learning" badge on affected todos in dashboard task list; sidebar nav link
+- New `module_learning_enabled` feature flag + `learning_daily_todo_count`/`learning_feedback_lookback_days`/`learning_llm_timeout_seconds` config
+- LLM prompt `build_learning_selection_system_prompt` (date-injected, Haiku) with deterministic fallback (oldest pending first by `created_at + id`) on any failure
+- 16 new backend tests covering CRUD, feature-flag gating, cron idempotency, LLM selection, malformed-output fallback, cascade semantics, state-preservation on deactivation, refresh endpoint
+
+**Files touched**: `alembic/versions/0013_learning_library.py` (new), `src/core/models.py`, `src/core/config.py`, `src/api/routes/learning.py` (new), `src/api/services/learning_service.py` (new), `src/api/services/todo_service.py`, `src/api/routes/todos.py`, `src/api/main.py`, `src/api/middleware/rate_limit.py`, `src/jobs/learning_daily.py` (new), `src/llm/prompts.py`, `crontab`, `tests/test_learning.py` (new), `web/lib/types.ts`, `web/hooks/use-learning.ts` (new), `web/app/learning/page.tsx` (new), `web/components/dashboard/task-list.tsx`, `web/components/layout/sidebar.tsx`, `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`, `ARCHITECTURE.md`
+
+**Decisions made**: Attachment via dedicated `learning_item_id` FK column (rejected: reusing `label` — equality-only filter, collides with user labels; junction table — adds a read/write hop); idempotency via query-before-create counting today's `learning_item_id IS NOT NULL` todos (matches `pulse`/`commitment_miss` patterns); deterministic fallback ordered by `created_at + id` (rejected: `random.sample` — re-runs produce different todos); env-only feature flag matching existing `module_*_enabled` convention; learning data does NOT sync to memory_items (per business case §7), but derived todos DO sync via normal `todo_sync.py` path.
+
+**Gotchas found**: `_create_learning_todo` uses two commits (create_todo + set FK + commit) — non-atomic but low probability; documented as L5 tech debt. `/v1/modules` endpoint intentionally unprotected by rate limiter (static response, global API-key middleware still applies).
+
+**Test count**: 946 backend + 239 Vitest = 1185 total (+24 backend this session; 16 learning tests + 8 from prior unrelated deltas)
 
 ---
 

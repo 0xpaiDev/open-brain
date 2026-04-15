@@ -10,6 +10,7 @@ const navItems = [
   { href: "/chat", icon: "chat", label: "Chat" },
   { href: "/diary", icon: "auto_stories", label: "Diary" },
   { href: "/analytics", icon: "analytics", label: "Analytics" },
+  { href: "/learning", icon: "school", label: "Learning" },
   { href: "/logs", icon: "terminal", label: "Logs" },
 ];
 

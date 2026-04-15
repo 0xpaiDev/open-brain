@@ -48,8 +48,44 @@ export interface TodoItem {
   due_date: string | null;
   start_date: string | null;
   label: string | null;
+  learning_item_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface LearningItem {
+  id: string;
+  section_id: string;
+  title: string;
+  status: "pending" | "done";
+  feedback: string | null;
+  notes: string | null;
+  position: number;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LearningSection {
+  id: string;
+  topic_id: string;
+  name: string;
+  position: number;
+  items: LearningItem[];
+}
+
+export interface LearningTopic {
+  id: string;
+  name: string;
+  description: string | null;
+  depth: "foundational" | "deep";
+  is_active: boolean;
+  position: number;
+  sections: LearningSection[];
+}
+
+export interface LearningTreeResponse {
+  topics: LearningTopic[];
 }
 
 export interface TodoLabel {

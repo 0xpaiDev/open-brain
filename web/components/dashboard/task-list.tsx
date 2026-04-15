@@ -549,6 +549,15 @@ function TaskRow({
               </span>
             )}
 
+            {todo.learning_item_id && (
+              <span
+                className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-accent/20 text-accent"
+                title="Generated from your learning library"
+              >
+                Learning
+              </span>
+            )}
+
             {badge && (
               <span className={`text-xs rounded-full px-2 py-0.5 shrink-0 font-label ${badge.className}`}>
                 {badge.label}

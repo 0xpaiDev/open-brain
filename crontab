@@ -1,6 +1,9 @@
 # Open Brain scheduled jobs (supercronic format)
 # Times in UTC
 
+# Learning library selection - 04:30 UTC (before pulse; injects 2-3 learning todos)
+30 4 * * * python -m src.jobs.learning_daily
+
 # Morning pulse - 05:00 UTC (08:00 Europe/Vilnius summer)
 0 5 * * * python -m src.jobs.pulse
 

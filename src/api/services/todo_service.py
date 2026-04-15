@@ -31,6 +31,26 @@ async def _try_sync(session: AsyncSession, todo: TodoItem, event_type: str) -> N
         logger.warning("todo_memory_sync_failed", todo_id=str(todo.id), exc_info=True)
 
 
+async def _try_cascade_learning_item(
+    session: AsyncSession,
+    todo: TodoItem,
+    event_type: str,
+    feedback: str | None,
+    notes: str | None,
+) -> None:
+    """If this todo was generated from a learning item and is now done, mark
+    the underlying item complete. Best-effort — never blocks the todo flow.
+    """
+    if event_type != "completed" or getattr(todo, "learning_item_id", None) is None:
+        return
+    try:
+        from src.api.services.learning_service import cascade_item_completion
+
+        await cascade_item_completion(session, todo, feedback=feedback, notes=notes)
+    except Exception:
+        logger.warning("learning_item_cascade_failed", todo_id=str(todo.id), exc_info=True)
+
+
 def _snapshot(todo: TodoItem) -> dict[str, Any]:
     """Return a plain dict snapshot of a todo's mutable fields."""
     return {
@@ -95,6 +115,8 @@ async def update_todo(
     reason: str | None = None,
     label: str | None = None,
     fields_set: set[str] | None = None,
+    learning_feedback: str | None = None,
+    learning_notes: str | None = None,
 ) -> TodoItem:
     """Apply field updates to a TodoItem and append a history row.
 
@@ -171,4 +193,5 @@ async def update_todo(
 
     logger.info("update_todo", todo_id=str(todo.id), event_type=event_type)
     await _try_sync(session, todo, event_type)
+    await _try_cascade_learning_item(session, todo, event_type, learning_feedback, learning_notes)
     return todo

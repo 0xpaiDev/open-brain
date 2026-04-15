@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     module_pulse_enabled: bool = True
     module_rag_chat_enabled: bool = True
     module_training_enabled: bool = True
+    module_learning_enabled: bool = True
+
+    # ── Learning library ──────────────────────────────────────────────────────
+    learning_daily_todo_count: int = 3
+    learning_feedback_lookback_days: int = 7
+    learning_llm_timeout_seconds: float = 30.0
 
     # ── Todo ───────────────────────────────────────────────────────────────────
     discord_todo_channel_id: int = 0  # channel ID for prefix listener; 0 = disabled

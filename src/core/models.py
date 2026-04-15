@@ -407,6 +407,12 @@ class TodoItem(Base):
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     label: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    learning_item_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("learning_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     discord_channel_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -684,3 +690,104 @@ class StravaToken(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ── Module: Learning Library ──────────────────────────────────────────────────
+
+
+class LearningTopic(Base):
+    """Top-level learning subject. A groomed Topic contains Sections of Items.
+
+    depth: "foundational" | "deep" — label only (UI hint), not enforced.
+    is_active: cron draws only from active topics; toggling false preserves all state.
+    """
+
+    __tablename__ = "learning_topics"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    depth: Mapped[str] = mapped_column(String(20), default="foundational", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_learning_topics_active_position", "is_active", "position"),)
+
+    sections: Mapped[list["LearningSection"]] = relationship(
+        "LearningSection",
+        back_populates="topic",
+        cascade="all, delete-orphan",
+        order_by="LearningSection.position",
+    )
+
+
+class LearningSection(Base):
+    """Grouping of Items within a Topic."""
+
+    __tablename__ = "learning_sections"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("learning_topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_learning_sections_topic_position", "topic_id", "position"),)
+
+    topic: Mapped["LearningTopic"] = relationship("LearningTopic", back_populates="sections")
+    items: Mapped[list["LearningItem"]] = relationship(
+        "LearningItem",
+        back_populates="section",
+        cascade="all, delete-orphan",
+        order_by="LearningItem.position",
+    )
+
+
+class LearningItem(Base):
+    """Leaf learning unit. Completion, feedback, and notes captured inline.
+
+    status: "pending" | "done". Feedback is free-text calibration signal for
+    the LLM selector. Notes are personal reference only (never synced to memory).
+    """
+
+    __tablename__ = "learning_items"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    section_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("learning_sections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_learning_items_section_status_position", "section_id", "status", "position"),
+    )
+
+    section: Mapped["LearningSection"] = relationship("LearningSection", back_populates="items")
