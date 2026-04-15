@@ -96,7 +96,7 @@ def main() -> int:
     # Check 1: All .env.example entries have corresponding Settings fields
     undocumented_in_config = set()
     # These variables are used in standalone scripts/integrations, not in Settings
-    STANDALONE_VARS = {"OPENBRAIN_API_KEY", "DOMAIN"}
+    STANDALONE_VARS = {"OPENBRAIN_API_KEY", "OPENBRAIN_API_URL", "DOMAIN"}
 
     for env_var in env_vars:
         field_name = env_var.lower()
