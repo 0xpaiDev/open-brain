@@ -14,10 +14,17 @@ from src.api.middleware.rate_limit import limiter
 
 @pytest.fixture(autouse=False)
 def reset_limiter_storage():
-    """Reset in-memory rate limiter storage so tests are isolated."""
+    """Reset in-memory rate limiter storage and re-enable limiter for isolation.
+
+    The global set_test_env fixture disables the limiter (limiter.enabled=False)
+    so that ordinary test suites don't hit 429s. Rate-limit tests must opt back
+    in explicitly by using this fixture, which re-enables and then cleans up.
+    """
+    limiter.enabled = True
     limiter._limiter.storage.reset()
     yield
     limiter._limiter.storage.reset()
+    limiter.enabled = False
 
 
 @pytest.mark.asyncio

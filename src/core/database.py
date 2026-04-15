@@ -21,17 +21,21 @@ async def init_db() -> None:
     global async_engine, AsyncSessionLocal
 
     settings = get_settings()
-    async_engine = create_async_engine(
-        settings.sqlalchemy_url,
-        echo=settings.log_level == "debug",
-        pool_pre_ping=True,
-        pool_size=3,
-        max_overflow=2,
-        connect_args={
-            "ssl": settings.db_ssl_mode,
-            "statement_cache_size": 0,  # Required for Supabase Supavisor compatibility (prevents prepared statement conflicts)
-        },
-    )
+    is_sqlite = settings.sqlalchemy_url.startswith("sqlite")
+    engine_kwargs: dict = {"echo": settings.log_level == "debug"}
+    if not is_sqlite:
+        engine_kwargs.update(
+            {
+                "pool_pre_ping": True,
+                "pool_size": 3,
+                "max_overflow": 2,
+                "connect_args": {
+                    "ssl": settings.db_ssl_mode,
+                    "statement_cache_size": 0,  # Required for Supabase Supavisor compatibility (prevents prepared statement conflicts)
+                },
+            }
+        )
+    async_engine = create_async_engine(settings.sqlalchemy_url, **engine_kwargs)
 
     # Note: pgvector.asyncpg.register_vector is intentionally NOT used here.
     # pgvector.sqlalchemy.Vector.process_bind_param returns a text-format string
