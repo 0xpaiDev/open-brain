@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-13** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration, ~1161 tests (922 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-15** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback, ~1161 tests (922 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-15 (Strava Webhook Logging + HR-based TSS Fallback)
+
+**What changed**:
+- Added entry-point log `strava_webhook_received` to `receive_strava_webhook()` — every webhook event now traceable regardless of outcome (`src/api/routes/strava.py`)
+- Added `strava_tss_unavailable` warning when TSS can't be calculated; `strava_activity_upserted` log now includes `tss` and `tss_method` fields
+- HR-based TSS fallback: when no power meter, estimates TSS via heart rate reserve — `rpe = (avg_hr − resting_hr) / (max_hr − resting_hr)`, `hrTSS = duration_h × rpe × 100`; logs `tss_method="hr_estimate"` (`src/api/routes/strava.py`)
+- Added `STRAVA_MAX_HR` and `STRAVA_RESTING_HR` config vars (default 0 = disabled) (`src/core/config.py`, `.env.example`)
+- Prod env updated: `STRAVA_MAX_HR=195`, `STRAVA_RESTING_HR=57`; manually backfilled TSS=28.3 for activity 18115889369; commitment "🚲" recalculated to 219.2 TSS
+
+**Files touched**: `src/api/routes/strava.py`, `src/core/config.py`, `.env.example`
+
+**Decisions made**: HR-based TSS uses heart rate reserve (HRR) method — no new DB columns needed, same `tss` field; `tss_method` is log-only (not persisted). Both `STRAVA_MAX_HR` and `STRAVA_RESTING_HR` must be non-zero to enable fallback.
+
+**Gotchas found**: Strava webhook `receive_strava_webhook()` had zero logging before JSON parse — if webhook fires and anything fails early, there's no trace in logs. Fixed by logging after parse (event fields available).
+
+**Test count**: 922 backend + 239 Vitest = 1161 total (unchanged)
 
 ---
 

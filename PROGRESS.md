@@ -13,7 +13,7 @@
 **Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0012)
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
-**Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w
+**Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
 
 **Cron jobs** (crontab file updated; deploy needed to activate new entries):
 - `importance` — 01:00 UTC daily
@@ -43,3 +43,4 @@
 - Deploy to activate new crontab entries (commitment_miss + training_weekly)
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)
 - Multi-metric aggregate form support in Settings page (`web/app/settings/page.tsx`)
+- Strava webhook entry-point logging now live — check prod logs next ride to verify webhook delivery
