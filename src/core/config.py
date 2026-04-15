@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     strava_access_token: SecretStr = SecretStr("")
     strava_refresh_token: SecretStr = SecretStr("")
     strava_ftp: int = 190  # Functional Threshold Power (watts) for TSS calculation
+    strava_max_hr: int = 0  # Max heart rate (bpm); 0 = HR-based TSS fallback disabled
+    strava_resting_hr: int = 0  # Resting heart rate (bpm); 0 = HR-based TSS fallback disabled
 
     # ── Feature flags ──────────────────────────────────────────────────────────
     module_todo_enabled: bool = True

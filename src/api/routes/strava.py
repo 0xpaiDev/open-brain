@@ -333,9 +333,29 @@ async def _fetch_and_upsert_activity(
     moving_time = data.get("moving_time")
     ftp = settings.strava_ftp
     tss = None
+    tss_method = None
     if np_watts and moving_time and ftp:
         intensity_factor = np_watts / ftp
         tss = round((moving_time * np_watts * intensity_factor) / (ftp * 3600) * 100, 1)
+        tss_method = "power"
+    else:
+        # Fallback: estimate TSS from heart rate reserve when power meter absent
+        avg_hr = data.get("average_heartrate")
+        max_hr = settings.strava_max_hr
+        resting_hr = settings.strava_resting_hr
+        if avg_hr and max_hr and resting_hr and moving_time:
+            rpe = (avg_hr - resting_hr) / (max_hr - resting_hr)
+            if rpe > 0:
+                tss = round((moving_time / 3600) * rpe * 100, 1)
+                tss_method = "hr_estimate"
+
+    if tss is None:
+        logger.warning(
+            "strava_tss_unavailable",
+            activity_id=activity_id,
+            np_watts=np_watts,
+            moving_time=moving_time,
+        )
 
     if existing:
         existing.activity_type = data.get("type")
@@ -373,6 +393,8 @@ async def _fetch_and_upsert_activity(
         strava_id=activity_id,
         type=activity.activity_type,
         name=activity.name,
+        tss=tss,
+        tss_method=tss_method,
     )
     return activity
 
@@ -440,6 +462,13 @@ async def receive_strava_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
 
     event = StravaWebhookEvent(**event_data)
+
+    logger.info(
+        "strava_webhook_received",
+        object_type=event.object_type,
+        aspect_type=event.aspect_type,
+        object_id=event.object_id,
+    )
 
     if event.object_type != "activity":
         return {"status": "ignored"}
