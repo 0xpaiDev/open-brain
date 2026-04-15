@@ -113,18 +113,27 @@ export function SmartComposer({ onIngest, onVoiceCommand }: SmartComposerProps) 
       )}
 
       <Tabs defaultValue={0}>
-        <TabsList className="h-10 rounded-xl p-1">
-          <TabsTrigger value={0} className="rounded-lg px-4 py-1.5 gap-2">
-            <span className="material-symbols-outlined text-lg">edit_note</span>
-            Text
+        <TabsList className="h-10 w-full sm:w-auto rounded-xl p-1 bg-surface-container-low border border-outline-variant/10">
+          <TabsTrigger
+            value={0}
+            className="flex-1 rounded-lg px-2 sm:px-4 py-1.5 gap-1.5 text-outline hover:text-on-surface transition-all duration-200 data-active:bg-surface-container data-active:text-on-surface data-active:shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[18px] leading-none">edit_note</span>
+            <span className="hidden sm:inline text-sm font-medium">Text</span>
           </TabsTrigger>
-          <TabsTrigger value={1} className="rounded-lg px-4 py-1.5 gap-2">
-            <span className="material-symbols-outlined text-lg">image</span>
-            Media
+          <TabsTrigger
+            value={1}
+            className="flex-1 rounded-lg px-2 sm:px-4 py-1.5 gap-1.5 text-outline hover:text-on-surface transition-all duration-200 data-active:bg-surface-container data-active:text-on-surface data-active:shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[18px] leading-none">image</span>
+            <span className="hidden sm:inline text-sm font-medium">Media</span>
           </TabsTrigger>
-          <TabsTrigger value={2} className="rounded-lg px-4 py-1.5 gap-2">
-            <span className="material-symbols-outlined text-lg">mic</span>
-            Voice
+          <TabsTrigger
+            value={2}
+            className="flex-1 rounded-lg px-2 sm:px-4 py-1.5 gap-1.5 text-outline hover:text-on-surface transition-all duration-200 data-active:bg-surface-container data-active:text-on-surface data-active:shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[18px] leading-none">mic</span>
+            <span className="hidden sm:inline text-sm font-medium">Voice</span>
           </TabsTrigger>
         </TabsList>
 
