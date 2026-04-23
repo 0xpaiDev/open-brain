@@ -92,6 +92,73 @@ def test_format_pulse_content_ai_question_without_response():
     assert "Sleep quality 4/5" in content
 
 
+def test_format_pulse_content_open_signal_renders_as_question():
+    """signal_type='open' keeps the legacy 'AI question:' framing."""
+    pulse = DailyPulse(
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
+        sleep_quality=4,
+        ai_question="What will make today feel like a win?",
+        ai_question_response="Finishing the migration PR",
+        signal_type="open",
+        status="completed",
+    )
+
+    content = _format_pulse_content(pulse)
+
+    assert "Daily pulse for 2026-04-08:" in content
+    assert "AI question:" in content
+    assert "Response: Finishing the migration PR" in content
+
+
+def test_format_pulse_content_focus_signal_renders_as_remark():
+    """Non-'open' signal types use a signal-tagged framing, not 'AI question:'."""
+    pulse = DailyPulse(
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
+        sleep_quality=4,
+        ai_question="Tough 1:1 on the calendar — what outcome do you want?",
+        ai_question_response="Clarify scope",
+        signal_type="focus",
+        status="completed",
+    )
+
+    content = _format_pulse_content(pulse)
+
+    assert "Daily pulse (focus) for 2026-04-08:" in content
+    assert "AI question:" not in content
+    assert "Clarify scope" in content
+
+
+def test_format_pulse_content_opportunity_signal_renders_as_remark():
+    pulse = DailyPulse(
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
+        ai_question="Best ride weather this week — take advantage.",
+        ai_question_response="Will do",
+        signal_type="opportunity",
+        status="completed",
+    )
+
+    content = _format_pulse_content(pulse)
+
+    assert "Daily pulse (opportunity) for 2026-04-08:" in content
+    assert "AI question:" not in content
+
+
+def test_format_pulse_content_legacy_null_signal_type():
+    """Rows predating the migration (signal_type=None) keep the old framing."""
+    pulse = DailyPulse(
+        pulse_date=datetime(2026, 4, 8, tzinfo=UTC),
+        ai_question="Legacy Q?",
+        ai_question_response="Legacy A",
+        signal_type=None,
+        status="completed",
+    )
+
+    content = _format_pulse_content(pulse)
+
+    assert "Daily pulse for 2026-04-08:" in content
+    assert "AI question: Legacy Q?" in content
+
+
 # ── DB integration tests ────────────────────────────────────────────────────
 
 

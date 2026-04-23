@@ -483,6 +483,7 @@ class DailyPulse(Base):
     discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     clean_meal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     alcohol: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    signal_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

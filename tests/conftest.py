@@ -22,6 +22,8 @@ def set_test_env(monkeypatch):
     """
     monkeypatch.setenv("SQLALCHEMY_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.setenv("API_KEY", "test-secret-key")
+    # Default to legacy pulse path in tests; new signal-driven tests opt in explicitly.
+    monkeypatch.setenv("PULSE_SIGNAL_DETECTORS", "")
     from src.core import config as _config
     monkeypatch.setattr(_config, "settings", _config.Settings())
 

@@ -24,9 +24,20 @@ def _format_pulse_content(pulse: DailyPulse) -> str:
     """Build a natural-language string from a pulse for embedding.
 
     Skips clauses for None fields so the embedding is clean.
+
+    Header depends on signal_type: non-"open" signal types are tagged with the
+    signal so the RAG embedding isn't misled into treating a remark as a
+    question. Legacy rows (signal_type NULL) and "open" rows keep the original
+    "AI question: …" framing for backward compat.
     """
     date_str = pulse.pulse_date.strftime("%Y-%m-%d")
-    parts = [f"Daily pulse for {date_str}:"]
+    signal_type = getattr(pulse, "signal_type", None)
+    is_question_shape = signal_type in (None, "open")
+
+    if is_question_shape:
+        parts = [f"Daily pulse for {date_str}:"]
+    else:
+        parts = [f"Daily pulse ({signal_type}) for {date_str}:"]
 
     if pulse.sleep_quality is not None:
         parts.append(f"Sleep quality {pulse.sleep_quality}/5,")
@@ -37,7 +48,14 @@ def _format_pulse_content(pulse: DailyPulse) -> str:
     if pulse.notes:
         parts.append(f"Notes: {pulse.notes}")
     if pulse.ai_question and pulse.ai_question_response:
-        parts.append(f"AI question: {pulse.ai_question} Response: {pulse.ai_question_response}")
+        if is_question_shape:
+            parts.append(
+                f"AI question: {pulse.ai_question} Response: {pulse.ai_question_response}"
+            )
+        else:
+            parts.append(
+                f"Signal remark: {pulse.ai_question} Response: {pulse.ai_question_response}"
+            )
     if pulse.clean_meal is not None:
         parts.append(f"Clean eating: {'yes' if pulse.clean_meal else 'no'}.")
     if pulse.alcohol is not None:

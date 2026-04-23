@@ -110,6 +110,17 @@ class Settings(BaseSettings):
     discord_pulse_user_id: int = 0
     pulse_accept_freetext: bool = False  # gate legacy DM reply flow; modal is primary
 
+    # ── Signal-driven Morning Pulse (Phase 1) ─────────────────────────────────
+    # pulse_signal_detectors="" disables the pipeline — legacy _generate_ai_question fires.
+    # Order here is also the tie-break order in the ranker.
+    pulse_signal_detectors: str = "focus,opportunity,open"
+    pulse_silence_threshold: float = 5.0
+    pulse_weather_enabled: bool = True
+    pulse_weather_latitude: float = 54.8985   # Kaunas default
+    pulse_weather_longitude: float = 23.9036
+    pulse_focus_keywords: str = "1:1,demo,review,interview,launch,presentation"
+    pulse_signal_debug_ui: bool = False
+
     # ── RAG Chat ───────────────────────────────────────────────────────────────
     rag_trigger_prefix: str = "?"
     rag_conversation_buffer_size: int = 5

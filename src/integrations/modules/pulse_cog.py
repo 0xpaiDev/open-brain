@@ -106,10 +106,13 @@ class PulseModal(discord.ui.Modal, title="Log my morning"):
         self._ai_question = ai_question
         self._original_message = original_message
 
-        # Field 4: AI question response (dynamic label, only if question exists)
+        # Field 4: AI question response (label depends on whether the signal is a
+        # question or a remark; absent if the pulse has no ai_question — e.g.
+        # silent days would never render a modal in the first place).
         if ai_question:
+            label = "Your answer" if ai_question.rstrip().endswith("?") else "Thoughts?"
             self.ai_response = discord.ui.TextInput(
-                label=ai_question[:45],
+                label=label,
                 required=False,
                 style=discord.TextStyle.paragraph,
                 max_length=500,

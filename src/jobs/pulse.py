@@ -437,15 +437,39 @@ async def _create_pulse_record(
 # ── Main job: send_morning_pulse ───────────────────────────────────────────────
 
 
+async def _start_pulse_via_api(
+    http: httpx.AsyncClient, settings: Any
+) -> dict[str, Any] | None:
+    """POST /v1/pulse/start — runs the signal pipeline (or legacy) in-process.
+
+    Returns the created pulse dict, or None on HTTP failure.
+    """
+    try:
+        resp = await http.post(
+            f"{settings.open_brain_api_url}/v1/pulse/start",
+            headers={"X-API-Key": settings.api_key.get_secret_value()},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        logger.exception("pulse_start_via_api_failed", error=str(exc))
+        return None
+
+
 async def send_morning_pulse(
     http: httpx.AsyncClient,
     llm: Any,
 ) -> None:
     """Send the morning pulse DM. Idempotent — exits early if already sent today.
 
+    Flow: call POST /v1/pulse/start (which runs the signal-driven pipeline or
+    the legacy fallback). If the pipeline produced a silent row, skip the DM.
+    Otherwise build and send the Discord embed with the resulting ai_question.
+
     Args:
         http: httpx.AsyncClient (used for both Discord REST and Open Brain API)
-        llm: AnthropicClient instance (or None for no AI question)
+        llm: kept for signature compat; rendering happens inside the API call.
     """
     settings = _get_settings()
 
@@ -462,7 +486,21 @@ async def send_morning_pulse(
         logger.warning("pulse_bot_token_not_configured", token_set=False)
         return
 
-    # Fetch context
+    pulse = await _start_pulse_via_api(http, settings)
+    if pulse is None:
+        return
+
+    if pulse.get("status") == "silent":
+        logger.info(
+            "pulse_silent_no_dm",
+            pulse_id=pulse.get("id"),
+            signal_trace=(pulse.get("parsed_data") or {}).get("signal_trace"),
+        )
+        return
+
+    ai_question = pulse.get("ai_question") or ""
+
+    # Fetch context for the embed (independent of pulse record creation).
     from src.integrations.calendar import _empty_calendar_state, fetch_today_events
 
     try:
@@ -472,14 +510,7 @@ async def send_morning_pulse(
         cal_state = _empty_calendar_state()
 
     open_todos = await _fetch_open_todos(http, settings)
-    yesterday_question = await _fetch_yesterday_question(http, settings)
-    ai_question = await _generate_ai_question(
-        llm,
-        open_todos=open_todos,
-        yesterday_question=yesterday_question,
-    )
 
-    # Build and send
     embed = _build_morning_embed(
         date_str=datetime.now().date().isoformat(),
         events=cal_state.events,
@@ -493,7 +524,16 @@ async def send_morning_pulse(
     if message_id is None:
         return
 
-    await _create_pulse_record(http, settings, message_id, ai_question)
+    # Persist the Discord message_id back onto the already-created row via PATCH.
+    try:
+        await http.patch(
+            f"{settings.open_brain_api_url}/v1/pulse/today",
+            json={"discord_message_id": str(message_id)},
+            headers={"X-API-Key": settings.api_key.get_secret_value()},
+            timeout=10.0,
+        )
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        logger.warning("pulse_discord_msg_id_patch_failed", error=str(exc))
 
 
 # ── Reply parser ───────────────────────────────────────────────────────────────

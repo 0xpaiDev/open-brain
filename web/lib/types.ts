@@ -13,6 +13,7 @@ export interface PulseResponse {
   parsed_data: Record<string, unknown> | null;
   clean_meal: boolean | null;
   alcohol: boolean | null;
+  signal_type: string | null;
   created_at: string;
   updated_at: string;
 }

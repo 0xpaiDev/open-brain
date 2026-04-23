@@ -87,6 +87,19 @@ function NoPulse({ onCreate }: { onCreate: () => void }) {
   );
 }
 
+function SilentPulse() {
+  return (
+    <div className="bg-surface-container rounded-2xl p-6 flex flex-col items-center justify-center gap-3 py-10">
+      <span className="material-symbols-outlined text-3xl text-on-surface-variant">
+        do_not_disturb_on
+      </span>
+      <p className="text-sm text-on-surface-variant text-center">
+        No pulse today — no detector crossed the threshold.
+      </p>
+    </div>
+  );
+}
+
 function SegmentedToggle({
   label,
   value,
@@ -184,7 +197,7 @@ function PulseForm({
           {aiQuestion && (
             <div>
               <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-                Your answer
+                {aiQuestion.trimEnd().endsWith("?") ? "Your answer" : "Thoughts"}
               </label>
               <Textarea
                 value={answer}
@@ -370,6 +383,7 @@ export function MorningPulse() {
     );
   }
   if (!pulse) return <NoPulse onCreate={createPulse} />;
+  if (pulse.status === "silent") return <SilentPulse />;
   if (pulse.status === "sent") {
     return <PulseForm aiQuestion={pulse.ai_question} onSubmit={submitPulse} />;
   }

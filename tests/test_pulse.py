@@ -1541,3 +1541,99 @@ async def test_pulse_start_alternates_question_type(test_client, api_key_headers
 
     assert resp.status_code == 201
     assert captured_kwargs.get("yesterday_question") == "What project needs attention today?"
+
+
+# ── Section 19: Signal-driven path — silence + label logic ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_silent_when_no_signals_fire(test_client, api_key_headers, monkeypatch):
+    """When detectors are enabled and all return None, pulse is created with status=silent."""
+    monkeypatch.setenv("PULSE_SIGNAL_DETECTORS", "focus,opportunity,open")
+    monkeypatch.setenv("PULSE_SILENCE_THRESHOLD", "10.0")  # force silence (nothing >= 10)
+    from src.core import config as _config
+
+    monkeypatch.setattr(_config, "settings", _config.Settings())
+
+    resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "silent"
+    assert data["ai_question"] is None
+    assert data["signal_type"] is None
+    assert data["parsed_data"] is not None
+    assert "signal_trace" in data["parsed_data"]
+
+
+@pytest.mark.asyncio
+async def test_pulse_start_writes_signal_type_when_signal_fires(
+    test_client, api_key_headers, monkeypatch, async_session
+):
+    """An active todo drives the open detector; signal_type='open' surfaces in the DB row."""
+    from src.core.models import TodoItem
+
+    monkeypatch.setenv("PULSE_SIGNAL_DETECTORS", "focus,opportunity,open")
+    monkeypatch.setenv("PULSE_SILENCE_THRESHOLD", "4.0")
+    from src.core import config as _config
+
+    monkeypatch.setattr(_config, "settings", _config.Settings())
+
+    todo = TodoItem(description="Ship X", priority="high", status="open")
+    async_session.add(todo)
+    await async_session.commit()
+
+    mock_llm = _make_mock_llm("What will make today feel like a win?")
+    with patch("src.llm.client.anthropic_client", mock_llm):
+        resp = await test_client.post("/v1/pulse/start", headers=api_key_headers)
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "sent"
+    assert data["signal_type"] == "open"
+    assert data["ai_question"] == "What will make today feel like a win?"
+    assert data["parsed_data"] is not None
+    assert "signal_trace" in data["parsed_data"]
+
+
+@pytest.mark.asyncio
+async def test_patch_silent_rejects_status_transition(test_client, api_key_headers):
+    """PATCH /v1/pulse/today rejects any status change on a silent pulse."""
+    pulse_date = _today_midnight().isoformat()
+    resp = await test_client.post(
+        "/v1/pulse",
+        json={"pulse_date": pulse_date, "status": "silent"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+
+    resp_patch = await test_client.patch(
+        "/v1/pulse/today",
+        json={"status": "completed"},
+        headers=api_key_headers,
+    )
+    assert resp_patch.status_code == 409
+
+
+def test_pulse_modal_label_for_question():
+    """Modal label is 'Your answer' when ai_question ends with '?'."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    m = PulseModal(ai_question="What's blocking you today?")
+    assert m.ai_response is not None
+    assert m.ai_response.label == "Your answer"
+
+
+def test_pulse_modal_label_for_remark():
+    """Modal label is 'Thoughts?' for a non-question remark."""
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    m = PulseModal(ai_question="Best ride weather this week.")
+    assert m.ai_response is not None
+    assert m.ai_response.label == "Thoughts?"
+
+
+def test_pulse_modal_no_field_when_ai_question_none():
+    from src.integrations.modules.pulse_cog import PulseModal
+
+    m = PulseModal(ai_question="")
+    assert m.ai_response is None

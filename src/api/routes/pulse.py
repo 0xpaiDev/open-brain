@@ -47,7 +47,7 @@ async def _try_pulse_sync(session: AsyncSession, pulse: DailyPulse) -> None:
 
 router = APIRouter()
 
-_VALID_STATUSES = {"sent", "replied", "parsed", "parse_failed", "skipped", "expired", "completed"}
+_VALID_STATUSES = {"sent", "replied", "parsed", "parse_failed", "skipped", "expired", "completed", "silent"}
 
 
 # ── Settings helper ────────────────────────────────────────────────────────────
@@ -69,6 +69,8 @@ class PulseCreate(BaseModel):
     status: str = "sent"
     discord_message_id: str | None = None
     ai_question: str | None = None
+    signal_type: str | None = None
+    parsed_data: dict | None = None
 
 
 class PulseUpdate(BaseModel):
@@ -82,6 +84,7 @@ class PulseUpdate(BaseModel):
     status: str | None = None
     clean_meal: bool | None = None
     alcohol: bool | None = None
+    discord_message_id: str | None = None
 
     @field_validator("sleep_quality", "energy_level")
     @classmethod
@@ -113,6 +116,7 @@ class PulseResponse(BaseModel):
     discord_message_id: str | None
     clean_meal: bool | None
     alcohol: bool | None
+    signal_type: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -141,6 +145,7 @@ def _pulse_to_response(pulse: DailyPulse) -> PulseResponse:
         discord_message_id=pulse.discord_message_id,
         clean_meal=pulse.clean_meal,
         alcohol=pulse.alcohol,
+        signal_type=pulse.signal_type,
         created_at=pulse.created_at,
         updated_at=pulse.updated_at,
     )
@@ -167,13 +172,17 @@ async def start_pulse(
     request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> PulseResponse:
-    """Create today's pulse with an AI-generated question.
+    """Create today's pulse with either the signal-driven pipeline or the legacy generator.
 
-    Queries open todos from the DB, fetches yesterday's ai_question for
-    alternation, calls _generate_ai_question(), and persists the pulse.
+    Phase 1: when `settings.pulse_signal_detectors` is non-empty, build a
+    MorningContext, run detectors, pick the strongest above the silence
+    threshold, and render a one-liner. On silence, persist a `status="silent"`
+    row (no ai_question, no Discord DM from the cron path). When the setting
+    is empty, fall through to the legacy _generate_ai_question path —
+    one-line env-flag revert without redeploy.
 
     Returns:
-        PulseResponse with ai_question populated.
+        PulseResponse with ai_question / signal_type populated (or NULL on silent).
 
     Raises:
         409: If a pulse record already exists for today.
@@ -182,28 +191,108 @@ async def start_pulse(
 
     from src.jobs.pulse import _generate_ai_question
 
+    settings = _get_settings()
     today_start = _today_midnight_utc()
 
-    # Check if pulse already exists today
-    existing_stmt = (
-        select(DailyPulse)
-        .where(DailyPulse.pulse_date >= today_start)
-        .limit(1)
-    )
+    # Idempotency pre-check.
+    existing_stmt = select(DailyPulse).where(DailyPulse.pulse_date >= today_start).limit(1)
     existing = (await session.execute(existing_stmt)).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="A pulse record already exists for today")
 
-    # Fetch open todos from DB directly
-    todo_stmt = (
-        select(TodoItem)
-        .where(TodoItem.status == "open")
-        .limit(25)
-    )
-    todo_rows = (await session.execute(todo_stmt)).scalars().all()
-    open_todos = [{"description": t.description, "due_date": t.due_date.isoformat() if t.due_date else None} for t in todo_rows]
+    detector_cfg = (getattr(settings, "pulse_signal_detectors", "") or "").strip()
+    use_signals = detector_cfg != ""
 
-    # Fetch yesterday's ai_question for alternation
+    llm = None
+    try:
+        from src.llm.client import anthropic_client
+
+        llm = anthropic_client
+    except Exception:
+        pass
+
+    if use_signals:
+        import httpx
+
+        from src.pulse_signals import (
+            build_morning_context,
+            render_signal,
+            run_detectors,
+            select_signal,
+        )
+        from src.pulse_signals.ranker import trace as ranker_trace
+
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            ctx = await build_morning_context(session, settings, http)
+
+        signals = run_detectors(ctx, settings)
+        order = [p.strip() for p in detector_cfg.split(",") if p.strip()]
+        threshold = float(getattr(settings, "pulse_silence_threshold", 5.0))
+        chosen = select_signal(signals, threshold=threshold, order=order)
+        signal_trace = ranker_trace(signals, order)
+
+        if chosen is None:
+            silent_payload: dict = {"signal_trace": signal_trace}
+            if getattr(settings, "pulse_signal_debug_ui", False):
+                silent_payload["debug_ui"] = True
+            pulse = DailyPulse(
+                pulse_date=today_start,
+                status="silent",
+                ai_question=None,
+                signal_type=None,
+                parsed_data=silent_payload,
+            )
+            session.add(pulse)
+            try:
+                await session.flush()
+            except IntegrityError:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=409, detail="A pulse record already exists for today"
+                ) from None
+            await session.commit()
+            await session.refresh(pulse)
+            logger.info("start_pulse_silent", pulse_id=str(pulse.id))
+            return _pulse_to_response(pulse)
+
+        ai_question = await render_signal(chosen, llm=llm, today=ctx.today)
+        pulse = DailyPulse(
+            pulse_date=today_start,
+            status="sent",
+            ai_question=ai_question,
+            signal_type=chosen.signal_type,
+            parsed_data={"signal_trace": signal_trace},
+        )
+        session.add(pulse)
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(
+                status_code=409, detail="A pulse record already exists for today"
+            ) from None
+        await session.commit()
+        await session.refresh(pulse)
+        logger.info(
+            "start_pulse_signal",
+            pulse_id=str(pulse.id),
+            signal_type=chosen.signal_type,
+            urgency=chosen.urgency,
+            ai_question=ai_question[:60],
+        )
+        return _pulse_to_response(pulse)
+
+    # ── Legacy fallback path ──────────────────────────────────────────────
+    todo_stmt = select(TodoItem).where(TodoItem.status == "open").limit(25)
+    todo_rows = (await session.execute(todo_stmt)).scalars().all()
+    open_todos = [
+        {
+            "description": t.description,
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+        }
+        for t in todo_rows
+    ]
+
     yesterday_start = today_start - timedelta(days=1)
     yesterday_stmt = (
         select(DailyPulse)
@@ -213,18 +302,10 @@ async def start_pulse(
     yesterday_pulse = (await session.execute(yesterday_stmt)).scalar_one_or_none()
     yesterday_question = yesterday_pulse.ai_question if yesterday_pulse else None
 
-    # Get LLM client (None if no API key)
-    llm = None
-    try:
-        from src.llm.client import anthropic_client
+    ai_question = await _generate_ai_question(
+        llm, open_todos=open_todos, yesterday_question=yesterday_question
+    )
 
-        llm = anthropic_client
-    except Exception:
-        pass
-
-    ai_question = await _generate_ai_question(llm, open_todos=open_todos, yesterday_question=yesterday_question)
-
-    # Create pulse record
     pulse = DailyPulse(
         pulse_date=today_start,
         status="sent",
@@ -239,7 +320,7 @@ async def start_pulse(
 
     await session.commit()
     await session.refresh(pulse)
-    logger.info("start_pulse", pulse_id=str(pulse.id), ai_question=ai_question[:60])
+    logger.info("start_pulse_legacy", pulse_id=str(pulse.id), ai_question=ai_question[:60])
     return _pulse_to_response(pulse)
 
 
@@ -270,6 +351,8 @@ async def create_pulse(
         status=body.status,
         discord_message_id=body.discord_message_id,
         ai_question=body.ai_question,
+        signal_type=body.signal_type,
+        parsed_data=body.parsed_data,
     )
     session.add(pulse)
     try:
@@ -353,6 +436,13 @@ async def update_today_pulse(
     if pulse is None:
         raise HTTPException(status_code=404, detail="No pulse record found for today")
 
+    # Silent rows have no reply to log — reject any mutation attempt.
+    if pulse.status == "silent":
+        raise HTTPException(
+            status_code=409,
+            detail="Pulse is in 'silent' status; no transitions or mutations permitted",
+        )
+
     if body.raw_reply is not None:
         pulse.raw_reply = body.raw_reply
     if body.sleep_quality is not None:
@@ -373,6 +463,8 @@ async def update_today_pulse(
         pulse.clean_meal = body.clean_meal
     if body.alcohol is not None:
         pulse.alcohol = body.alcohol
+    if body.discord_message_id is not None:
+        pulse.discord_message_id = body.discord_message_id
 
     await session.flush()
     await session.commit()
