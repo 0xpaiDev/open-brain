@@ -269,6 +269,174 @@ async def test_patch_todo_defer_with_reason(test_client, api_key_headers, async_
     assert deferred[0].reason == "busy this week"
 
 
+# ── POST /v1/todos/defer-all ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_success(test_client, api_key_headers, async_session) -> None:
+    """POST /v1/todos/defer-all updates due_date on every requested open todo."""
+    from sqlalchemy import select
+
+    from src.core.models import TodoHistory
+
+    ids = []
+    for i in range(3):
+        created = (
+            await test_client.post(
+                "/v1/todos",
+                json={"description": f"task {i}"},
+                headers=api_key_headers,
+            )
+        ).json()
+        ids.append(created["id"])
+
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={"todo_ids": ids, "due_date": "2026-12-31T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["deferred"]) == 3
+    assert body["skipped"] == []
+    for todo in body["deferred"]:
+        assert "2026-12-31" in todo["due_date"]
+
+    # Each todo should now have exactly one "deferred" history row.
+    for tid in ids:
+        result = await async_session.execute(
+            select(TodoHistory).where(TodoHistory.todo_id == uuid.UUID(tid))
+        )
+        rows = list(result.scalars().all())
+        deferred = [r for r in rows if r.event_type == "deferred"]
+        assert len(deferred) == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_with_reason(test_client, api_key_headers, async_session) -> None:
+    """Reason is stored in every deferred history row."""
+    from sqlalchemy import select
+
+    from src.core.models import TodoHistory
+
+    ids = []
+    for i in range(2):
+        created = (
+            await test_client.post(
+                "/v1/todos",
+                json={"description": f"reason task {i}"},
+                headers=api_key_headers,
+            )
+        ).json()
+        ids.append(created["id"])
+
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={
+            "todo_ids": ids,
+            "due_date": "2026-12-31T00:00:00Z",
+            "reason": "morning triage",
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+
+    for tid in ids:
+        result = await async_session.execute(
+            select(TodoHistory)
+            .where(TodoHistory.todo_id == uuid.UUID(tid))
+            .where(TodoHistory.event_type == "deferred")
+        )
+        rows = list(result.scalars().all())
+        assert len(rows) == 1
+        assert rows[0].reason == "morning triage"
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_skips_non_open(test_client, api_key_headers) -> None:
+    """Completed todos are reported in skipped, not deferred."""
+    open_todo = (
+        await test_client.post(
+            "/v1/todos", json={"description": "still open"}, headers=api_key_headers
+        )
+    ).json()
+    done_todo = (
+        await test_client.post(
+            "/v1/todos", json={"description": "already done"}, headers=api_key_headers
+        )
+    ).json()
+    await test_client.patch(
+        f"/v1/todos/{done_todo['id']}",
+        json={"status": "done"},
+        headers=api_key_headers,
+    )
+
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={
+            "todo_ids": [open_todo["id"], done_todo["id"]],
+            "due_date": "2026-12-31T00:00:00Z",
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["deferred"]) == 1
+    assert body["deferred"][0]["id"] == open_todo["id"]
+    assert len(body["skipped"]) == 1
+    assert body["skipped"][0]["todo_id"] == done_todo["id"]
+    assert body["skipped"][0]["reason"] == "not_open"
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_skips_missing(test_client, api_key_headers) -> None:
+    """Unknown todo_ids are reported in skipped with reason=not_found."""
+    created = (
+        await test_client.post(
+            "/v1/todos", json={"description": "exists"}, headers=api_key_headers
+        )
+    ).json()
+    missing = str(uuid.uuid4())
+
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={
+            "todo_ids": [created["id"], missing],
+            "due_date": "2026-12-31T00:00:00Z",
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["deferred"]) == 1
+    assert len(body["skipped"]) == 1
+    assert body["skipped"][0]["todo_id"] == missing
+    assert body["skipped"][0]["reason"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_empty_list_rejected(test_client, api_key_headers) -> None:
+    """Empty todo_ids list returns 422."""
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={"todo_ids": [], "due_date": "2026-12-31T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bulk_defer_over_limit_rejected(test_client, api_key_headers) -> None:
+    """More than 50 todo_ids returns 422."""
+    ids = [str(uuid.uuid4()) for _ in range(51)]
+    resp = await test_client.post(
+        "/v1/todos/defer-all",
+        json={"todo_ids": ids, "due_date": "2026-12-31T00:00:00Z"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_patch_todo_not_found(test_client, api_key_headers) -> None:
     """PATCH on a non-existent todo returns 404."""

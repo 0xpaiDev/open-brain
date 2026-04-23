@@ -111,6 +111,22 @@ class TodoHistoryResponse(BaseModel):
     created_at: datetime
 
 
+class TodoBulkDefer(BaseModel):
+    todo_ids: list[_uuid.UUID] = Field(..., min_length=1, max_length=50)
+    due_date: datetime
+    reason: str | None = Field(None, max_length=500)
+
+
+class TodoBulkDeferSkipped(BaseModel):
+    todo_id: str
+    reason: str  # "not_found" | "not_open"
+
+
+class TodoBulkDeferResponse(BaseModel):
+    deferred: list[TodoResponse]
+    skipped: list[TodoBulkDeferSkipped]
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -174,6 +190,64 @@ async def create_todo_route(
     )
     logger.info("create_todo_route", todo_id=str(todo.id))
     return _todo_to_response(todo)
+
+
+# ── POST /v1/todos/defer-all ───────────────────────────────────────────────────
+
+
+@router.post("/v1/todos/defer-all", response_model=TodoBulkDeferResponse)
+@limiter.limit(todos_limit)
+async def bulk_defer_todos_route(
+    request: Request,
+    body: TodoBulkDefer,
+    session: AsyncSession = Depends(get_db),
+) -> TodoBulkDeferResponse:
+    """Defer a batch of open todos to a new due date in one call.
+
+    Each requested todo is looked up; non-existent or non-open todos are
+    reported in ``skipped`` rather than aborting the batch. Open todos are
+    deferred via the existing ``update_todo`` service, which writes an
+    ``event_type="deferred"`` history row and re-embeds the todo into
+    ``memory_items`` for hybrid search.
+
+    Returns:
+        TodoBulkDeferResponse with lists of deferred todos and skipped entries.
+
+    Raises:
+        422: If ``todo_ids`` is empty, exceeds 50 entries, or any UUID is malformed.
+    """
+    stmt = select(TodoItem).where(TodoItem.id.in_(body.todo_ids))
+    result = await session.execute(stmt)
+    found: dict[str, TodoItem] = {str(t.id): t for t in result.scalars().all()}
+
+    deferred: list[TodoResponse] = []
+    skipped: list[TodoBulkDeferSkipped] = []
+
+    for todo_id in body.todo_ids:
+        key = str(todo_id)
+        todo = found.get(key)
+        if todo is None:
+            skipped.append(TodoBulkDeferSkipped(todo_id=key, reason="not_found"))
+            continue
+        if todo.status != "open":
+            skipped.append(TodoBulkDeferSkipped(todo_id=key, reason="not_open"))
+            continue
+        updated = await update_todo(
+            session,
+            todo,
+            due_date=body.due_date,
+            reason=body.reason,
+            fields_set={"due_date"},
+        )
+        deferred.append(_todo_to_response(updated))
+
+    logger.info(
+        "bulk_defer_todos_route",
+        requested=len(body.todo_ids),
+        deferred=len(deferred),
+        skipped=len(skipped),
+    )
+    return TodoBulkDeferResponse(deferred=deferred, skipped=skipped)
 
 
 # ── GET /v1/todos ──────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix (2026-04-23) — ~1190 tests (951 backend + 239 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer (2026-04-23) — ~1204 tests (957 backend + 247 Vitest)
 **Project**: 2026-03-13 → 2026-04-23 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -45,7 +45,7 @@
 
 ## Next Up
 
-- Deploy commitment completion bugfix so existing stuck-on-active commitments transition to `completed` on next cron run (`src/jobs/commitment_miss.py`, `src/api/routes/commitments.py`, `web/app/settings/page.tsx`)
+- Deploy bulk defer + commitment completion bugfix so UI "Defer all" works in prod and stuck-on-active commitments transition to `completed` on next cron run (`src/api/routes/todos.py`, `web/hooks/use-todos.ts`, `web/components/dashboard/task-list.tsx`, `src/jobs/commitment_miss.py`, `src/api/routes/commitments.py`, `web/app/settings/page.tsx`)
 - Deploy to run migration 0013 + activate new crontab entries (commitment_miss + training_weekly + learning_daily) (`alembic/versions/0013_learning_library.py`, `crontab`)
 - Seed first learning topics + sections + items via new routes or Claude Code skill (TBD) — feature is live but empty
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)

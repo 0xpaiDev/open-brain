@@ -42,6 +42,7 @@ const allOpenTodos = [overdueTodo, todayTodo, futureTodo, noDueTodo];
 const mockCompleteTodo = vi.fn(async () => {});
 const mockAddTodo = vi.fn(async () => {});
 const mockDeferTodo = vi.fn(async () => {});
+const mockDeferAll = vi.fn(async () => {});
 const mockEditTodo = vi.fn(async () => {});
 const mockDeleteTodo = vi.fn(async () => {});
 const mockLoadMoreDone = vi.fn(async () => {});
@@ -62,6 +63,7 @@ vi.mock("@/hooks/use-todos", async (importOriginal) => {
       completeTodo: mockCompleteTodo,
       addTodo: mockAddTodo,
       deferTodo: mockDeferTodo,
+      deferAll: mockDeferAll,
       editTodo: mockEditTodo,
       deleteTodo: mockDeleteTodo,
       loadMoreDone: mockLoadMoreDone,
@@ -87,7 +89,7 @@ vi.mock("@/hooks/use-todo-labels", () => ({
 
 // Mock sonner
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 describe("TaskList tabs", () => {
@@ -207,6 +209,58 @@ describe("TaskList tabs", () => {
         "Need more info",
       );
     });
+  });
+
+  test("Defer all button shown when Today tab has multiple tasks", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    // Default Today tab has 2 tasks (overdue + today) — button should appear.
+    const buttons = screen.getAllByLabelText(/Defer all \d+ tasks/);
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  test("Defer all button hidden when Today tab has only one task", async () => {
+    mockOpenTodos = [todayTodo];
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    expect(screen.queryByLabelText(/Defer all \d+ tasks?/)).toBeNull();
+  });
+
+  test("Defer all dialog submits with date + reason and passes today's ids", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    const triggerButtons = screen.getAllByLabelText(/Defer all \d+ tasks/);
+    fireEvent.click(triggerButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Defer all 2 tasks/)).toBeDefined();
+    });
+
+    const dateInput = screen.getByLabelText("New due date");
+    // Default is pre-filled with tomorrow; override explicitly to assert payload.
+    fireEvent.change(dateInput, { target: { value: "2026-05-10" } });
+
+    const reasonInput = screen.getByLabelText("Defer reason");
+    fireEvent.change(reasonInput, { target: { value: "morning triage" } });
+
+    const dialogButtons = screen.getAllByRole("button", { name: "Defer all" });
+    const submitBtn = dialogButtons.find((b) => b.closest("[data-slot='dialog-footer']"));
+    expect(submitBtn).toBeDefined();
+    fireEvent.click(submitBtn!);
+
+    await waitFor(() => {
+      expect(mockDeferAll).toHaveBeenCalledWith(
+        expect.arrayContaining([overdueTodo.id, todayTodo.id]),
+        "2026-05-10",
+        "morning triage",
+      );
+    });
+    // Only the two Today-tab todos get deferred — future and no-due are excluded.
+    const passedIds = mockDeferAll.mock.calls[0][0] as string[];
+    expect(passedIds).toHaveLength(2);
   });
 });
 

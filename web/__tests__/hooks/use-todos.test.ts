@@ -114,6 +114,7 @@ const { toastFn } = vi.hoisted(() => {
     success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
+    warning: vi.fn(),
   });
   return { toastFn: fn };
 });
@@ -144,6 +145,7 @@ describe("useTodos hook", () => {
     toastFn.success.mockClear();
     toastFn.error.mockClear();
     toastFn.info.mockClear();
+    toastFn.warning.mockClear();
   });
 
   afterEach(() => {
@@ -305,6 +307,166 @@ describe("useTodos hook", () => {
     expect(patchBody).not.toBeNull();
     expect(patchBody!.due_date).toBe(newDueDate);
     expect(patchBody!.reason).toBe(reason);
+  });
+
+  // ── deferAll ──────────────────────────────────────────────────────────────
+
+  test("deferAll updates due_date on every targeted todo and toasts success", async () => {
+    const todoA = { ...TODO_A, id: "d-all-1", due_date: "2026-04-01T00:00:00Z" };
+    const todoB = { ...TODO_A, id: "d-all-2", due_date: "2026-04-02T00:00:00Z" };
+    const newDueDate = "2026-04-20";
+    let postBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todoA, todoB], total: 2 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "POST" && path.includes("/v1/todos/defer-all")) {
+        postBody = JSON.parse(init.body as string);
+        return jsonResponse({
+          deferred: [
+            { ...todoA, due_date: newDueDate },
+            { ...todoB, due_date: newDueDate },
+          ],
+          skipped: [],
+        });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferAll(["d-all-1", "d-all-2"], newDueDate);
+    });
+
+    expect(postBody).not.toBeNull();
+    expect(postBody!.todo_ids).toEqual(["d-all-1", "d-all-2"]);
+    expect(postBody!.due_date).toBe(newDueDate);
+    expect(result.current.openTodos.map((t) => t.due_date)).toEqual([newDueDate, newDueDate]);
+    expect(toastFn.success).toHaveBeenCalledWith("2 tasks deferred");
+  });
+
+  test("deferAll with reason forwards it in POST body", async () => {
+    const todo = { ...TODO_A, id: "d-all-r", due_date: "2026-04-01T00:00:00Z" };
+    let postBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todo], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "POST" && path.includes("/v1/todos/defer-all")) {
+        postBody = JSON.parse(init.body as string);
+        return jsonResponse({
+          deferred: [{ ...todo, due_date: "2026-04-15" }],
+          skipped: [],
+        });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferAll(["d-all-r"], "2026-04-15", "morning triage");
+    });
+
+    expect(postBody!.reason).toBe("morning triage");
+  });
+
+  test("deferAll warns when some todos are skipped", async () => {
+    const todo = { ...TODO_A, id: "d-all-s", due_date: "2026-04-01T00:00:00Z" };
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todo], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "POST" && path.includes("/v1/todos/defer-all")) {
+        return jsonResponse({
+          deferred: [{ ...todo, due_date: "2026-04-15" }],
+          skipped: [{ todo_id: "missing-id", reason: "not_found" }],
+        });
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferAll(["d-all-s", "missing-id"], "2026-04-15");
+    });
+
+    expect(toastFn.warning).toHaveBeenCalledWith("1 task deferred (1 skipped)");
+  });
+
+  test("deferAll rolls back on POST failure", async () => {
+    const todoA = { ...TODO_A, id: "d-all-f1", due_date: "2026-04-01T00:00:00Z" };
+    const todoB = { ...TODO_A, id: "d-all-f2", due_date: "2026-04-02T00:00:00Z" };
+
+    vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [todoA, todoB], total: 2 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      if (init?.method === "POST" && path.includes("/v1/todos/defer-all")) {
+        return jsonResponse({}, 500);
+      }
+      return jsonResponse({}, 404);
+    }));
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.deferAll(["d-all-f1", "d-all-f2"], "2026-04-20");
+    });
+
+    // Due dates rolled back to original values.
+    const byId = Object.fromEntries(result.current.openTodos.map((t) => [t.id, t.due_date]));
+    expect(byId["d-all-f1"]).toBe("2026-04-01T00:00:00Z");
+    expect(byId["d-all-f2"]).toBe("2026-04-02T00:00:00Z");
+    expect(toastFn.error).toHaveBeenCalledWith("Failed to defer tasks");
+  });
+
+  test("deferAll with empty ids is a no-op", async () => {
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === "GET" && path.includes("status=open")) {
+        return jsonResponse({ todos: [TODO_A], total: 1 });
+      }
+      if (init?.method === "GET" && path.includes("status=done")) {
+        return jsonResponse({ todos: [], total: 0 });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const callsBefore = fetchMock.mock.calls.length;
+    await act(async () => {
+      await result.current.deferAll([], "2026-04-20");
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
   });
 
   // ── F6: completeTodo undo toast ────────────────────────────────────────────

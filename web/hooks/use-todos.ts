@@ -112,6 +112,7 @@ interface UseTodosReturn {
   completeTodo: (id: string) => Promise<void>;
   addTodo: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string, label?: string) => Promise<void>;
   deferTodo: (id: string, dueDate: string, reason?: string) => Promise<void>;
+  deferAll: (ids: string[], dueDate: string, reason?: string) => Promise<void>;
   editTodo: (id: string, description: string, dueDate: string | null, reason?: string) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
   loadMoreDone: () => Promise<void>;
@@ -229,6 +230,33 @@ export function useTodos(): UseTodosReturn {
     }
   }, [openTodos]);
 
+  const deferAll = useCallback(async (ids: string[], dueDate: string, reason?: string) => {
+    if (ids.length === 0) return;
+    const prevOpen = openTodos;
+    const idSet = new Set(ids);
+    setOpenTodos((prev) =>
+      sortOpenTodos(prev.map((t) => (idSet.has(t.id) ? { ...t, due_date: dueDate } : t)))
+    );
+
+    try {
+      const body: Record<string, unknown> = { todo_ids: ids, due_date: dueDate };
+      if (reason) body.reason = reason;
+      const res = await api<{
+        deferred: TodoItem[];
+        skipped: { todo_id: string; reason: string }[];
+      }>("POST", "/v1/todos/defer-all", body);
+      const msg = `${res.deferred.length} task${res.deferred.length === 1 ? "" : "s"} deferred`;
+      if (res.skipped.length > 0) {
+        toast.warning(`${msg} (${res.skipped.length} skipped)`);
+      } else {
+        toast.success(msg);
+      }
+    } catch {
+      setOpenTodos(prevOpen);
+      toast.error("Failed to defer tasks");
+    }
+  }, [openTodos]);
+
   const editTodo = useCallback(
     async (id: string, description: string, dueDate: string | null, reason?: string) => {
       const prevOpen = openTodos;
@@ -288,5 +316,5 @@ export function useTodos(): UseTodosReturn {
     }
   }, [doneOffset]);
 
-  return { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, editTodo, deleteTodo, loadMoreDone, hasMoreDone };
+  return { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, deferAll, editTodo, deleteTodo, loadMoreDone, hasMoreDone };
 }

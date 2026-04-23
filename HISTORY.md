@@ -1,6 +1,24 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-23** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix, ~1190 tests (951 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-23** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer, ~1204 tests (957 backend + 247 Vitest)
+
+---
+
+## Session — 2026-04-23 (Bulk "Defer all" for today's todos)
+
+**What changed**:
+- New `POST /v1/todos/defer-all` endpoint accepting `{todo_ids, due_date, reason?}` (1–50 IDs) — loops the existing `update_todo()` service so every deferred todo still writes a `deferred` history row and re-embeds into `memory_items`; non-open / missing IDs are returned in `skipped` rather than aborting the batch (`src/api/routes/todos.py`)
+- New `deferAll()` method in `useTodos` hook with optimistic update + rollback; `toast.warning` when any items are skipped (`web/hooks/use-todos.ts`)
+- New `DeferAllPopover` component + "Defer all" button on the Today tab; visible only when the filtered Today list has >1 item; date defaults to tomorrow (`web/components/dashboard/task-list.tsx`)
+- +6 backend tests (success, reason pass-through, non-open skip, not-found skip, empty-list 422, over-50 422) + 5 hook tests + 3 component tests
+
+**Files touched**: `src/api/routes/todos.py`, `tests/test_todos.py`, `web/hooks/use-todos.ts`, `web/components/dashboard/task-list.tsx`, `web/__tests__/hooks/use-todos.test.ts`, `web/__tests__/components/task-list.test.tsx`, `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`
+
+**Decisions made**: IDs-based endpoint (not filter-based `scope="today"`) — frontend `filterTodayTodos` uses local-time semantics in Europe/Vilnius and replicating that server-side is a TZ footgun; the UI sends the exact IDs the user sees. Loop `update_todo()` rather than building a single-transaction bulk service — keeps history/memory-sync semantics identical to single defer and reuses every existing guardrail (learning cascade, `_try_sync`). Embedding cost is N Voyage calls per batch (same as N single defers) — documented as acceptable, not a regression.
+
+**Gotchas found**: `TodoItem.id` is typed `Mapped[str]` in the ORM but is actually `uuid.UUID` at runtime — `dict[uuid.UUID, TodoItem]` with `t.id` as key fails mypy; use `dict[str, TodoItem]` with `str(t.id)` keys. `toast.warning` isn't in the existing sonner test mocks (`success`/`error`/`info` only) — any new hook/component that uses it must extend the mock in its test file.
+
+**Test count**: 957 backend + 247 Vitest = 1204 total (+14; 6 backend + 8 frontend)
 
 ---
 

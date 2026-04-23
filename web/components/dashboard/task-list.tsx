@@ -160,6 +160,93 @@ function DeferPopover({
   );
 }
 
+function tomorrowIsoDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function DeferAllPopover({
+  count,
+  onConfirm,
+}: {
+  count: number;
+  onConfirm: (dueDate: string, reason?: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [deferDate, setDeferDate] = useState(tomorrowIsoDate());
+  const [deferReason, setDeferReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!deferDate) return;
+    setSubmitting(true);
+    try {
+      await onConfirm(deferDate, deferReason || undefined);
+      setOpen(false);
+      setDeferReason("");
+      setDeferDate(tomorrowIsoDate());
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setDeferDate(tomorrowIsoDate());
+      }}
+    >
+      <DialogTrigger
+        render={
+          <Button variant="outline" size="sm" aria-label={`Defer all ${count} tasks`}>
+            <span className="material-symbols-outlined text-base mr-1">event_repeat</span>
+            Defer all
+          </Button>
+        }
+      />
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Defer all {count} task{count === 1 ? "" : "s"}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 py-2">
+          <Input
+            type="date"
+            value={deferDate}
+            onChange={(e) => setDeferDate(e.target.value)}
+            aria-label="New due date"
+          />
+          <textarea
+            value={deferReason}
+            onChange={(e) => setDeferReason(e.target.value)}
+            placeholder="Reason (optional)"
+            className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            rows={2}
+            aria-label="Defer reason"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!deferDate || submitting}
+            onClick={handleSubmit}
+          >
+            Defer all
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DatePickerDialog({
   dueDate,
   startDate,
@@ -810,7 +897,7 @@ function TaskListContent({
 }
 
 export function TaskList() {
-  const { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, editTodo, deleteTodo, loadMoreDone, hasMoreDone } = useTodos();
+  const { openTodos, doneTodos, loading, error, completeTodo, addTodo, deferTodo, deferAll, editTodo, deleteTodo, loadMoreDone, hasMoreDone } = useTodos();
   const { labels } = useTodoLabels();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeLabels, setActiveLabels] = useState<Set<string>>(new Set());
@@ -948,14 +1035,31 @@ export function TaskList() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value={0}>
-            <TaskListContent
-              todos={applyFilters(todayTodos)}
-              completeTodo={completeTodo}
-              deferTodo={deferTodo}
-              editTodo={editTodo}
-              deleteTodo={deleteTodo}
-              emptyMessage="Nothing due today — nice!"
-            />
+            {(() => {
+              const visibleToday = applyFilters(todayTodos);
+              return (
+                <>
+                  {visibleToday.length > 1 && (
+                    <div className="flex justify-end mb-2">
+                      <DeferAllPopover
+                        count={visibleToday.length}
+                        onConfirm={(dueDate, reason) =>
+                          deferAll(visibleToday.map((t) => t.id), dueDate, reason)
+                        }
+                      />
+                    </div>
+                  )}
+                  <TaskListContent
+                    todos={visibleToday}
+                    completeTodo={completeTodo}
+                    deferTodo={deferTodo}
+                    editTodo={editTodo}
+                    deleteTodo={deleteTodo}
+                    emptyMessage="Nothing due today — nice!"
+                  />
+                </>
+              );
+            })()}
           </TabsContent>
           <TabsContent value={1}>
             <TaskListContent
