@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-15** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1, ~1185 tests (946 backend + 239 Vitest)
+Covering **2026-03-13 to 2026-04-23** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix, ~1190 tests (951 backend + 239 Vitest)
+
+---
+
+## Session — 2026-04-23 (Commitment completion bugfix — daily never completed, aggregate missed-goal indistinguishable)
+
+**What changed**:
+- Cron now flips daily commitments from `active`→`completed` when `end_date <= yesterday` (previously only aggregates were completed, daily commitments stayed active forever and lingered on the dashboard) (`src/jobs/commitment_miss.py`)
+- Changed both daily+aggregate completion filters from `end_date == yesterday` to `end_date <= yesterday` — single missed cron run now self-heals on next invocation
+- Added derived `goal_reached: bool | None` field to `CommitmentResponse` via `_compute_goal_reached()` — distinguishes "period ended with goal met" from "period ended without reaching target" without widening the status enum (`src/api/routes/commitments.py`)
+- Settings page now shows `actual/target metric` for aggregate commitments (was: target only) and a red "not reached" badge when `goal_reached=false` (`web/app/settings/page.tsx`, `web/lib/types.ts`)
+- +5 backend tests: daily completion via cron, cron catch-up past `end_date`, `goal_reached` for each cadence×outcome
+
+**Files touched**: `src/jobs/commitment_miss.py`, `src/api/routes/commitments.py`, `tests/test_commitments.py`, `web/lib/types.ts`, `web/app/settings/page.tsx`, `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`
+
+**Decisions made**: Kept `commitment.status` enum binary (`active|completed|abandoned`) instead of adding `not_reached` — no migration needed and the outcome is cleanly derivable from `targets` vs `progress` / entry statuses. Dashboard list still filters `status=active`, so completed commitments (hit or not) drop off dashboard and live on settings; didn't widen the filter to avoid cluttering the primary view.
+
+**Gotchas found**: Old cron only transitioned aggregate commitments to `completed`, never daily — that's why the user's 6-day daily commitment stayed on the dashboard with 6/6 days shown. `CommitmentResponse` requires `metric` as a string even for aggregate commitments (schema default is `"reps"`) — in-memory test objects must pass `metric="tss"` explicitly or pydantic rejects the response.
+
+**Test count**: 951 backend + 239 Vitest = 1190 total (+5 backend)
 
 ---
 

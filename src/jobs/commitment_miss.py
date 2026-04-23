@@ -38,9 +38,12 @@ def _get_yesterday() -> date:
 
 async def detect_misses() -> int:
     """Mark yesterday's pending commitment entries as missed (daily) and
-    complete aggregate commitments whose period ended yesterday.
+    complete commitments whose period has ended.
 
-    Only processes entries for active commitments.
+    Daily commitments whose `end_date <= yesterday` are flipped to "completed"
+    so they drop off the active dashboard. Aggregate commitments do the same.
+    `<= yesterday` (not `== yesterday`) ensures a single missed cron run still
+    catches up on the next invocation.
 
     Returns:
         Number of daily entries marked as missed.
@@ -76,13 +79,28 @@ async def detect_misses() -> int:
             result = await session.execute(stmt)
             count = result.rowcount
 
-        # Complete aggregate commitments whose period ended yesterday
+        # Complete daily commitments whose period has ended
+        daily_done_result = await session.execute(
+            select(Commitment).where(
+                and_(
+                    Commitment.status == "active",
+                    Commitment.cadence == "daily",
+                    Commitment.end_date <= yesterday,
+                )
+            )
+        )
+        daily_completed = 0
+        for commitment in daily_done_result.scalars():
+            commitment.status = "completed"
+            daily_completed += 1
+
+        # Complete aggregate commitments whose period has ended
         agg_result = await session.execute(
             select(Commitment).where(
                 and_(
                     Commitment.status == "active",
                     Commitment.cadence == "aggregate",
-                    Commitment.end_date == yesterday,
+                    Commitment.end_date <= yesterday,
                 )
             )
         )
@@ -120,6 +138,7 @@ async def detect_misses() -> int:
             "commitment_miss_detected",
             date=str(yesterday),
             daily_misses=count,
+            daily_completed=daily_completed,
             aggregate_completed=agg_completed,
         )
         return count

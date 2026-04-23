@@ -124,6 +124,7 @@ class CommitmentResponse(BaseModel):
     created_at: str
     updated_at: str
     current_streak: int = 0
+    goal_reached: bool | None = None
     entries: list[EntryResponse] = []
 
 
@@ -215,6 +216,34 @@ def _compute_pace(
     return pace
 
 
+def _compute_goal_reached(
+    commitment: Commitment, entries: list[CommitmentEntry], today: date
+) -> bool | None:
+    """Return whether the commitment's goal was achieved.
+
+    None while the commitment is still in progress (period hasn't ended and
+    status is active). Once the period has ended — or the status has been
+    flipped to completed by the cron — returns True/False so the UI can
+    distinguish a successful finish from "not reached".
+    """
+    period_over = commitment.end_date < today or commitment.status != "active"
+    if not period_over:
+        return None
+
+    if commitment.cadence == "aggregate":
+        targets = commitment.targets or {}
+        if not targets:
+            return None
+        progress = commitment.progress or {}
+        return all(progress.get(metric, 0.0) >= target for metric, target in targets.items())
+
+    # Daily: goal reached means every entry in range hit the target.
+    in_range = [e for e in entries if commitment.start_date <= e.entry_date <= commitment.end_date]
+    if not in_range:
+        return None
+    return all(e.status == "hit" for e in in_range)
+
+
 def _commitment_to_response(
     commitment: Commitment, entries: list[CommitmentEntry] | None = None, today: date | None = None
 ) -> CommitmentResponse:
@@ -244,6 +273,7 @@ def _commitment_to_response(
         created_at=str(commitment.created_at),
         updated_at=str(commitment.updated_at),
         current_streak=_compute_streak(entry_list, t) if commitment.cadence == "daily" else 0,
+        goal_reached=_compute_goal_reached(commitment, entry_list, t),
         entries=[_entry_to_response(e) for e in entry_list],
     )
 

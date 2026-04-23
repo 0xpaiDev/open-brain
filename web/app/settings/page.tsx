@@ -216,28 +216,43 @@ export default function SettingsPage() {
                 (new Date(c.end_date).getTime() - new Date(c.start_date).getTime()) / 86400000
               ) + 1;
               const hits = c.entries.filter((e) => e.status === "hit").length;
+              const notReached = c.status === "completed" && c.goal_reached === false;
+              const statusLabel = notReached ? "not reached" : c.status;
+              const statusClass = notReached
+                ? "bg-streak-miss/20 text-streak-miss"
+                : c.status === "active"
+                  ? "bg-streak-hit/20 text-streak-hit"
+                  : c.status === "completed"
+                    ? "bg-primary/20 text-primary"
+                    : "bg-outline/20 text-outline";
+
+              let detail: string;
+              if (c.cadence === "aggregate") {
+                const progress = c.progress ?? {};
+                detail = Object.entries(c.targets ?? {})
+                  .map(([k, v]) => {
+                    const actual = progress[k] ?? 0;
+                    return `${actual.toFixed(1)}/${v} ${k}`;
+                  })
+                  .join(", ");
+              } else {
+                detail = `${hits}/${totalDays} days · ${c.daily_target} ${c.metric}/day`;
+              }
+
               return (
                 <li
                   key={c.id}
                   className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-surface-container-low transition-colors group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-xs font-body px-2 py-0.5 rounded-full ${
-                      c.status === "active"
-                        ? "bg-streak-hit/20 text-streak-hit"
-                        : c.status === "completed"
-                          ? "bg-primary/20 text-primary"
-                          : "bg-outline/20 text-outline"
-                    }`}>
-                      {c.status}
+                    <span className={`text-xs font-body px-2 py-0.5 rounded-full ${statusClass}`}>
+                      {statusLabel}
                     </span>
                     <span className="text-sm font-body text-on-surface truncate">
                       {c.name}
                     </span>
                     <span className="text-xs text-on-surface-variant">
-                      {c.cadence === "aggregate"
-                        ? Object.entries(c.targets ?? {}).map(([k, v]) => `${v} ${k}`).join(", ")
-                        : `${hits}/${totalDays} days · ${c.daily_target} ${c.metric}/day`}
+                      {detail}
                     </span>
                   </div>
                   {c.status === "active" && (

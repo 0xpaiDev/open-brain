@@ -819,3 +819,231 @@ async def test_update_commitment_progress_multi_metric(async_session) -> None:
 
     assert c.progress["km"] == pytest.approx(80.0, rel=0.01)
     assert c.progress["tss"] == pytest.approx(200.0, rel=0.01)
+
+
+# ── Daily completion via cron ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_detect_misses_completes_ended_daily_commitment(async_session) -> None:
+    """detect_misses flips daily commitments to 'completed' after end_date."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import patch
+
+    from src.core.models import Commitment, CommitmentEntry
+    from src.jobs.commitment_miss import detect_misses
+
+    yesterday = date.today() - timedelta(days=1)
+    start = yesterday - timedelta(days=5)  # 6-day commitment, ended yesterday
+    c = Commitment(
+        name="6-day push-ups",
+        exercise="push-ups",
+        daily_target=50,
+        metric="reps",
+        cadence="daily",
+        start_date=start,
+        end_date=yesterday,
+        status="active",
+    )
+    async_session.add(c)
+    await async_session.flush()
+
+    current = start
+    while current <= yesterday:
+        async_session.add(
+            CommitmentEntry(commitment_id=c.id, entry_date=current, logged_count=50, status="hit")
+        )
+        current += timedelta(days=1)
+    await async_session.commit()
+
+    @asynccontextmanager
+    async def mock_db_context():
+        yield async_session
+
+    with patch("src.jobs.commitment_miss._get_yesterday", return_value=yesterday):
+        with patch("src.jobs.commitment_miss.get_db_context", mock_db_context):
+            await detect_misses()
+
+    await async_session.refresh(c)
+    assert c.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_detect_misses_catches_up_past_end_date(async_session) -> None:
+    """detect_misses catches daily commitments whose end_date is older than yesterday.
+
+    Guards against a missed cron run leaving a daily commitment stuck on 'active'.
+    """
+    from contextlib import asynccontextmanager
+    from unittest.mock import patch
+
+    from src.core.models import Commitment
+    from src.jobs.commitment_miss import detect_misses
+
+    yesterday = date.today() - timedelta(days=1)
+    ended_3_days_ago = date.today() - timedelta(days=3)
+    c = Commitment(
+        name="Old challenge",
+        exercise="push-ups",
+        daily_target=50,
+        metric="reps",
+        cadence="daily",
+        start_date=ended_3_days_ago - timedelta(days=4),
+        end_date=ended_3_days_ago,
+        status="active",
+    )
+    async_session.add(c)
+    await async_session.commit()
+
+    @asynccontextmanager
+    async def mock_db_context():
+        yield async_session
+
+    with patch("src.jobs.commitment_miss._get_yesterday", return_value=yesterday):
+        with patch("src.jobs.commitment_miss.get_db_context", mock_db_context):
+            await detect_misses()
+
+    await async_session.refresh(c)
+    assert c.status == "completed"
+
+
+# ── goal_reached response field ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_goal_reached_none_for_active_aggregate(test_client, api_key_headers) -> None:
+    """goal_reached is None while aggregate commitment is still active in-period."""
+    today = date.today()
+    resp = await test_client.post(
+        "/v1/commitments",
+        json={
+            "name": "Quarter ride",
+            "exercise": "cycling",
+            "daily_target": 0,
+            "cadence": "aggregate",
+            "targets": {"tss": 300},
+            "start_date": str(today),
+            "end_date": str(today + timedelta(days=29)),
+        },
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["goal_reached"] is None
+
+
+@pytest.mark.asyncio
+async def test_goal_reached_false_when_aggregate_missed_target(async_session) -> None:
+    """goal_reached is False for a completed aggregate that didn't hit targets."""
+    from src.api.routes.commitments import _commitment_to_response
+    from src.core.models import Commitment
+
+    yesterday = date.today() - timedelta(days=1)
+    c = Commitment(
+        name="TSS push",
+        exercise="cycling",
+        daily_target=0,
+        metric="tss",
+        cadence="aggregate",
+        targets={"tss": 300},
+        progress={"tss": 180},
+        start_date=yesterday - timedelta(days=29),
+        end_date=yesterday,
+        status="completed",
+    )
+
+    resp = _commitment_to_response(c, entries=[], today=date.today())
+    assert resp.goal_reached is False
+
+
+@pytest.mark.asyncio
+async def test_goal_reached_true_when_aggregate_hit_target(async_session) -> None:
+    """goal_reached is True once every target is met (covers multi-metric)."""
+    from src.api.routes.commitments import _commitment_to_response
+    from src.core.models import Commitment
+
+    yesterday = date.today() - timedelta(days=1)
+    c = Commitment(
+        name="TSS + km push",
+        exercise="cycling",
+        daily_target=0,
+        metric="tss",
+        cadence="aggregate",
+        targets={"tss": 300, "km": 100},
+        progress={"tss": 310, "km": 105},
+        start_date=yesterday - timedelta(days=29),
+        end_date=yesterday,
+        status="completed",
+    )
+
+    resp = _commitment_to_response(c, entries=[], today=date.today())
+    assert resp.goal_reached is True
+
+
+@pytest.mark.asyncio
+async def test_goal_reached_daily_all_hits(async_session) -> None:
+    """Daily commitment with every entry hit returns goal_reached=True after end."""
+    from src.api.routes.commitments import _commitment_to_response
+    from src.core.models import Commitment, CommitmentEntry
+
+    yesterday = date.today() - timedelta(days=1)
+    start = yesterday - timedelta(days=5)
+    c = Commitment(
+        name="6-day daily",
+        exercise="push-ups",
+        daily_target=50,
+        metric="reps",
+        cadence="daily",
+        start_date=start,
+        end_date=yesterday,
+        status="completed",
+    )
+    entries = []
+    current = start
+    while current <= yesterday:
+        entries.append(
+            CommitmentEntry(
+                commitment_id=uuid.uuid4(),
+                entry_date=current,
+                logged_count=50,
+                status="hit",
+            )
+        )
+        current += timedelta(days=1)
+
+    resp = _commitment_to_response(c, entries=entries, today=date.today())
+    assert resp.goal_reached is True
+
+
+@pytest.mark.asyncio
+async def test_goal_reached_daily_with_miss(async_session) -> None:
+    """Daily commitment with a miss returns goal_reached=False after end."""
+    from src.api.routes.commitments import _commitment_to_response
+    from src.core.models import Commitment, CommitmentEntry
+
+    yesterday = date.today() - timedelta(days=1)
+    start = yesterday - timedelta(days=2)
+    c = Commitment(
+        name="3-day daily",
+        exercise="push-ups",
+        daily_target=50,
+        metric="reps",
+        cadence="daily",
+        start_date=start,
+        end_date=yesterday,
+        status="completed",
+    )
+    entries = [
+        CommitmentEntry(commitment_id=uuid.uuid4(), entry_date=start, logged_count=50, status="hit"),
+        CommitmentEntry(
+            commitment_id=uuid.uuid4(),
+            entry_date=start + timedelta(days=1),
+            logged_count=20,
+            status="miss",
+        ),
+        CommitmentEntry(
+            commitment_id=uuid.uuid4(), entry_date=yesterday, logged_count=50, status="hit"
+        ),
+    ]
+
+    resp = _commitment_to_response(c, entries=entries, today=date.today())
+    assert resp.goal_reached is False

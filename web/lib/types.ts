@@ -311,6 +311,7 @@ export interface CommitmentResponse {
   created_at: string;
   updated_at: string;
   current_streak: number;
+  goal_reached: boolean | null;
   entries: CommitmentEntry[];
 }
 

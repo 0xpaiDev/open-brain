@@ -1,7 +1,7 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 complete (2026-04-15) — ~1185 tests (946 backend + 239 Vitest)
-**Project**: 2026-03-13 → 2026-04-15 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix (2026-04-23) — ~1190 tests (951 backend + 239 Vitest)
+**Project**: 2026-03-13 → 2026-04-23 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
 
@@ -36,6 +36,7 @@
 - **T2**: ~~Commitment miss cron not yet wired~~ — resolved. Crontab updated; needs deploy to activate.
 - **T3**: `hybrid_search()` tag filtering (tags @> query) not yet wired — column and GIN index exist but no API surface.
 - **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
+- **T5**: `/v1/commitments` list default filter is `status=active`; completed-but-not-reached aggregates only visible on settings (`status=all`). If dashboard should surface "not reached" tombstones, add a separate "recent" section rather than widening the active filter (`web/app/dashboard/page.tsx`, `web/components/dashboard/commitment-list.tsx`).
 - **L5**: Learning cron uses two-commit pattern in `_create_learning_todo` (`src/jobs/learning_daily.py`) — todo created then FK set. Non-atomic but low-probability; worst case one extra todo on next run. Consolidate into one transaction if this ever manifests.
 - **L6**: Web sidebar `/learning` link is hardcoded, not gated by `/v1/modules`. When `module_learning_enabled=False` clicking shows 404 gracefully. Acceptable for single-user; fix if multi-user.
 - **L7**: `/v1/learning/*` routes return `dict[str, Any]` rather than Pydantic response models. Matches modules endpoint style; tighten to models if stricter OpenAPI spec is needed.
@@ -44,6 +45,7 @@
 
 ## Next Up
 
+- Deploy commitment completion bugfix so existing stuck-on-active commitments transition to `completed` on next cron run (`src/jobs/commitment_miss.py`, `src/api/routes/commitments.py`, `web/app/settings/page.tsx`)
 - Deploy to run migration 0013 + activate new crontab entries (commitment_miss + training_weekly + learning_daily) (`alembic/versions/0013_learning_library.py`, `crontab`)
 - Seed first learning topics + sections + items via new routes or Claude Code skill (TBD) — feature is live but empty
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)
