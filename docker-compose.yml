@@ -99,7 +99,11 @@ services:
     container_name: openbrain-scheduler
     env_file: .env
     init: true
-    command: ["supercronic", "-json", "crontab"]
+    # Run commitment_miss once on container start (catches expired commitments
+    # missed because the previous run used a stale image), then exec supercronic
+    # for the regular schedule. `;` (not `&&`) so a startup-sweep failure
+    # doesn't block supercronic. `exec` preserves PID 1 / signal handling.
+    command: ["sh", "-c", "python -m src.jobs.commitment_miss; exec supercronic -json crontab"]
     environment:
       - OPEN_BRAIN_API_URL=http://api:8000
     dns:
