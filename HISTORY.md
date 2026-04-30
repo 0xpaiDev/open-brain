@@ -1,6 +1,67 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-23** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer, ~1204 tests (957 backend + 247 Vitest)
+Covering **2026-03-13 to 2026-04-30** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) deployed, ~1231 tests (972 backend + 259 Vitest)
+
+---
+
+## Session — 2026-04-30 (Todo redesign: focus card + project groups + project field on todos)
+
+**What changed**:
+- New `todo_items.project` field (String(100) nullable, indexed) via migration 0015 with idempotent seed of "Personal" project_label
+- Todos now belong to project groups (or "Personal" if NULL); existing null todos render under Personal without migration backfill
+- New `PATCH /v1/project-labels/{name}` endpoint with transactional cascade into both `todo_items.project` and `memory_items.project`, 409 on collision
+- Modified `DELETE /v1/project-labels/{name}` to cascade to NULL on both tables (belt-and-braces with render-time fallback)
+- Embedding cost optimization: `content_dirty` flag gates Voyage regeneration on project-only edits (`src/api/services/todo_service.py`, `src/pipeline/todo_sync.py`)
+- New frontend components: `FocusCard` (empty or highlighted focused todo), `ProjectGroup` (collapsible per-project section with mini progress bar), `TaskRow` + `AddTaskForm` extracted from task-list
+- Task list rewritten as orchestrator with localStorage for focus state + collapsed projects, with stale-id guard on render
+- `useProjectLabels.renameLabel()` with optimistic update + rollback on error
+- `useTodos.addTodo()` / `editTodo()` signatures changed to options-based to thread `project` field through
+- Settings page: inline rename UI for project labels (pencil icon → input → save)
+- +15 backend tests (todos CRUD with project, rename cascade, DELETE cascade) + 12 frontend tests (focus-card, project-group, use-project-labels rename)
+
+**Files touched**: `alembic/versions/0015_add_project_to_todos.py` (new), `src/core/models.py`, `src/api/routes/todos.py`, `src/api/routes/project_labels.py`, `src/api/services/todo_service.py`, `src/pipeline/todo_sync.py`, `tests/test_todos_project.py` (new), `tests/test_project_labels_rename.py` (new), `tests/test_todo_sync.py` (extended), `web/lib/types.ts`, `web/hooks/use-project-labels.ts`, `web/hooks/use-todos.ts`, `web/components/dashboard/task-utils.ts` (new), `web/components/dashboard/focus-card.tsx` (new), `web/components/dashboard/project-group.tsx` (new), `web/components/dashboard/task-row.tsx` (new), `web/components/dashboard/add-task-form.tsx` (new), `web/components/dashboard/task-list.tsx`, `web/app/settings/page.tsx`, `web/__tests__/components/focus-card.test.tsx` (new), `web/__tests__/components/project-group.test.tsx` (new), `web/__tests__/hooks/use-project-labels.test.ts` (new), `web/__tests__/hooks/use-todos.test.ts` (extended), `web/__tests__/components/task-list.test.tsx` (extended), `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`, `ARCHITECTURE.md`
+
+**Decisions made**: Soft reference (no FK) on project field — keeps schema simple, allows NULL rendering. Idempotent Personal seed in migration — matches existing pattern (todos/memories share project taxonomy). `content_dirty` flag prevents embedding waste on project-only edits. localStorage with stale-id guard — cheap render-time validation, no error path. Native `<select>` for project picker — consistency with smart-composer. Personal pinned first in group order — muscle memory for default.
+
+**Gotchas found**: TodoItem factory fields must include all required columns (`project`, `learning_item_id`, etc.) to satisfy type. addTodo/editTodo signature change from positional to options-based requires `expect.objectContaining()` in tests. Frontend test parallelism is aggressive; all 265 tests pass deterministically with `--no-file-parallelism`.
+
+**Test count**: 972 backend + 259 Vitest = 1231 total (+15 backend, +12 frontend)
+
+---
+
+## Session — 2026-04-26 (Scheduler boot sweep — expired commitment still showing)
+
+**What changed**:
+- Diagnosed why a daily commitment (`end_date=2026-04-17`) was still `active` on the dashboard 9 days after its period ended: the scheduler container was running the pre-`92a73f4` image through 04-26, so every nightly cron tick executed the old code (no daily-completion clause); the container was rebuilt today but the next tick wasn't until 04-27 00:30 UTC
+- Fixed by wrapping the scheduler `command` in `docker-compose.yml` to run `python -m src.jobs.commitment_miss` once on container boot before exec-ing supercronic; `;` (not `&&`) so a sweep failure doesn't block the scheduler
+- Deployed via `git pull` + `docker compose up -d --force-recreate scheduler` on the VM; boot sweep immediately logged `daily_completed=1` and flipped the commitment to `completed`
+
+**Files touched**: `docker-compose.yml`, `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`
+
+**Decisions made**: Boot sweep only runs `commitment_miss` (idempotent catch-up job) — not pulse, synthesis, or other jobs that would be noisy on every deploy. `supercronic @reboot` was investigated and found unsupported; command-wrapper is the only option.
+
+**Gotchas found**: `supercronic` returns `fatal: bad crontab line` for `@reboot` entries — confirmed with `supercronic -test` against live container. Startup-only cron tasks must live in the Docker `command:` wrapper, not `crontab`.
+
+**Test count**: 957 backend + 247 Vitest = 1204 total (unchanged)
+
+---
+
+## Session — 2026-04-25 (Phase 1 signal-driven pulse — diagnose stale rotation, deploy)
+
+**What changed**:
+- Diagnosed user complaint that morning pulse showed "same type of question" after Phase 1 (commit `b111b14`, 2026-04-23) — root cause was that prod's git was already pulled to `b111b14` but containers were never rebuilt, so the running api/worker/scheduler/discord-bot still had pre-Phase-1 code (every recent `daily_pulse` row had `signal_type=NULL`, the legacy-path signature)
+- Deployed Phase 1 to prod: confirmed migration 0014 already at head, rebuilt `open-brain-api` and `open-brain-web` images with `--no-cache`, force-recreated `api`, `worker`, `scheduler`, `discord-bot`, `web` containers
+- Verified post-deploy: `https://0xpai.com/ready` → 200, `from src.pulse_signals import …` succeeds inside running api container, `pulse_signal_detectors` defaults to `"focus,opportunity,open"` (no `.env` override)
+- No code changes — diagnosis + deploy only
+- Logged 2 new tech-debt items (P1, P2) in PROGRESS.md to revisit after first day of real signal-pipeline telemetry
+
+**Files touched**: `PROGRESS.md`, `HISTORY.md` (no code changes)
+
+**Decisions made**: Deferred any hardening of the `open` catch-all (raise threshold, hard A/B rule, widen yesterday lookback) until 2026-04-26's signal-pipeline output is observed — fixing soft alternation before seeing real telemetry would be premature. Did not edit prod `.env` — relied on code default for `pulse_signal_detectors`.
+
+**Gotchas found**: `git pull` on the prod VM does not redeploy. Container images bake the Python source at build time, so any backend code change requires `docker compose build api --no-cache` followed by `docker compose up -d --force-recreate worker scheduler discord-bot` (api/worker/scheduler/discord-bot share the image but the latter three don't auto-recreate when only the image tag changes). Symptom: `signal_type` column existed (migration applied) but every row had `NULL` because the legacy code path was running.
+
+**Test count**: 957 backend + 247 Vitest = 1204 total (unchanged)
 
 ---
 

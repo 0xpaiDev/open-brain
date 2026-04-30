@@ -17,8 +17,19 @@ from src.core.models import TodoHistory, TodoItem
 logger = structlog.get_logger(__name__)
 
 
-async def _try_sync(session: AsyncSession, todo: TodoItem, event_type: str) -> None:
-    """Best-effort sync of a todo mutation into memory_items."""
+async def _try_sync(
+    session: AsyncSession,
+    todo: TodoItem,
+    event_type: str,
+    *,
+    content_dirty: bool = True,
+) -> None:
+    """Best-effort sync of a todo mutation into memory_items.
+
+    ``content_dirty`` lets the sync skip Voyage embedding when no
+    content-affecting field changed (e.g. project-only edit). When False,
+    the existing memory_item is updated in place instead of superseded.
+    """
     try:
         from src.llm.client import embedding_client
         from src.pipeline.todo_sync import sync_todo_to_memory
@@ -26,7 +37,9 @@ async def _try_sync(session: AsyncSession, todo: TodoItem, event_type: str) -> N
         if not embedding_client:
             logger.warning("todo_sync_skipped_no_embedding_client", todo_id=str(todo.id))
             return
-        await sync_todo_to_memory(session, todo, event_type, embedding_client)
+        await sync_todo_to_memory(
+            session, todo, event_type, embedding_client, content_dirty=content_dirty
+        )
     except Exception:
         logger.warning("todo_memory_sync_failed", todo_id=str(todo.id), exc_info=True)
 
@@ -60,7 +73,14 @@ def _snapshot(todo: TodoItem) -> dict[str, Any]:
         "due_date": todo.due_date.isoformat() if todo.due_date else None,
         "start_date": todo.start_date.isoformat() if todo.start_date else None,
         "label": todo.label,
+        "project": todo.project,
     }
+
+
+# Fields whose change requires a re-embed in memory_items.
+# project is intentionally NOT here — it's stored as sidecar metadata, not
+# in the embedded content string.
+_CONTENT_FIELDS = ("description", "priority", "status", "due_date", "label")
 
 
 async def create_todo(
@@ -70,6 +90,7 @@ async def create_todo(
     due_date: datetime | None = None,
     start_date: datetime | None = None,
     label: str | None = None,
+    project: str | None = None,
 ) -> TodoItem:
     """Insert a TodoItem and a 'created' history row in one transaction.
 
@@ -84,7 +105,14 @@ async def create_todo(
     Returns:
         The newly created TodoItem with id populated.
     """
-    todo = TodoItem(description=description, priority=priority, due_date=due_date, start_date=start_date, label=label)
+    todo = TodoItem(
+        description=description,
+        priority=priority,
+        due_date=due_date,
+        start_date=start_date,
+        label=label,
+        project=project,
+    )
     session.add(todo)
     await session.flush()  # Populate todo.id before writing history
 
@@ -114,6 +142,7 @@ async def update_todo(
     status: str | None = None,
     reason: str | None = None,
     label: str | None = None,
+    project: str | None = None,
     fields_set: set[str] | None = None,
     learning_feedback: str | None = None,
     learning_notes: str | None = None,
@@ -162,8 +191,13 @@ async def update_todo(
         todo.label = label
     elif "label" in _set:
         todo.label = None
+    if project is not None:
+        todo.project = project
+    elif "project" in _set:
+        todo.project = None
 
     new_snapshot = _snapshot(todo)
+    content_dirty = any(old_snapshot[k] != new_snapshot[k] for k in _CONTENT_FIELDS)
 
     # Determine event_type
     if status == "done":
@@ -192,6 +226,6 @@ async def update_todo(
     await session.refresh(todo)  # Eagerly reload server-side onupdate columns (updated_at)
 
     logger.info("update_todo", todo_id=str(todo.id), event_type=event_type)
-    await _try_sync(session, todo, event_type)
+    await _try_sync(session, todo, event_type, content_dirty=content_dirty)
     await _try_cascade_learning_item(session, todo, event_type, learning_feedback, learning_notes)
     return todo

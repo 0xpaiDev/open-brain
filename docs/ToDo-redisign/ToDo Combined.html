@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ToDo — Focus + Groups</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0f0f10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+::-webkit-scrollbar { width: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+const C = {
+  bg:        "#1c1c1e",
+  surface:   "#242426",
+  surface2:  "#2c2c2e",
+  border:    "#333335",
+  salmon:    "#e07060",
+  salmonBg:  "rgba(224,112,96,0.12)",
+  indigo:    "#7b8fc7",
+  indigoBg:  "rgba(123,143,199,0.12)",
+  text:      "#f0efed",
+  textMid:   "#9a9a9c",
+  textDim:   "#5a5a5c",
+  green:     "#4caf7d",
+  greenBg:   "rgba(76,175,125,0.12)",
+};
+
+const TASKS = [
+  { id:1,  text:"Ability to select project for ToDo",                            project:"OB",       date:"Tomorrow" },
+  { id:2,  text:"Possible bug — Commitment start date shows in dashboard",        project:"OB",       date:"Tomorrow" },
+  { id:3,  text:"New feature: Commitment dashboard",                              project:"OB",       date:"Tomorrow" },
+  { id:4,  text:"Analytics MVP commitment logs",                                  project:"OB",       date:"Tomorrow" },
+  { id:5,  text:"Fix AI slop UI on memory card",                                  project:"OB",       date:"Tomorrow" },
+  { id:6,  text:"Task date range: first date used as anchor",                     project:"Personal", date:"Tomorrow" },
+  { id:7,  text:"Check Networkchuck learning setup",                              project:"Personal", date:"Tomorrow" },
+  { id:8,  text:"Implement Learning memory card icon + badge",                    project:"Personal", date:"Tomorrow" },
+  { id:9,  text:"Design bulk-ingest path for Learning Library",                   project:"Personal", date:"Tomorrow" },
+  { id:10, text:"Check car window — possible repair",                             project:"Personal", date:"Tomorrow" },
+  { id:11, text:"Align sober/clean-eat logic: Yes=Yes, No=No",                   project:"Personal", date:"Tomorrow" },
+];
+
+const PROJECTS = [
+  { key:"OB",       color: C.salmon,  bg: C.salmonBg },
+  { key:"Personal", color: C.indigo,  bg: C.indigoBg },
+];
+
+function CheckCircle({ done, color, onToggle, size=22 }) {
+  return (
+    <div onClick={e=>{ e.stopPropagation(); onToggle(); }} style={{
+      width:size, height:size, borderRadius:size/2, flexShrink:0, cursor:"pointer",
+      border:`1.5px solid ${done ? C.green : C.border}`,
+      background: done ? C.green : "transparent",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      transition:"all .18s",
+    }}>
+      {done && (
+        <svg width={size*.45} height={size*.36} viewBox="0 0 10 8">
+          <path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+        </svg>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab]             = useState("week");
+  const [done, setDone]           = useState(new Set());
+  const [collapsed, setCollapsed] = useState(new Set());
+  const [focusId, setFocusId]     = useState(1);
+
+  const toggle = id => setDone(s => { const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+  const collapseToggle = key => setCollapsed(s => { const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
+
+  const remaining = TASKS.filter(t => !done.has(t.id));
+  const focusTask = remaining.find(t=>t.id===focusId) || remaining[0];
+
+  function markFocusDone() {
+    if (!focusTask) return;
+    toggle(focusTask.id);
+    const next = remaining.find(t=>t.id !== focusTask.id);
+    if (next) setFocusId(next.id);
+  }
+  function skipFocus() {
+    const idx = remaining.indexOf(focusTask);
+    const next = remaining[(idx+1) % remaining.length];
+    if (next && next.id !== focusTask.id) setFocusId(next.id);
+  }
+
+  const totalDone = done.size;
+  const totalTasks = TASKS.length;
+
+  return (
+    <div style={{
+      width:390, height:720, background:C.bg,
+      borderRadius:44, overflow:"hidden",
+      boxShadow:"0 0 0 10px #0a0a0a, 0 50px 100px rgba(0,0,0,.8)",
+      display:"flex", flexDirection:"column",
+    }}>
+      {/* Status Bar */}
+      <div style={{ height:44, background:C.bg, display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 28px", flexShrink:0 }}>
+        <span style={{ color:C.text, fontSize:15, fontWeight:600 }}>9:41</span>
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <svg width="17" height="12" viewBox="0 0 17 12"><rect x="0" y="3" width="3" height="9" rx="1" fill={C.text}/><rect x="4.5" y="2" width="3" height="10" rx="1" fill={C.text}/><rect x="9" y="0" width="3" height="12" rx="1" fill={C.text}/><rect x="13.5" y="0" width="3" height="12" rx="1" fill={C.text} opacity=".3"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11"><path d="M7.5 2.5C9.4 2.5 11.1 3.3 12.3 4.5L13.5 3.2C11.9 1.6 9.8.7 7.5.7S3.1 1.6 1.5 3.2L2.7 4.5C3.9 3.3 5.6 2.5 7.5 2.5Z" fill={C.text}/><path d="M7.5 5.5C8.8 5.5 9.9 6 10.7 6.8L11.9 5.5C10.8 4.4 9.2 3.7 7.5 3.7S4.2 4.4 3.1 5.5L4.3 6.8C5.1 6 6.2 5.5 7.5 5.5Z" fill={C.text}/><circle cx="7.5" cy="9.5" r="1.8" fill={C.text}/></svg>
+          <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+            <div style={{ width:22, height:11, border:`1.5px solid ${C.text}`, borderRadius:3, display:"flex", alignItems:"center", padding:"0 1.5px" }}>
+              <div style={{ width:"70%", height:7, background:C.text, borderRadius:1.5 }}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Header */}
+      <div style={{ padding:"4px 20px 0", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+            <svg width="20" height="14" viewBox="0 0 20 14" fill="none">
+              <path d="M1 1.5h7M1 7h7M1 12.5h7" stroke={C.salmon} strokeWidth="1.8" strokeLinecap="round"/>
+              <rect x="12" y="1" width="7" height="5" rx="2" stroke={C.salmon} strokeWidth="1.5"/>
+              <rect x="12" y="8" width="7" height="5" rx="2" stroke={C.salmon} strokeWidth="1.5"/>
+            </svg>
+            <span style={{ color:C.text, fontSize:15, fontWeight:700, letterSpacing:".08em" }}>TASKS</span>
+            <span style={{ background:C.salmon, color:"#fff", fontSize:11, fontWeight:700, borderRadius:10, padding:"1px 7px" }}>{remaining.length}</span>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            {/* overall progress */}
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <div style={{ width:48, height:3, background:C.surface2, borderRadius:2, overflow:"hidden" }}>
+                <div style={{ width:`${(totalDone/totalTasks)*100}%`, height:"100%", background:C.green, borderRadius:2, transition:"width .4s" }}></div>
+              </div>
+              <span style={{ color:C.textDim, fontSize:11 }}>{totalDone}/{totalTasks}</span>
+            </div>
+            <div style={{ width:32, height:32, borderRadius:10, background:C.surface2, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke={C.text} strokeWidth="1.8" strokeLinecap="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display:"flex", borderBottom:`1px solid ${C.border}` }}>
+          {[["today","Today",null],["week","This Week","11"],["all","All","13"]].map(([id,label,count])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{
+              background:"none", border:"none", cursor:"pointer",
+              padding:"7px 14px", fontSize:13,
+              fontWeight: tab===id ? 600 : 400,
+              color: tab===id ? C.text : C.textMid,
+              borderBottom: `2px solid ${tab===id ? C.text : "transparent"}`,
+              marginBottom:-1,
+              display:"flex", alignItems:"center", gap:5,
+            }}>
+              {label}
+              {count && <span style={{
+                background: tab===id ? C.surface2 : C.border,
+                color: tab===id ? C.text : C.textMid,
+                fontSize:10, borderRadius:8, padding:"1px 6px", fontWeight:600,
+              }}>{count}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Scrollable body */}
+      <div style={{ flex:1, overflowY:"auto", padding:"0 0 16px" }}>
+
+        {/* ── Focus Card ── */}
+        {focusTask && (
+          <div style={{ margin:"14px 16px 0" }}>
+            <div style={{
+              background: C.surface, borderRadius:16,
+              border:`1px solid ${C.border}`,
+              overflow:"hidden", position:"relative",
+            }}>
+              {/* top accent strip */}
+              <div style={{ height:3, background:`linear-gradient(90deg, ${C.salmon}, transparent)` }}></div>
+              <div style={{ padding:"14px 16px 14px" }}>
+                <div style={{ color:C.textDim, fontSize:10, letterSpacing:".1em", marginBottom:8 }}>FOCUS NOW</div>
+                <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                  <CheckCircle done={done.has(focusTask.id)} color={C.salmon} onToggle={()=>toggle(focusTask.id)} size={24} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ color:C.text, fontSize:15, fontWeight:600, lineHeight:1.4, marginBottom:8 }}>{focusTask.text}</div>
+                    <div style={{ display:"flex", gap:7, alignItems:"center" }}>
+                      <span style={{
+                        background: PROJECTS.find(p=>p.key===focusTask.project)?.bg,
+                        color: PROJECTS.find(p=>p.key===focusTask.project)?.color,
+                        fontSize:11, fontWeight:600, borderRadius:6, padding:"2px 8px",
+                      }}>{focusTask.project}</span>
+                      <span style={{ color:C.textDim, fontSize:11 }}>{focusTask.date}</span>
+                    </div>
+                  </div>
+                </div>
+                {/* actions */}
+                <div style={{ display:"flex", gap:8, marginTop:12 }}>
+                  <button onClick={markFocusDone} style={{
+                    flex:1, background:C.green, border:"none", borderRadius:10,
+                    padding:"9px", cursor:"pointer", color:"#fff", fontSize:13, fontWeight:600,
+                  }}>✓  Done</button>
+                  <button onClick={skipFocus} style={{
+                    flex:1, background:C.surface2, border:"none", borderRadius:10,
+                    padding:"9px", cursor:"pointer", color:C.textMid, fontSize:13, fontWeight:500,
+                  }}>→  Skip</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Project Groups ── */}
+        <div style={{ marginTop:20 }}>
+          {PROJECTS.map(proj => {
+            const tasks = TASKS.filter(t=>t.project===proj.key);
+            const doneCount = tasks.filter(t=>done.has(t.id)).length;
+            const isCollapsed = collapsed.has(proj.key);
+            return (
+              <div key={proj.key} style={{ marginBottom:4 }}>
+                {/* Group header */}
+                <div
+                  onClick={()=>collapseToggle(proj.key)}
+                  style={{
+                    display:"flex", alignItems:"center", gap:10,
+                    padding:"9px 20px", cursor:"pointer", userSelect:"none",
+                  }}
+                >
+                  <div style={{ width:8, height:8, borderRadius:2, background:proj.color, flexShrink:0 }}></div>
+                  <span style={{ color:proj.color, fontSize:11, fontWeight:700, letterSpacing:".09em", flex:1 }}>{proj.key.toUpperCase()}</span>
+                  {/* progress */}
+                  <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                    <div style={{ width:36, height:2.5, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                      <div style={{ width:`${(doneCount/tasks.length)*100}%`, height:"100%", background:proj.color, borderRadius:2, transition:"width .3s" }}></div>
+                    </div>
+                    <span style={{ color:C.textDim, fontSize:11 }}>{doneCount}/{tasks.length}</span>
+                  </div>
+                  <svg width="10" height="6" viewBox="0 0 10 6" style={{ transform: isCollapsed?"rotate(-90deg)":"rotate(0deg)", transition:"transform .2s" }}>
+                    <path d="M1 1l4 4 4-4" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  </svg>
+                </div>
+
+                {/* Tasks */}
+                {!isCollapsed && tasks.map(task => {
+                  const isDone = done.has(task.id);
+                  const isFocus = focusTask && task.id === focusTask.id;
+                  return (
+                    <div key={task.id} style={{
+                      display:"flex", alignItems:"center",
+                      padding:"9px 20px 9px 38px", gap:12,
+                      opacity: isDone ? 0.4 : 1,
+                      background: isFocus ? proj.bg : "transparent",
+                      transition:"opacity .2s, background .2s",
+                      cursor: isFocus ? "default" : "pointer",
+                    }}
+                    onClick={()=>{ if(!isFocus) setFocusId(task.id); }}
+                    >
+                      <div style={{ width:2, height:"100%", minHeight:16, background: isFocus ? proj.color : "transparent", borderRadius:1, flexShrink:0, position:"absolute", left:20 }}></div>
+                      <CheckCircle done={isDone} color={proj.color} onToggle={()=>toggle(task.id)} size={20} />
+                      <span style={{
+                        color: isDone ? C.textDim : isFocus ? C.text : C.textMid,
+                        fontSize:13.5, flex:1, lineHeight:1.35,
+                        textDecoration: isDone ? "line-through" : "none",
+                        fontWeight: isFocus ? 500 : 400,
+                        transition:"color .15s",
+                      }}>{task.text}</span>
+                      {isFocus && (
+                        <div style={{ width:6, height:6, borderRadius:3, background:proj.color, flexShrink:0 }}></div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Add task */}
+                {!isCollapsed && (
+                  <div style={{ display:"flex", alignItems:"center", gap:12, padding:"8px 20px 8px 38px", cursor:"pointer", opacity:.45 }}>
+                    <div style={{ width:20, height:20, borderRadius:10, border:`1px dashed ${proj.color}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      <svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 1v6M1 4h6" stroke={proj.color} strokeWidth="1.5" strokeLinecap="round"/></svg>
+                    </div>
+                    <span style={{ color:proj.color, fontSize:12 }}>Add to {proj.key}</span>
+                  </div>
+                )}
+
+                <div style={{ height:1, background:C.border, margin:"4px 20px", opacity:.6 }}></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -57,17 +57,51 @@ async def sync_todo_to_memory(
     todo,
     event_type: str,
     voyage_client,
+    *,
+    content_dirty: bool = True,
 ) -> None:
     """Sync a TodoItem mutation to memory_items.
 
-    1. Format content string from todo fields + event_type
-    2. Generate embedding via embed_text()
-    3. Find & supersede existing memory_item(s) for this todo_id
-    4. Create RawMemory(source="todo", metadata_={"todo_id": str(todo.id)})
-    5. Create MemoryItem(type=..., content=..., embedding=..., raw_id=...)
-    6. Commit
+    When ``content_dirty`` is True (the default — covers create, status change,
+    description/priority/due_date/label change):
+      1. Format content string from todo fields + event_type
+      2. Generate embedding via embed_text()
+      3. Find & supersede existing memory_item(s) for this todo_id
+      4. Create RawMemory + MemoryItem with the new embedding
+
+    When ``content_dirty`` is False (e.g. project-only edit):
+      - Update the existing non-superseded memory_item's ``project`` field
+        in place. Do NOT call embed_text(), do NOT supersede, do NOT create
+        a new memory_item. If no existing memory_item is found, fall through
+        to the full create path so the row is at least present.
     """
     todo_id_str = str(todo.id)
+
+    if not content_dirty:
+        existing = await session.execute(
+            select(MemoryItem)
+            .join(RawMemory, MemoryItem.raw_id == RawMemory.id)
+            .where(
+                and_(
+                    RawMemory.metadata_["todo_id"].as_string() == todo_id_str,
+                    MemoryItem.is_superseded.is_(False),
+                )
+            )
+            .order_by(MemoryItem.created_at.desc())
+        )
+        item = existing.scalars().first()
+        if item is not None:
+            item.project = todo.project
+            await session.commit()
+            logger.info(
+                "todo_memory_project_updated",
+                todo_id=todo_id_str,
+                project=todo.project,
+                memory_id=str(item.id),
+            )
+            return
+        # else fall through to full create
+
     content, memory_type = _format_todo_content(todo, event_type)
 
     # Generate embedding
@@ -97,13 +131,14 @@ async def sync_todo_to_memory(
     session.add(raw)
     await session.flush()  # populate raw.id
 
-    # Create new memory item
+    # Create new memory item (project is sidecar metadata, not in content)
     memory_item = MemoryItem(
         raw_id=raw.id,
         type=memory_type,
         content=content,
         base_importance=_priority_to_importance(todo.priority),
         embedding=embedding,
+        project=todo.project,
     )
     session.add(memory_item)
     await session.commit()
@@ -114,6 +149,7 @@ async def sync_todo_to_memory(
         event_type=event_type,
         memory_type=memory_type,
         memory_id=str(memory_item.id),
+        project=todo.project,
     )
 
 

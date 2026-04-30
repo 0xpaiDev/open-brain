@@ -102,20 +102,18 @@ async def test_sync_creates_raw_memory_and_memory_item(async_session):
     mock_voyage = AsyncMock()
     mock_voyage.embed = AsyncMock(return_value=[0.1] * 1024)
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "created", mock_voyage)
 
     # Verify RawMemory created
-    raw_result = await async_session.execute(
-        select(RawMemory).where(RawMemory.source == "todo")
-    )
+    raw_result = await async_session.execute(select(RawMemory).where(RawMemory.source == "todo"))
     raw = raw_result.scalar_one()
     assert raw.metadata_["todo_id"] == str(todo.id)
 
     # Verify MemoryItem created
-    mi_result = await async_session.execute(
-        select(MemoryItem).where(MemoryItem.raw_id == raw.id)
-    )
+    mi_result = await async_session.execute(select(MemoryItem).where(MemoryItem.raw_id == raw.id))
     mi = mi_result.scalar_one()
     assert mi.type == "todo"
     assert "Deploy auth service" in mi.content
@@ -130,20 +128,22 @@ async def test_sync_supersedes_on_update(async_session):
     await async_session.commit()
     await async_session.refresh(todo)
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
 
     # Update description
     todo.description = "Updated task"
     await async_session.commit()
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "updated", AsyncMock())
 
     # Old should be superseded, new should not
-    mi_result = await async_session.execute(
-        select(MemoryItem).order_by(MemoryItem.created_at)
-    )
+    mi_result = await async_session.execute(select(MemoryItem).order_by(MemoryItem.created_at))
     items = mi_result.scalars().all()
     assert len(items) == 2
     assert items[0].is_superseded is True
@@ -159,7 +159,9 @@ async def test_sync_completion_creates_both_memories(async_session):
     await async_session.commit()
     await async_session.refresh(todo)
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
 
     # Complete the todo
@@ -167,12 +169,12 @@ async def test_sync_completion_creates_both_memories(async_session):
     todo.updated_at = datetime(2026, 4, 7, tzinfo=UTC)
     await async_session.commit()
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "completed", AsyncMock())
 
-    mi_result = await async_session.execute(
-        select(MemoryItem).order_by(MemoryItem.created_at)
-    )
+    mi_result = await async_session.execute(select(MemoryItem).order_by(MemoryItem.created_at))
     items = mi_result.scalars().all()
     assert len(items) == 2
     assert items[0].is_superseded is True  # old "todo" superseded
@@ -190,19 +192,21 @@ async def test_sync_cancelled_supersedes_without_completion(async_session):
     await async_session.commit()
     await async_session.refresh(todo)
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
 
     # Cancel
     todo.status = "cancelled"
     await async_session.commit()
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024):
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024
+    ):
         await sync_todo_to_memory(async_session, todo, "cancelled", AsyncMock())
 
-    mi_result = await async_session.execute(
-        select(MemoryItem).order_by(MemoryItem.created_at)
-    )
+    mi_result = await async_session.execute(select(MemoryItem).order_by(MemoryItem.created_at))
     items = mi_result.scalars().all()
     assert len(items) == 2
     assert items[0].is_superseded is True
@@ -219,9 +223,99 @@ async def test_sync_graceful_failure(async_session):
     await async_session.commit()
     await async_session.refresh(todo)
 
-    with patch("src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, side_effect=RuntimeError("embed failed")):
+    with patch(
+        "src.pipeline.todo_sync.embed_text",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("embed failed"),
+    ):
         with pytest.raises(RuntimeError, match="embed failed"):
             await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_sync_propagates_project_to_memory_item(async_session):
+    """sync_todo_to_memory copies todo.project onto MemoryItem.project (sidecar)."""
+    todo = TodoItem(description="Tagged task", priority="normal", project="OB")
+    async_session.add(todo)
+    await async_session.commit()
+    await async_session.refresh(todo)
+
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
+        await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
+
+    item = (
+        await async_session.execute(select(MemoryItem).where(MemoryItem.is_superseded.is_(False)))
+    ).scalar_one()
+    assert item.project == "OB"
+    # project lives in the sidecar column, NOT the embedded content string.
+    assert "OB" not in item.content
+    assert "Project:" not in item.content
+
+
+@pytest.mark.asyncio
+async def test_sync_skips_embed_when_content_unchanged(async_session):
+    """content_dirty=False updates project in place — no new embedding, no supersede."""
+    todo = TodoItem(description="Steady text", priority="normal", project="OB")
+    async_session.add(todo)
+    await async_session.commit()
+    await async_session.refresh(todo)
+
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
+        await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
+
+    # Project-only edit: same description/priority/status/due_date/label, new project.
+    todo.project = "Egle"
+    embed_mock = AsyncMock(return_value=[0.2] * 1024)
+    with patch("src.pipeline.todo_sync.embed_text", embed_mock):
+        await sync_todo_to_memory(async_session, todo, "updated", AsyncMock(), content_dirty=False)
+
+    # Embedding was NOT regenerated.
+    assert embed_mock.call_count == 0
+
+    items = (
+        (await async_session.execute(select(MemoryItem).order_by(MemoryItem.created_at)))
+        .scalars()
+        .all()
+    )
+    # Still only one row, not superseded, project updated.
+    assert len(items) == 1
+    assert items[0].is_superseded is False
+    assert items[0].project == "Egle"
+
+
+@pytest.mark.asyncio
+async def test_sync_content_dirty_true_supersedes_and_re_embeds(async_session):
+    """content_dirty=True (default) supersedes the prior memory_item and re-embeds."""
+    todo = TodoItem(description="Original", priority="normal", project="OB")
+    async_session.add(todo)
+    await async_session.commit()
+    await async_session.refresh(todo)
+
+    with patch(
+        "src.pipeline.todo_sync.embed_text", new_callable=AsyncMock, return_value=[0.1] * 1024
+    ):
+        await sync_todo_to_memory(async_session, todo, "created", AsyncMock())
+
+    todo.description = "Edited"  # content-affecting change
+    embed_mock = AsyncMock(return_value=[0.2] * 1024)
+    with patch("src.pipeline.todo_sync.embed_text", embed_mock):
+        await sync_todo_to_memory(async_session, todo, "updated", AsyncMock(), content_dirty=True)
+
+    assert embed_mock.call_count == 1
+    items = (
+        (await async_session.execute(select(MemoryItem).order_by(MemoryItem.created_at)))
+        .scalars()
+        .all()
+    )
+    assert len(items) == 2
+    assert items[0].is_superseded is True
+    assert items[1].is_superseded is False
+    assert "Edited" in items[1].content
+    assert items[1].project == "OB"
 
 
 @pytest.mark.asyncio

@@ -40,7 +40,10 @@ const AGGREGATE_METRICS = [
 ];
 
 export default function SettingsPage() {
-  const { labels, loading, createLabel, deleteLabel } = useProjectLabels();
+  const { labels, loading, createLabel, deleteLabel, renameLabel } = useProjectLabels();
+  const [editingProjectName, setEditingProjectName] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
   const {
     commitments,
     loading: commitmentsLoading,
@@ -416,31 +419,86 @@ export default function SettingsPage() {
           </p>
         ) : (
           <ul className="space-y-1">
-            {labels.map((label) => (
-              <li
-                key={label.id}
-                className="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-surface-container-low transition-colors group"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className="w-3 h-3 rounded-full shrink-0"
-                    style={{ backgroundColor: label.color }}
-                  />
-                  <span className="text-sm font-body text-on-surface">
-                    {label.name}
-                  </span>
-                </div>
-                <button
-                  onClick={() => deleteLabel(label.name)}
-                  className="text-outline hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                  title={`Delete ${label.name}`}
+            {labels.map((label) => {
+              const isEditing = editingProjectName === label.name;
+              async function commitRename() {
+                if (renameSubmitting) return;
+                const trimmed = editingDraft.trim();
+                if (!trimmed || trimmed === label.name) {
+                  setEditingProjectName(null);
+                  return;
+                }
+                setRenameSubmitting(true);
+                try {
+                  const ok = await renameLabel(label.name, trimmed);
+                  if (ok) setEditingProjectName(null);
+                } finally {
+                  setRenameSubmitting(false);
+                }
+              }
+              return (
+                <li
+                  key={label.id}
+                  className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg hover:bg-surface-container-low transition-colors group"
                 >
-                  <span className="material-symbols-outlined text-lg">
-                    close
-                  </span>
-                </button>
-              </li>
-            ))}
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: label.color }}
+                    />
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editingDraft}
+                        onChange={(e) => setEditingDraft(e.target.value)}
+                        autoFocus
+                        maxLength={100}
+                        disabled={renameSubmitting}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void commitRename();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditingProjectName(null);
+                          }
+                        }}
+                        onBlur={() => void commitRename()}
+                        aria-label={`Rename project ${label.name}`}
+                        className="flex-1 min-w-0 bg-surface-container-low border border-outline-variant/15 rounded-md px-2 py-1 text-base md:text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    ) : (
+                      <span className="text-sm font-body text-on-surface truncate">
+                        {label.name}
+                      </span>
+                    )}
+                  </div>
+                  {!isEditing && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingDraft(label.name);
+                          setEditingProjectName(label.name);
+                        }}
+                        className="text-outline hover:text-on-surface min-w-9 min-h-9 flex items-center justify-center rounded-md hover:bg-surface-container-high"
+                        aria-label={`Rename ${label.name}`}
+                      >
+                        <span className="material-symbols-outlined text-lg">edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteLabel(label.name)}
+                        className="text-outline hover:text-error min-w-9 min-h-9 flex items-center justify-center rounded-md hover:bg-error/10"
+                        aria-label={`Delete ${label.name}`}
+                      >
+                        <span className="material-symbols-outlined text-lg">close</span>
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
 

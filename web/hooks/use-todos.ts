@@ -104,16 +104,37 @@ export function filterTodayTodos(todos: TodoItem[]): TodoItem[] {
   });
 }
 
+export interface AddTodoOptions {
+  dueDate?: string;
+  startDate?: string;
+  label?: string;
+  project?: string | null;
+}
+
+export interface EditTodoOptions {
+  reason?: string;
+  project?: string | null;
+}
+
 interface UseTodosReturn {
   openTodos: TodoItem[];
   doneTodos: TodoItem[];
   loading: boolean;
   error: string | null;
   completeTodo: (id: string) => Promise<void>;
-  addTodo: (description: string, priority: "high" | "normal" | "low", dueDate?: string, startDate?: string, label?: string) => Promise<void>;
+  addTodo: (
+    description: string,
+    priority: "high" | "normal" | "low",
+    options?: AddTodoOptions,
+  ) => Promise<void>;
   deferTodo: (id: string, dueDate: string, reason?: string) => Promise<void>;
   deferAll: (ids: string[], dueDate: string, reason?: string) => Promise<void>;
-  editTodo: (id: string, description: string, dueDate: string | null, reason?: string) => Promise<void>;
+  editTodo: (
+    id: string,
+    description: string,
+    dueDate: string | null,
+    options?: EditTodoOptions,
+  ) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
   loadMoreDone: () => Promise<void>;
   hasMoreDone: boolean;
@@ -194,15 +215,14 @@ export function useTodos(): UseTodosReturn {
   const addTodo = useCallback(async (
     description: string,
     priority: "high" | "normal" | "low",
-    dueDate?: string,
-    startDate?: string,
-    label?: string,
+    options: AddTodoOptions = {},
   ) => {
     try {
       const body: Record<string, unknown> = { description, priority };
-      if (dueDate) body.due_date = dueDate;
-      if (startDate) body.start_date = startDate;
-      if (label) body.label = label;
+      if (options.dueDate) body.due_date = options.dueDate;
+      if (options.startDate) body.start_date = options.startDate;
+      if (options.label) body.label = options.label;
+      if (options.project !== undefined) body.project = options.project;
 
       const created = await api<TodoItem>("POST", "/v1/todos", body);
       setOpenTodos((prev) => sortOpenTodos([...prev, created]));
@@ -258,13 +278,26 @@ export function useTodos(): UseTodosReturn {
   }, [openTodos]);
 
   const editTodo = useCallback(
-    async (id: string, description: string, dueDate: string | null, reason?: string) => {
+    async (
+      id: string,
+      description: string,
+      dueDate: string | null,
+      options: EditTodoOptions = {},
+    ) => {
       const prevOpen = openTodos;
-      // Optimistic: apply new description + due_date in place, re-sort
+      const projectChanged = options.project !== undefined;
+      // Optimistic: apply new description + due_date (and project if provided) in place, re-sort
       setOpenTodos((prev) =>
         sortOpenTodos(
           prev.map((t) =>
-            t.id === id ? { ...t, description, due_date: dueDate } : t,
+            t.id === id
+              ? {
+                  ...t,
+                  description,
+                  due_date: dueDate,
+                  ...(projectChanged ? { project: options.project ?? null } : {}),
+                }
+              : t,
           ),
         ),
       );
@@ -274,7 +307,8 @@ export function useTodos(): UseTodosReturn {
           description,
           due_date: dueDate,
         };
-        if (reason) body.reason = reason;
+        if (options.reason) body.reason = options.reason;
+        if (projectChanged) body.project = options.project;
         await api<TodoItem>("PATCH", `/v1/todos/${id}`, body);
         toast.success("Task updated");
       } catch {

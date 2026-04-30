@@ -13,6 +13,8 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     due_date: null,
     start_date: null,
     label: null,
+    project: null,
+    learning_item_id: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -134,6 +136,8 @@ const TODO_A: TodoItem = {
   due_date: null,
   start_date: null,
   label: null,
+  project: null,
+  learning_item_id: null,
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
 };
@@ -217,6 +221,8 @@ describe("useTodos hook", () => {
       due_date: null,
       start_date: null,
       label: null,
+      project: null,
+      learning_item_id: null,
       created_at: "2026-04-03T00:00:00Z",
       updated_at: "2026-04-03T00:00:00Z",
     };
@@ -245,6 +251,90 @@ describe("useTodos hook", () => {
     // High priority should sort first
     expect(result.current.openTodos[0].priority).toBe("high");
     expect(result.current.openTodos[0].id).toBe("new-1");
+  });
+
+  test("addTodo includes project in POST body", async () => {
+    let postBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (init?.method === "GET" && path.includes("status=open")) {
+          return jsonResponse({ todos: [], total: 0 });
+        }
+        if (init?.method === "GET" && path.includes("status=done")) {
+          return jsonResponse({ todos: [], total: 0 });
+        }
+        if (init?.method === "POST") {
+          postBody = JSON.parse(init.body as string) as Record<string, unknown>;
+          return jsonResponse(
+            {
+              id: "p-1",
+              description: "scoped task",
+              priority: "normal",
+              status: "open",
+              due_date: null,
+              start_date: null,
+              label: null,
+              project: "OB",
+              learning_item_id: null,
+              created_at: "2026-04-04T00:00:00Z",
+              updated_at: "2026-04-04T00:00:00Z",
+            },
+            201,
+          );
+        }
+        return jsonResponse({}, 500);
+      }),
+    );
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.addTodo("scoped task", "normal", { project: "OB" });
+    });
+
+    expect(postBody).not.toBeNull();
+    expect(postBody!.project).toBe("OB");
+    expect(result.current.openTodos[0].project).toBe("OB");
+  });
+
+  test("editTodo with project option includes project in PATCH body", async () => {
+    const todo = { ...TODO_A, id: "ep-1" };
+    let patchBody: Record<string, unknown> | null = null;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (init?.method === "GET" && path.includes("status=open")) {
+          return jsonResponse({ todos: [todo], total: 1 });
+        }
+        if (init?.method === "GET" && path.includes("status=done")) {
+          return jsonResponse({ todos: [], total: 0 });
+        }
+        if (init?.method === "PATCH") {
+          patchBody = JSON.parse(init.body as string) as Record<string, unknown>;
+          return jsonResponse({ ...todo, project: "Egle" });
+        }
+        return jsonResponse({}, 500);
+      }),
+    );
+
+    const { useTodos } = await import("@/hooks/use-todos");
+    const { result } = renderHook(() => useTodos());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.editTodo("ep-1", todo.description, todo.due_date, {
+        project: "Egle",
+      });
+    });
+
+    expect(patchBody).not.toBeNull();
+    expect(patchBody!.project).toBe("Egle");
+    expect(result.current.openTodos[0].project).toBe("Egle");
   });
 
   // ── deferTodo ──────────────────────────────────────────────────────────────

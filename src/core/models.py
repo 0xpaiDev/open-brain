@@ -407,6 +407,7 @@ class TodoItem(Base):
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     label: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    project: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     learning_item_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("learning_items.id", ondelete="SET NULL"),
@@ -667,7 +668,9 @@ class CommitmentActivity(Base):
     )
 
     # Relationships
-    commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="linked_activities")
+    commitment: Mapped["Commitment"] = relationship(
+        "Commitment", back_populates="linked_activities"
+    )
     strava_activity: Mapped["StravaActivity"] = relationship(
         "StravaActivity", back_populates="commitment_links"
     )

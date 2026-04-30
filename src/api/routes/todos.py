@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.rate_limit import limiter, todos_limit
 from src.api.services.todo_service import create_todo, update_todo
 from src.core.database import get_db
-from src.core.models import TodoHistory, TodoItem
+from src.core.models import ProjectLabel, TodoHistory, TodoItem
 from src.pipeline.todo_sync import supersede_memory_for_todo
 
 logger = structlog.get_logger(__name__)
@@ -39,6 +39,7 @@ class TodoCreate(BaseModel):
     due_date: datetime | None = None
     start_date: datetime | None = None
     label: str | None = Field(None, max_length=50)
+    project: str | None = Field(None, max_length=100)
 
     @field_validator("priority")
     @classmethod
@@ -63,6 +64,7 @@ class TodoUpdate(BaseModel):
     status: str | None = None
     reason: str | None = Field(None, max_length=500)  # stored in history only
     label: str | None = Field(None, max_length=50)
+    project: str | None = Field(None, max_length=100)
     learning_feedback: str | None = Field(None, max_length=2000)
     learning_notes: str | None = Field(None, max_length=4000)
 
@@ -89,6 +91,7 @@ class TodoResponse(BaseModel):
     due_date: datetime | None
     start_date: datetime | None
     label: str | None
+    project: str | None
     learning_item_id: str | None
     discord_message_id: str | None
     discord_channel_id: str | None
@@ -139,12 +142,25 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         due_date=todo.due_date,
         start_date=todo.start_date,
         label=todo.label,
+        project=todo.project,
         learning_item_id=str(todo.learning_item_id) if todo.learning_item_id else None,
         discord_message_id=todo.discord_message_id,
         discord_channel_id=todo.discord_channel_id,
         created_at=todo.created_at,
         updated_at=todo.updated_at,
     )
+
+
+async def _validate_project(session: AsyncSession, name: str | None) -> None:
+    """422 if a non-null project name does not match an existing label."""
+    if name is None:
+        return
+    result = await session.execute(select(ProjectLabel).where(ProjectLabel.name == name))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown project '{name}' — create the label first via /v1/project-labels",
+        )
 
 
 def _history_to_response(h: TodoHistory) -> TodoHistoryResponse:
@@ -180,6 +196,7 @@ async def create_todo_route(
     Raises:
         422: If description is empty or priority is invalid.
     """
+    await _validate_project(session, body.project)
     todo = await create_todo(
         session,
         description=body.description,
@@ -187,6 +204,7 @@ async def create_todo_route(
         due_date=body.due_date,
         start_date=body.start_date,
         label=body.label,
+        project=body.project,
     )
     logger.info("create_todo_route", todo_id=str(todo.id))
     return _todo_to_response(todo)
@@ -396,6 +414,8 @@ async def update_todo_route(
     if todo is None:
         raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
 
+    if "project" in body.model_fields_set:
+        await _validate_project(session, body.project)
     todo = await update_todo(
         session,
         todo,
@@ -406,6 +426,7 @@ async def update_todo_route(
         status=body.status,
         reason=body.reason,
         label=body.label,
+        project=body.project,
         fields_set=body.model_fields_set,
         learning_feedback=body.learning_feedback,
         learning_notes=body.learning_notes,

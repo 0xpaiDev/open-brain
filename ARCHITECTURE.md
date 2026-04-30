@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 1.9
-**Date**: 2026-04-15
-**Status**: All phases + Training & Commitments V1 + Learning Library V1 complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
+**Version**: 2.0
+**Date**: 2026-04-30
+**Status**: All phases + Training & Commitments V1 + Learning Library V1 + Todo redesign (focus card + project groups) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -262,12 +262,12 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **failed_refinements**: Dead letter queue with error reasons, retry count, last output
 
 ### Module: Todo
-- **todo_items**: Todo tasks with priority/status/due_date/label, Discord message tracking
+- **todo_items**: Todo tasks with priority/status/due_date/label/project (soft reference to project_labels.name, nullable), Discord message tracking, learning_item_id FK
 - **todo_history**: Append-only state change log for todos
 - **todo_labels**: User-defined labels with name (unique) and hex color
 
 ### Module: Project Tagging
-- **project_labels**: User-defined project labels with name (unique, max 100 chars) and hex color; `memory_items.project` is a soft reference (no FK)
+- **project_labels**: User-defined project labels with name (unique, max 100 chars) and hex color; both `todo_items.project` and `memory_items.project` are soft references (no FKs). Includes idempotent "Personal" seed row (color: #7b8fc7). Rename via `PATCH /v1/project-labels/{name}` cascades atomically to both tables; delete cascades to NULL on both.
 
 ### Module: Daily Pulse
 - **daily_pulse**: One row per calendar day; unique on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped/completed

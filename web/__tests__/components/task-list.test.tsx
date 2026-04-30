@@ -11,6 +11,8 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     due_date: null,
     start_date: null,
     label: null,
+    project: null,
+    learning_item_id: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -84,6 +86,17 @@ vi.mock("@/hooks/use-todo-labels", () => ({
     loading: false,
     createLabel: vi.fn(),
     deleteLabel: vi.fn(),
+  }),
+}));
+
+// Mock useProjectLabels
+vi.mock("@/hooks/use-project-labels", () => ({
+  useProjectLabels: () => ({
+    labels: [],
+    loading: false,
+    createLabel: vi.fn(),
+    deleteLabel: vi.fn(),
+    renameLabel: vi.fn(async () => true),
   }),
 }));
 
@@ -323,11 +336,15 @@ describe("AddTaskForm default date", () => {
     const taskInput = screen.getByPlaceholderText("Add a task...");
     fireEvent.change(taskInput, { target: { value: "Test task" } });
 
-    const addBtn = screen.getByRole("button", { name: /add/i });
+    const addBtn = screen.getByRole("button", { name: "Add task" });
     fireEvent.click(addBtn);
 
     await waitFor(() => {
-      expect(mockAddTodo).toHaveBeenCalledWith("Test task", "normal", tomorrow, undefined, undefined);
+      expect(mockAddTodo).toHaveBeenCalledWith(
+        "Test task",
+        "normal",
+        expect.objectContaining({ dueDate: tomorrow, project: null }),
+      );
     });
   });
 
@@ -346,10 +363,14 @@ describe("AddTaskForm default date", () => {
     // Submit task
     const taskInput = screen.getByPlaceholderText("Add a task...");
     fireEvent.change(taskInput, { target: { value: "No date task" } });
-    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
 
     await waitFor(() => {
-      expect(mockAddTodo).toHaveBeenCalledWith("No date task", "normal", undefined, undefined, undefined);
+      expect(mockAddTodo).toHaveBeenCalledWith(
+        "No date task",
+        "normal",
+        expect.objectContaining({ dueDate: undefined, project: null }),
+      );
     });
   });
 
@@ -371,7 +392,7 @@ describe("AddTaskForm default date", () => {
     // Submit
     const taskInput = screen.getByPlaceholderText("Add a task...");
     fireEvent.change(taskInput, { target: { value: "Holiday task" } });
-    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
 
     await waitFor(() => {
       expect(mockAddTodo).toHaveBeenCalled();
@@ -418,10 +439,14 @@ describe("DatePickerDialog", () => {
     // Submit task
     const taskInput = screen.getByPlaceholderText("Add a task...");
     fireEvent.change(taskInput, { target: { value: "Dated task" } });
-    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
 
     await waitFor(() => {
-      expect(mockAddTodo).toHaveBeenCalledWith("Dated task", "normal", "2026-06-15", undefined, undefined);
+      expect(mockAddTodo).toHaveBeenCalledWith(
+        "Dated task",
+        "normal",
+        expect.objectContaining({ dueDate: "2026-06-15", project: null }),
+      );
     });
   });
 
@@ -911,7 +936,7 @@ describe("Edit todo — desktop inline form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save task edit" }));
 
     await waitFor(() => {
-      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Updated task", "2020-01-01");
+      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Updated task", "2020-01-01", {});
     });
   });
 
@@ -924,7 +949,7 @@ describe("Edit todo — desktop inline form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save task edit" }));
 
     await waitFor(() => {
-      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Original task", null);
+      expect(mockEditTodo).toHaveBeenCalledWith("e-1", "Original task", null, {});
     });
   });
 
@@ -1053,7 +1078,9 @@ describe("Edit todo — mobile bottom sheet", () => {
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
-      expect(mockEditTodo).toHaveBeenCalledWith("m-1", "Renamed", "2026-05-01", "Need more time");
+      expect(mockEditTodo).toHaveBeenCalledWith("m-1", "Renamed", "2026-05-01", {
+        reason: "Need more time",
+      });
     });
   });
 

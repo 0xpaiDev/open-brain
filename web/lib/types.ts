@@ -49,6 +49,7 @@ export interface TodoItem {
   due_date: string | null;
   start_date: string | null;
   label: string | null;
+  project: string | null;
   learning_item_id: string | null;
   created_at: string;
   updated_at: string;
@@ -118,6 +119,7 @@ export interface TodoCreate {
   due_date?: string;
   start_date?: string;
   label?: string;
+  project?: string | null;
 }
 
 export interface TodoUpdate {
@@ -128,6 +130,7 @@ export interface TodoUpdate {
   description?: string;
   reason?: string;
   label?: string | null;
+  project?: string | null;
 }
 
 export interface MemoryItemResponse {
