@@ -893,20 +893,22 @@ describe("filterThisWeekTodos", () => {
     return monday.toISOString();
   }
 
-  test("includes tasks due this week (Mon–Sun)", () => {
-    // Due on Wednesday of this week
-    const wed = makeTodo({ due_date: dateInWeek(2) });
-    expect(filterThisWeekTodos([wed])).toHaveLength(1);
-  });
-
-  test("includes tasks due on Monday of this week", () => {
-    const mon = makeTodo({ due_date: dateInWeek(0) });
-    expect(filterThisWeekTodos([mon])).toHaveLength(1);
-  });
-
-  test("includes tasks due on Sunday of this week", () => {
+  test("includes tasks due this week (after today)", () => {
+    // Due on Sunday of this week — always after today (Mon–Sat)
     const sun = makeTodo({ due_date: dateInWeek(6) });
     expect(filterThisWeekTodos([sun])).toHaveLength(1);
+  });
+
+  test("excludes tasks due today", () => {
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const todayTodo = makeTodo({ due_date: todayStr });
+    expect(filterThisWeekTodos([todayTodo])).toHaveLength(0);
+  });
+
+  test("includes tasks due on Saturday of this week", () => {
+    const sat = makeTodo({ due_date: dateInWeek(5) });
+    expect(filterThisWeekTodos([sat])).toHaveLength(1);
   });
 
   test("excludes tasks due next week", () => {

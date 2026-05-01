@@ -579,7 +579,7 @@ describe("This Week tab", () => {
   });
 
   test("This Week tab shows tasks due this week", async () => {
-    // Create a task due later this week
+    // Create a task due on Sunday of this week (always after today Mon–Sat)
     const getThisMonday = () => {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
@@ -588,11 +588,11 @@ describe("This Week tab", () => {
       d.setDate(d.getDate() - diff);
       return d;
     };
-    const friday = getThisMonday();
-    friday.setDate(friday.getDate() + 4);
-    friday.setHours(12, 0, 0, 0);
+    const sunday = getThisMonday();
+    sunday.setDate(sunday.getDate() + 6);
+    sunday.setHours(12, 0, 0, 0);
 
-    const weekTodo = makeTodo({ id: "w-1", description: "Week task", due_date: friday.toISOString() });
+    const weekTodo = makeTodo({ id: "w-1", description: "Week task", due_date: sunday.toISOString() });
     mockOpenTodos = [...allOpenTodos, weekTodo];
 
     const { TaskList } = await import("@/components/dashboard/task-list");

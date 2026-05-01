@@ -157,7 +157,7 @@ function PulseForm({
   const [answer, setAnswer] = useState("");
   const [notes, setNotes] = useState("");
   const [cleanMeal, setCleanMeal] = useState<boolean | null>(null);
-  const [alcohol, setAlcohol] = useState<boolean | null>(null);
+  const [sober, setSober] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -171,7 +171,7 @@ function PulseForm({
         ai_question_response: answer || undefined,
         notes: notes || undefined,
         clean_meal: cleanMeal ?? undefined,
-        alcohol: alcohol ?? undefined,
+        alcohol: sober === null ? undefined : !sober,
       });
     } finally {
       setSubmitting(false);
@@ -258,7 +258,7 @@ function PulseForm({
             />
           </div>
           <SegmentedToggle label="Clean eating" value={cleanMeal} onChange={setCleanMeal} />
-          <SegmentedToggle label="Alcohol" value={alcohol} onChange={setAlcohol} />
+          <SegmentedToggle label="Sober" value={sober} onChange={setSober} />
         </div>
       </div>
 

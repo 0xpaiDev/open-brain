@@ -1,6 +1,26 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-04-30** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) deployed, ~1231 tests (972 backend + 259 Vitest)
+Covering **2026-03-13 to 2026-05-01** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint deployed, ~1231 tests (972 backend + 265 Vitest)
+
+---
+
+## Session — 2026-05-01 (UI polish: remove badges/border, fix focus date label, sober field inversion)
+
+**What changed**:
+- Removed due date badge from inline task rows — timing already communicated by Today/This Week tabs (`web/components/dashboard/task-row.tsx`)
+- Removed left border priority color from task rows — duplicated the already color-coded priority signal (`web/components/dashboard/task-row.tsx`, `web/components/dashboard/task-utils.ts`)
+- Added `getFocusDateLabel()` to show actual date range (e.g. "Apr 30 – May 3") on ranged tasks in focus card; single-day falls back to `getDueBadge` (`web/components/dashboard/task-utils.ts`)
+- Removed decorative "FOCUS" label from focus card header (`web/components/dashboard/focus-card.tsx`)
+- `filterThisWeekTodos` now uses `due > today` (strictly after today), eliminating Today/This Week tab overlap (`web/hooks/use-todos.ts`)
+- Renamed `alcohol` → `sober` in morning pulse form, flipped submit payload (`!sober`), renamed toggle label to "Sober" (`web/components/dashboard/morning-pulse.tsx`)
+
+**Files touched**: `web/components/dashboard/task-row.tsx`, `web/components/dashboard/task-utils.ts`, `web/components/dashboard/focus-card.tsx`, `web/hooks/use-todos.ts`, `web/components/dashboard/morning-pulse.tsx`, `web/__tests__/components/morning-pulse-nutrition.test.tsx`, `web/__tests__/hooks/use-todos.test.ts`, `web/__tests__/components/task-list.test.tsx`
+
+**Decisions made**: `getFocusDateLabel` lives in `task-utils` and delegates to `getDueBadge` for single-day — no duplication. `priorityBorderClass` removed entirely (no other usages). Week filter tests updated to use Sunday offset (always future Mon–Sat) to avoid date-sensitive failures.
+
+**Gotchas found**: `filterThisWeekTodos` tests that used Monday/Wednesday offsets broke on Fridays because those days are already past — week-filter tests must use a day that is always in the future (Sunday offset=6).
+
+**Test count**: 972 backend + 265 Vitest = 1237 total (+6 frontend)
 
 ---
 

@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { getDueBadge, priorityBorderClass } from "./task-utils";
+
 
 export function DoneTaskRow({ todo }: { todo: TodoItem }) {
   return (
@@ -259,8 +259,6 @@ export function TaskRow({
     todo.due_date ? todo.due_date.split("T")[0] : "",
   );
   const [saving, setSaving] = useState(false);
-  const badge = getDueBadge(todo.due_date, todo.start_date);
-
   function handleCheck(e: React.MouseEvent) {
     e.stopPropagation();
     setCompleting(true);
@@ -317,9 +315,7 @@ export function TaskRow({
           }
         }}
         style={focusedStyle}
-        className={`group flex items-center gap-3 py-2 px-3 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${priorityBorderClass(
-          todo.priority,
-        )} ${completing ? "opacity-50" : ""} ${
+        className={`group flex items-center gap-3 py-2 px-3 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${completing ? "opacity-50" : ""} ${
           focused
             ? ""
             : "hover:bg-surface-container-high/50"
@@ -430,14 +426,6 @@ export function TaskRow({
                 title="Generated from your learning library"
               >
                 Learning
-              </span>
-            )}
-
-            {badge && (
-              <span
-                className={`text-xs rounded-full px-2 py-0.5 shrink-0 font-label ${badge.className}`}
-              >
-                {badge.label}
               </span>
             )}
 

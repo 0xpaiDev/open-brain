@@ -45,15 +45,21 @@ export function getDueBadge(
   };
 }
 
-export function priorityBorderClass(priority: string): string {
-  switch (priority) {
-    case "high":
-      return "border-l-[3px] border-l-tertiary";
-    case "normal":
-      return "border-l-[3px] border-l-outline-variant";
-    default:
-      return "border-l-[3px] border-l-transparent";
+export function getFocusDateLabel(
+  dueDate: string | null,
+  startDate?: string | null,
+): { label: string; className: string } | null {
+  if (!dueDate) return null;
+  if (startDate) {
+    const start = new Date(startDate + "T00:00:00");
+    const due = new Date(dueDate + "T00:00:00");
+    if (start.getTime() !== due.getTime()) {
+      const s = start.toLocaleDateString([], { month: "short", day: "numeric" });
+      const e = due.toLocaleDateString([], { month: "short", day: "numeric" });
+      return { label: `${s} – ${e}`, className: "bg-primary/10 text-primary" };
+    }
   }
+  return getDueBadge(dueDate);
 }
 
 export function getTomorrowDateString(): string {

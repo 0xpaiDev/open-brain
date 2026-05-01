@@ -31,18 +31,19 @@ function getMonday(date: Date): Date {
   return d;
 }
 
-/** Filter todos due within the current ISO week (Mon–Sun), including overdue within the week. */
+/** Filter todos due within the current ISO week (Mon–Sun), excluding today. */
 export function filterThisWeekTodos(todos: TodoItem[]): TodoItem[] {
   const now = new Date();
-  const monday = getMonday(now);
-  const nextMonday = new Date(monday);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const nextMonday = new Date(getMonday(now));
   nextMonday.setDate(nextMonday.getDate() + 7);
 
   return todos.filter((todo) => {
     if (!todo.due_date) return false;
     const due = new Date(todo.due_date);
     due.setHours(0, 0, 0, 0);
-    return due >= monday && due < nextMonday;
+    return due > today && due < nextMonday;
   });
 }
 

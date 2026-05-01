@@ -1,7 +1,7 @@
 "use client";
 
 import type { TodoItem } from "@/lib/types";
-import { getDueBadge, PERSONAL } from "./task-utils";
+import { getFocusDateLabel, PERSONAL } from "./task-utils";
 
 export interface FocusCardProps {
   todo: TodoItem | null;
@@ -33,7 +33,7 @@ export function FocusCard({
     );
   }
 
-  const badge = getDueBadge(todo.due_date, todo.start_date);
+  const badge = getFocusDateLabel(todo.due_date, todo.start_date);
   const tint = accentColor ?? "var(--color-primary)";
   const cardStyle = accentColor
     ? {
@@ -49,9 +49,6 @@ export function FocusCard({
       aria-label="Focused task"
     >
       <div className="flex items-center justify-between gap-3 mb-2">
-        <span className="text-[11px] font-label uppercase tracking-wider text-on-surface-variant">
-          Focus
-        </span>
         <div className="flex items-center gap-1.5">
           <span
             className="text-[11px] rounded-full px-2 py-0.5 font-label"

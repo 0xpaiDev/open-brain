@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) deployed (2026-04-30) — ~1231 tests (972 backend + 259 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint deployed (2026-05-01) — ~1231 tests (972 backend + 265 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -46,7 +46,7 @@
 
 ## Next Up
 
-- Deploy todo redesign (focus card + project groups, migration 0015) — feature complete, all tests passing (972 backend + 259 frontend), ready for `docker compose up -d --force-recreate` after `alembic upgrade head`
+- Deploy UI polish sprint (`web/components/dashboard/task-row.tsx`, `focus-card.tsx`, `task-utils.ts`, `web/hooks/use-todos.ts`, `web/components/dashboard/morning-pulse.tsx`) — frontend-only, no migration needed
 - Verify 2026-04-26 05:00 UTC pulse signal pipeline: `signal_type` populated, `parsed_data->'signal_trace'` is a JSON array. If always `open` with similar wording, address P1+P2 (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`).
 - Seed first learning topics + sections + items via new routes or Claude Code skill (TBD) — feature is live but empty
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)

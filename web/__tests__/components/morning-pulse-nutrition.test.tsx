@@ -52,14 +52,14 @@ afterEach(() => {
 });
 
 describe("MorningPulse nutrition", () => {
-  test("renders clean eating and alcohol toggles in form", async () => {
+  test("renders clean eating and sober toggles in form", async () => {
     mockFetch(async () => jsonResponse(SENT_PULSE));
 
     render(<MorningPulse />);
 
     await waitFor(() => {
       expect(screen.getByText("Clean eating")).toBeTruthy();
-      expect(screen.getByText("Alcohol")).toBeTruthy();
+      expect(screen.getByText("Sober")).toBeTruthy();
     });
   });
 
@@ -86,9 +86,9 @@ describe("MorningPulse nutrition", () => {
     const yesButtons = screen.getAllByText("Yes");
     fireEvent.click(yesButtons[0]); // Clean eating Yes
 
-    // Click "No" for alcohol
-    const noButtons = screen.getAllByText("No");
-    fireEvent.click(noButtons[1]); // Alcohol No
+    // Click "Yes" for sober (sober=true → alcohol: false in payload)
+    const yesButtons2 = screen.getAllByText("Yes");
+    fireEvent.click(yesButtons2[1]); // Sober Yes
 
     // Submit the form
     fireEvent.click(screen.getByText("Log my morning"));
