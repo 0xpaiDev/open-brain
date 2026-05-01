@@ -3,15 +3,6 @@
 import { useEffect, useState } from "react";
 import type { TodoItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 
 
@@ -28,78 +19,6 @@ export function DoneTaskRow({ todo }: { todo: TodoItem }) {
   );
 }
 
-function DeferPopover({
-  todoId,
-  onDefer,
-}: {
-  todoId: string;
-  onDefer: (id: string, dueDate: string, reason?: string) => Promise<void>;
-}) {
-  const [deferDate, setDeferDate] = useState("");
-  const [deferReason, setDeferReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  async function handleSubmit() {
-    if (!deferDate) return;
-    setSubmitting(true);
-    try {
-      await onDefer(todoId, deferDate, deferReason || undefined);
-      setOpen(false);
-      setDeferDate("");
-      setDeferReason("");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <button
-            type="button"
-            aria-label="Defer task"
-            className="min-w-8 min-h-8 flex items-center justify-center rounded-md hover:bg-surface-container-high transition-colors"
-          />
-        }
-      >
-        <span className="material-symbols-outlined text-on-surface-variant text-base">
-          calendar_month
-        </span>
-      </DialogTrigger>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Defer Task</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3 py-2">
-          <Input
-            type="date"
-            value={deferDate}
-            onChange={(e) => setDeferDate(e.target.value)}
-            aria-label="New due date"
-          />
-          <textarea
-            value={deferReason}
-            onChange={(e) => setDeferReason(e.target.value)}
-            placeholder="Reason (optional)"
-            className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-base md:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-            rows={2}
-            aria-label="Defer reason"
-          />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button size="sm" disabled={!deferDate || submitting} onClick={handleSubmit}>
-            Defer
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function EditTodoSheet({
   todo,
@@ -236,7 +155,6 @@ export interface TaskRowProps {
   accentColor?: string;
   onSelectFocus: (id: string) => void;
   onComplete: (id: string) => void;
-  onDefer: (id: string, dueDate: string, reason?: string) => Promise<void>;
   onEdit: (id: string, description: string, dueDate: string | null, reason?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
@@ -247,7 +165,6 @@ export function TaskRow({
   accentColor,
   onSelectFocus,
   onComplete,
-  onDefer,
   onEdit,
   onDelete,
 }: TaskRowProps) {
@@ -407,13 +324,6 @@ export function TaskRow({
 
         {!editing && (
           <>
-            <span
-              className="hidden md:inline-flex"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <DeferPopover todoId={todo.id} onDefer={onDefer} />
-            </span>
-
             {todo.label && (
               <span className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-surface-container-high text-on-surface-variant">
                 {todo.label}

@@ -45,21 +45,47 @@ export function getDueBadge(
   };
 }
 
+/** Parse a date string that may be ISO datetime or date-only (YYYY-MM-DD). */
+function parseDateSafe(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  // Normalize: full ISO strings already have T, date-only strings need local midnight appended
+  const iso = dateStr.includes("T") ? dateStr : dateStr + "T00:00:00";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function getFocusDateLabel(
   dueDate: string | null,
   startDate?: string | null,
 ): { label: string; className: string } | null {
-  if (!dueDate) return null;
-  if (startDate) {
-    const start = new Date(startDate + "T00:00:00");
-    const due = new Date(dueDate + "T00:00:00");
-    if (start.getTime() !== due.getTime()) {
-      const s = start.toLocaleDateString([], { month: "short", day: "numeric" });
-      const e = due.toLocaleDateString([], { month: "short", day: "numeric" });
+  if (!dueDate && !startDate) return null;
+
+  if (!dueDate && startDate) {
+    // start_date set but no due_date — render start as a single-date label
+    return getDueBadge(startDate);
+  }
+
+  if (dueDate && startDate) {
+    const start = parseDateSafe(startDate);
+    const due = parseDateSafe(dueDate);
+    if (!start || !due) return getDueBadge(dueDate);
+
+    // Swap inverted range silently so formatter never crashes
+    const [earlier, later] = start.getTime() <= due.getTime() ? [start, due] : [due, start];
+
+    if (earlier.getTime() !== later.getTime()) {
+      const currentYear = new Date().getFullYear();
+      const opts: Intl.DateTimeFormatOptions =
+        earlier.getFullYear() !== currentYear || later.getFullYear() !== currentYear
+          ? { month: "short", day: "numeric", year: "numeric" }
+          : { month: "short", day: "numeric" };
+      const s = earlier.toLocaleDateString([], opts);
+      const e = later.toLocaleDateString([], opts);
       return { label: `${s} – ${e}`, className: "bg-primary/10 text-primary" };
     }
   }
-  return getDueBadge(dueDate);
+
+  return getDueBadge(dueDate!);
 }
 
 export function getTomorrowDateString(): string {

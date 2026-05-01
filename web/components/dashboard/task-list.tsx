@@ -331,7 +331,6 @@ export function TaskList() {
               if (effectiveFocusId === id) setFocusIdState(null);
               void completeTodo(id);
             }}
-            onDefer={deferTodo}
             onEdit={editAdapter}
             onDelete={async (id) => {
               if (effectiveFocusId === id) setFocusIdState(null);
@@ -384,6 +383,11 @@ export function TaskList() {
         projectLabel={focusedProject}
         onClear={handleClearFocus}
         onComplete={handleCompleteFromFocus}
+        onDefer={deferTodo}
+        onDelete={async (id) => {
+          setFocusIdState(null);
+          await deleteTodo(id);
+        }}
       />
 
       <Input

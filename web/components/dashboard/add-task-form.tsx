@@ -49,7 +49,10 @@ function DatePickerDialog({
     setOpen(next);
   }
 
+  const rangeInvalid = localRange && localStart && localDue && localStart > localDue;
+
   function handleApply() {
+    if (rangeInvalid) return;
     onApply(localDue, localRange ? localStart : "", localRange);
     setOpen(false);
   }
@@ -74,12 +77,6 @@ function DatePickerDialog({
           <DialogTitle>Due Date</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 px-1 py-2">
-          <Input
-            type="date"
-            value={localDue}
-            onChange={(e) => setLocalDue(e.target.value)}
-            aria-label="Due date"
-          />
           <label className="flex items-center gap-2 text-sm text-on-surface-variant">
             <input
               type="checkbox"
@@ -97,12 +94,23 @@ function DatePickerDialog({
               aria-label="Start date"
             />
           )}
+          <Input
+            type="date"
+            value={localDue}
+            onChange={(e) => setLocalDue(e.target.value)}
+            aria-label="Due date"
+          />
+          {rangeInvalid && (
+            <p className="text-xs text-error" role="alert">
+              Start date must be on or before the due date.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={handleApply}>
+          <Button size="sm" disabled={!!rangeInvalid} onClick={handleApply}>
             Apply
           </Button>
         </DialogFooter>

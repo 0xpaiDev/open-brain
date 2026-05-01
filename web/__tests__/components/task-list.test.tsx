@@ -168,62 +168,6 @@ describe("TaskList tabs", () => {
     expect(tabs[2].textContent).toContain("4");
   });
 
-  test("defer button opens dialog", async () => {
-    const { TaskList } = await import("@/components/dashboard/task-list");
-    render(<TaskList />);
-
-    // Find defer buttons (calendar_month icons)
-    const deferButtons = screen.getAllByLabelText("Defer task");
-    expect(deferButtons.length).toBeGreaterThan(0);
-
-    // Click the first defer button
-    fireEvent.click(deferButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Defer Task")).toBeDefined();
-    });
-
-    // Dialog should have date input and reason textarea
-    expect(screen.getByLabelText("New due date")).toBeDefined();
-    expect(screen.getByLabelText("Defer reason")).toBeDefined();
-  });
-
-  test("defer dialog submits with date and reason", async () => {
-    const { TaskList } = await import("@/components/dashboard/task-list");
-    render(<TaskList />);
-
-    // Open defer dialog on first task
-    const deferButtons = screen.getAllByLabelText("Defer task");
-    fireEvent.click(deferButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Defer Task")).toBeDefined();
-    });
-
-    // Fill in date
-    const dateInput = screen.getByLabelText("New due date");
-    fireEvent.change(dateInput, { target: { value: "2026-05-01" } });
-
-    // Fill in reason
-    const reasonInput = screen.getByLabelText("Defer reason");
-    fireEvent.change(reasonInput, { target: { value: "Need more info" } });
-
-    // Submit — find the "Defer" button inside the dialog (not the trigger)
-    const dialogButtons = screen.getAllByRole("button", { name: "Defer" });
-    // The submit button is the one inside the dialog footer
-    const submitBtn = dialogButtons.find((btn) => btn.closest("[data-slot='dialog-footer']"));
-    expect(submitBtn).toBeDefined();
-    fireEvent.click(submitBtn!);
-
-    await waitFor(() => {
-      expect(mockDeferTodo).toHaveBeenCalledWith(
-        expect.any(String),
-        "2026-05-01",
-        "Need more info",
-      );
-    });
-  });
-
   test("Defer all button shown when Today tab has multiple tasks", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
@@ -450,7 +394,7 @@ describe("DatePickerDialog", () => {
     });
   });
 
-  test("dialog supports range mode", async () => {
+  test("dialog supports range mode — shows start date input before due date", async () => {
     const { TaskList } = await import("@/components/dashboard/task-list");
     render(<TaskList />);
 
@@ -463,7 +407,37 @@ describe("DatePickerDialog", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Start date")).toBeDefined();
+      expect(screen.getByLabelText("Due date")).toBeDefined();
     });
+
+    // Start date must appear before due date in DOM
+    const startInput = screen.getByLabelText("Start date");
+    const dueInput = screen.getByLabelText("Due date");
+    expect(
+      startInput.compareDocumentPosition(dueInput) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  test("range mode blocks apply when start > end", async () => {
+    const { TaskList } = await import("@/components/dashboard/task-list");
+    render(<TaskList />);
+
+    fireEvent.click(screen.getByLabelText("Pick date"));
+    await waitFor(() => expect(screen.getByText("Due Date")).toBeDefined());
+
+    fireEvent.click(screen.getByLabelText("Date range"));
+    await waitFor(() => expect(screen.getByLabelText("Start date")).toBeDefined());
+
+    // Set start after due
+    fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-05-01" } });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-05-10" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeDefined();
+    });
+
+    const applyBtn = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(true);
   });
 
   test("dialog closes on cancel", async () => {

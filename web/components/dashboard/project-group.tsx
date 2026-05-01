@@ -18,7 +18,6 @@ export interface ProjectGroupProps {
   onToggleCollapsed: () => void;
   onSelectFocus: (id: string) => void;
   onComplete: (id: string) => void;
-  onDefer: (id: string, dueDate: string, reason?: string) => Promise<void>;
   onEdit: (id: string, description: string, dueDate: string | null, reason?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onAdd: (
@@ -40,7 +39,6 @@ export function ProjectGroup({
   onToggleCollapsed,
   onSelectFocus,
   onComplete,
-  onDefer,
   onEdit,
   onDelete,
   onAdd,
@@ -119,7 +117,6 @@ export function ProjectGroup({
               accentColor={color}
               onSelectFocus={onSelectFocus}
               onComplete={onComplete}
-              onDefer={onDefer}
               onEdit={onEdit}
               onDelete={onDelete}
             />
