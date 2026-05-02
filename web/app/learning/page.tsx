@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { SectionBlock } from "./_components/section-block";
 import { useLearning } from "@/hooks/use-learning";
-import type { LearningItem, LearningSection, LearningTopic } from "@/lib/types";
+import type { LearningItem, LearningTopic } from "@/lib/types";
 
 export default function LearningPage() {
   const {
@@ -31,9 +32,14 @@ export default function LearningPage() {
             Topics, sections, and items. Active topics feed into the morning todo list.
           </p>
         </div>
-        <Button onClick={triggerRefresh} variant="outline">
-          Refresh today
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={triggerRefresh} variant="outline">
+            Refresh today
+          </Button>
+          <Link href="/learning/import" className={buttonVariants({ variant: "outline" })}>
+            Import
+          </Link>
+        </div>
       </div>
 
       <form
@@ -101,14 +107,24 @@ function TopicCard({
   return (
     <section className="rounded-lg border border-outline-variant bg-surface-container p-4 space-y-3">
       <header className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">{topic.name}</h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href={`/learning/topics/${topic.id}`}
+            className="text-lg font-semibold hover:text-primary transition-colors cursor-pointer"
+          >
+            {topic.name}
+          </Link>
           <span className="text-xs rounded-full px-2 py-0.5 bg-accent/20 text-accent">
             {topic.depth}
           </span>
           {!topic.is_active && (
             <span className="text-xs rounded-full px-2 py-0.5 bg-muted text-muted-foreground">
               inactive
+            </span>
+          )}
+          {topic.has_material && (
+            <span className="text-xs rounded-full px-2 py-0.5 bg-secondary/30 text-secondary">
+              material
             </span>
           )}
         </div>
@@ -153,114 +169,5 @@ function TopicCard({
         </form>
       </div>
     </section>
-  );
-}
-
-function SectionBlock({
-  section,
-  onAddItem,
-  onUpdateItem,
-}: {
-  section: LearningSection;
-  onAddItem: (title: string) => void;
-  onUpdateItem: (
-    id: string,
-    patch: Partial<Pick<LearningItem, "title" | "status" | "feedback" | "notes">>,
-  ) => void;
-}) {
-  const [title, setTitle] = useState("");
-  return (
-    <div className="rounded border border-outline-variant/50 p-3 space-y-2">
-      <h3 className="text-sm font-medium text-muted-foreground">{section.name}</h3>
-      <ul className="space-y-1">
-        {section.items.map((item) => (
-          <ItemRow key={item.id} item={item} onUpdate={onUpdateItem} />
-        ))}
-      </ul>
-      <form
-        className="flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (title.trim()) {
-            onAddItem(title.trim());
-            setTitle("");
-          }
-        }}
-      >
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="New item"
-        />
-        <Button type="submit" variant="outline" size="sm" disabled={!title.trim()}>
-          Add
-        </Button>
-      </form>
-    </div>
-  );
-}
-
-function ItemRow({
-  item,
-  onUpdate,
-}: {
-  item: LearningItem;
-  onUpdate: (
-    id: string,
-    patch: Partial<Pick<LearningItem, "title" | "status" | "feedback" | "notes">>,
-  ) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [feedback, setFeedback] = useState(item.feedback ?? "");
-  const [notes, setNotes] = useState(item.notes ?? "");
-
-  return (
-    <li className="text-sm">
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={item.status === "done"}
-          onChange={(e) =>
-            onUpdate(item.id, { status: e.target.checked ? "done" : "pending" })
-          }
-          aria-label={`Mark ${item.title} ${item.status === "done" ? "incomplete" : "complete"}`}
-        />
-        <button
-          type="button"
-          onClick={() => setExpanded((s) => !s)}
-          className={`flex-1 text-left cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent rounded px-1 ${
-            item.status === "done" ? "line-through text-muted-foreground" : ""
-          }`}
-        >
-          {item.title}
-        </button>
-      </div>
-      {expanded && (
-        <div className="mt-2 ml-6 space-y-2">
-          <Textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            onBlur={() => {
-              if (feedback !== (item.feedback ?? "")) {
-                onUpdate(item.id, { feedback });
-              }
-            }}
-            placeholder="Feedback (calibration — too easy / just right / too hard)"
-            rows={2}
-          />
-          <Textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => {
-              if (notes !== (item.notes ?? "")) {
-                onUpdate(item.id, { notes });
-              }
-            }}
-            placeholder="Notes"
-            rows={3}
-          />
-        </div>
-      )}
-    </li>
   );
 }

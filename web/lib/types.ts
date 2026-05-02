@@ -83,11 +83,47 @@ export interface LearningTopic {
   depth: "foundational" | "deep";
   is_active: boolean;
   position: number;
+  has_material: boolean;
   sections: LearningSection[];
 }
 
 export interface LearningTreeResponse {
   topics: LearningTopic[];
+}
+
+export interface LearningMaterial {
+  id: string;
+  topic_id: string;
+  content: string;
+  source_type: string | null;
+  source_url: string | null;
+  source_title: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LearningMaterialSaveBody {
+  content: string;
+  source_type?: string;
+  source_url?: string;
+  source_title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ImportSkip {
+  name: string;
+  reason: string;
+}
+
+export interface LearningImportResult {
+  dry_run: boolean;
+  topics_created: number;
+  sections_created: number;
+  items_created: number;
+  materials_created: number;
+  topics_skipped: ImportSkip[];
+  created_topic_ids: string[];
 }
 
 export interface TodoLabel {
