@@ -15,7 +15,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.rate_limit import learning_limit, learning_refresh_limit, limiter
+from src.api.middleware.rate_limit import (
+    learning_import_limit,
+    learning_limit,
+    learning_refresh_limit,
+    limiter,
+)
+from src.api.schemas.learning_import import (
+    ImportResult,
+    LearningImportRequest,
+    MaterialOut,
+    MaterialUpdate,
+)
 from src.api.services import learning_service
 from src.core.config import get_settings
 from src.core.database import get_db
@@ -359,6 +370,92 @@ async def refresh_today(
 
     summary = await run_learning_selection(session)
     return RefreshResponse(**summary)
+
+
+# ── POST /v1/learning/import ──────────────────────────────────────────────────
+
+
+@router.post("/v1/learning/import", response_model=ImportResult)
+@limiter.limit(learning_import_limit)
+async def import_curriculum(
+    request: Request,
+    body: LearningImportRequest,
+    dry_run: bool = Query(default=False),
+    session: AsyncSession = Depends(get_db),
+) -> ImportResult:
+    """Bulk-import a curriculum from a structured JSON document.
+
+    Use dry_run=true for a preview without writing anything, then re-POST with
+    dry_run=false to commit. Dedup is case-insensitive on topic name.
+    """
+    _require_enabled()
+    return await learning_service.import_curriculum(session, body, dry_run=dry_run)
+
+
+# ── Material CRUD ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/v1/learning/topics/{topic_id}/material",
+    response_model=MaterialOut | None,
+)
+@limiter.limit(learning_limit)
+async def get_material(
+    request: Request,
+    topic_id: _uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any] | None:
+    """Return the material for a topic, or null if none has been saved."""
+    _require_enabled()
+    topic = await session.get(LearningTopic, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    material = await learning_service.get_material(session, topic_id)
+    if material is None:
+        return None
+    return learning_service.material_to_dict(material)
+
+
+@router.patch(
+    "/v1/learning/topics/{topic_id}/material",
+    response_model=MaterialOut,
+)
+@limiter.limit(learning_limit)
+async def upsert_material(
+    request: Request,
+    topic_id: _uuid.UUID,
+    body: MaterialUpdate,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Create or replace the material for a topic."""
+    _require_enabled()
+    topic = await session.get(LearningTopic, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    material = await learning_service.upsert_material(session, topic_id, body)
+    return learning_service.material_to_dict(material)
+
+
+@router.delete(
+    "/v1/learning/topics/{topic_id}/material",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+@limiter.limit(learning_limit)
+async def delete_material(
+    request: Request,
+    topic_id: _uuid.UUID,
+    confirm: bool = Query(default=False),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    """Hard-delete the material for a topic. Requires confirm=true."""
+    _require_enabled()
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Pass confirm=true to delete")
+    topic = await session.get(LearningTopic, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    await learning_service.delete_material(session, topic_id)
+    logger.info("learning_material_deleted", topic_id=str(topic_id))
 
 
 # ── GET /v1/modules ───────────────────────────────────────────────────────────

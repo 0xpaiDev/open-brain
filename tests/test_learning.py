@@ -1,5 +1,5 @@
 """Learning library tests: CRUD, feature-flag gating, cron idempotency,
-deterministic fallback, LLM selection, cascade semantics."""
+deterministic fallback, LLM selection, cascade semantics, materials."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from src.core.models import LearningItem, LearningSection, LearningTopic, TodoItem
+from src.core.models import LearningItem, LearningMaterial, LearningSection, LearningTopic, TodoItem
 
 
 async def _mk_topic(session, name="Topic A", active=True, position=0):
@@ -346,3 +346,109 @@ async def test_refresh_endpoint_returns_summary(test_client, api_key_headers, as
     assert "created" in body
     assert "fallback" in body
     assert body["target_count"] == _config.settings.learning_daily_todo_count
+
+
+# ── Material CRUD + tree flag ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_material_returns_null_when_absent(test_client, api_key_headers, async_session):
+    """GET material returns 200 with null body when topic has no material."""
+    topic = await _mk_topic(async_session)
+    resp = await test_client.get(
+        f"/v1/learning/topics/{topic.id}/material", headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+@pytest.mark.asyncio
+async def test_patch_material_creates_then_updates(test_client, api_key_headers, async_session):
+    """PATCH creates material on first call; updates content on second call."""
+    topic = await _mk_topic(async_session)
+
+    resp = await test_client.patch(
+        f"/v1/learning/topics/{topic.id}/material",
+        json={"content": "# Hello\nWorld", "source_type": "article"},
+        headers=api_key_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "# Hello\nWorld"
+    assert data["source_type"] == "article"
+    assert data["topic_id"] == str(topic.id)
+
+    resp2 = await test_client.patch(
+        f"/v1/learning/topics/{topic.id}/material",
+        json={"content": "# Updated"},
+        headers=api_key_headers,
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["content"] == "# Updated"
+
+    count = await async_session.scalar(select(func.count()).select_from(LearningMaterial))
+    assert count == 1  # no duplicate rows
+
+
+@pytest.mark.asyncio
+async def test_delete_material_requires_confirm(test_client, api_key_headers, async_session):
+    """DELETE without confirm=true returns 400; with it returns 204."""
+    topic = await _mk_topic(async_session)
+    await test_client.patch(
+        f"/v1/learning/topics/{topic.id}/material",
+        json={"content": "some content"},
+        headers=api_key_headers,
+    )
+
+    resp = await test_client.delete(
+        f"/v1/learning/topics/{topic.id}/material", headers=api_key_headers
+    )
+    assert resp.status_code == 400
+
+    resp2 = await test_client.delete(
+        f"/v1/learning/topics/{topic.id}/material?confirm=true", headers=api_key_headers
+    )
+    assert resp2.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_topic_cascades_material(test_client, api_key_headers, async_session):
+    """Deleting a topic also removes its material via CASCADE."""
+    topic = await _mk_topic(async_session)
+    await test_client.patch(
+        f"/v1/learning/topics/{topic.id}/material",
+        json={"content": "cascade test"},
+        headers=api_key_headers,
+    )
+
+    await test_client.delete(
+        f"/v1/learning/topics/{topic.id}?confirm=true", headers=api_key_headers
+    )
+
+    count = await async_session.scalar(select(func.count()).select_from(LearningMaterial))
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_get_tree_includes_has_material_flag(test_client, api_key_headers, async_session):
+    """GET /v1/learning tree includes has_material flag per topic."""
+    topic = await _mk_topic(async_session)
+
+    resp = await test_client.get("/v1/learning", headers=api_key_headers)
+    topics = resp.json()["topics"]
+    assert topics[0]["has_material"] is False
+
+    await test_client.patch(
+        f"/v1/learning/topics/{topic.id}/material",
+        json={"content": "material content"},
+        headers=api_key_headers,
+    )
+
+    # Expire identity map so load_tree re-fetches the material relationship.
+    # With expire_on_commit=False (test session), the cached material=None from
+    # the first GET would otherwise shadow the newly committed row.
+    async_session.expire_all()
+
+    resp2 = await test_client.get("/v1/learning", headers=api_key_headers)
+    topics2 = resp2.json()["topics"]
+    assert topics2[0]["has_material"] is True

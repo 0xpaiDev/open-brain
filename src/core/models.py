@@ -729,6 +729,12 @@ class LearningTopic(Base):
         cascade="all, delete-orphan",
         order_by="LearningSection.position",
     )
+    material: Mapped["LearningMaterial | None"] = relationship(
+        "LearningMaterial",
+        back_populates="topic",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class LearningSection(Base):
@@ -795,3 +801,35 @@ class LearningItem(Base):
     )
 
     section: Mapped["LearningSection"] = relationship("LearningSection", back_populates="items")
+
+
+class LearningMaterial(Base):
+    """Source material stored one-to-one with a LearningTopic.
+
+    Holds the markdown text the user pasted into the external LLM, plus optional
+    provenance fields. Does NOT sync to memory_items — intentional.
+    """
+
+    __tablename__ = "learning_materials"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("learning_topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_title: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("topic_id", name="uq_learning_materials_topic_id"),)
+
+    topic: Mapped["LearningTopic"] = relationship("LearningTopic", back_populates="material")

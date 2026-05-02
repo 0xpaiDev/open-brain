@@ -106,6 +106,10 @@ def _get_learning_refresh_rate() -> str:
     return "10/minute"
 
 
+def _get_learning_import_rate() -> str:
+    return "5/minute"
+
+
 # Module-level limiter — shared across all routes that import it.
 # key_func=get_remote_address uses the client IP (or X-Forwarded-For when
 # --proxy-headers is active, which we enable in docker-compose.yml).
@@ -128,3 +132,4 @@ strava_limit = _get_strava_rate
 training_limit = _get_training_rate
 learning_limit = _get_learning_rate
 learning_refresh_limit = _get_learning_refresh_rate
+learning_import_limit = _get_learning_import_rate
