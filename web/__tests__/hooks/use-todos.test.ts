@@ -908,7 +908,9 @@ describe("filterThisWeekTodos", () => {
 
   test("includes tasks due on Saturday of this week", () => {
     const sat = makeTodo({ due_date: dateInWeek(5) });
-    expect(filterThisWeekTodos([sat])).toHaveLength(1);
+    // When today IS Saturday, dateInWeek(5) == today — excluded by strict due > today
+    const isSaturday = new Date().getDay() === 6;
+    expect(filterThisWeekTodos([sat])).toHaveLength(isSaturday ? 0 : 1);
   });
 
   test("excludes tasks due next week", () => {

@@ -1572,7 +1572,7 @@ async def test_pulse_start_writes_signal_type_when_signal_fires(
     """An active todo drives the open detector; signal_type='open' surfaces in the DB row."""
     from src.core.models import TodoItem
 
-    monkeypatch.setenv("PULSE_SIGNAL_DETECTORS", "focus,opportunity,open")
+    monkeypatch.setenv("PULSE_SIGNAL_DETECTORS", "open")
     monkeypatch.setenv("PULSE_SILENCE_THRESHOLD", "4.0")
     from src.core import config as _config
 

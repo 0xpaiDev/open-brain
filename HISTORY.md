@@ -1,6 +1,27 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 backend deployed, ~1246 tests (988 backend + 265 Vitest)
+Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped, ~1246 tests (988 backend + 265 Vitest)
+
+---
+
+## Session — 2026-05-02 (Learning V2 Part 2: import page + topic detail + material badge)
+
+**What changed**:
+- New route `/learning/import` (`web/app/learning/import/page.tsx`): two-pane JSON paste + dry-run preview, 429-aware import, post-import redirect to `/learning`
+- New route `/learning/topics/[id]` (`web/app/learning/topics/[id]/page.tsx`): topic detail with inline material editor, react-markdown rendering, read-only sections, recent feedback panel
+- Extracted `SectionBlock` → `web/app/learning/_components/section-block.tsx` and `ItemRow` → `web/app/learning/_components/item-row.tsx` with optional action callbacks (read-only when absent)
+- Updated tree view (`web/app/learning/page.tsx`): topic name links to detail page, `has_material` badge, Import button in header
+- Extended `useLearning` hook with `getMaterial`, `saveMaterial`, `deleteMaterial`, `importCurriculum` (429 → specific toast) (`web/hooks/use-learning.ts`)
+- Added `has_material`, `LearningMaterial`, `LearningImportResult` types (`web/lib/types.ts`)
+- Installed `react-markdown@^9`, `remark-gfm@^4`, `@tailwindcss/typography`; registered typography via `@plugin` in `web/app/globals.css` (Tailwind v4 pattern)
+
+**Files touched**: `web/app/learning/import/page.tsx` (new), `web/app/learning/topics/[id]/page.tsx` (new), `web/app/learning/_components/section-block.tsx` (new), `web/app/learning/_components/item-row.tsx` (new), `web/app/learning/page.tsx`, `web/hooks/use-learning.ts`, `web/lib/types.ts`, `web/app/globals.css`, `web/package.json`, `web/package-lock.json`, `prompts/new/learning-v2-part-2-frontend.md` (new), `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`
+
+**Decisions made**: React 19 `use(params)` for dynamic route params (first `[id]` route in project). `buttonVariants` utility on `<Link>` instead of `asChild` (Button uses @base-ui/react, no asChild). Typography plugin via `@plugin` CSS directive (Tailwind v4 — no JS config). `rehype-raw` intentionally absent (comment in code). `source_url` rendered as link only after `/^https?:\/\//` regex + `rel="noopener noreferrer"`. No new Vitest tests (known gap, same as V1 ship).
+
+**Gotchas found**: `Button` component has no `asChild` — use `buttonVariants({ variant })` className on `Link`. No `tailwind.config.ts` exists — Tailwind v4 is CSS-config-only. React 19 params is a Promise — `use(params)` required in client components.
+
+**Test count**: 1246 total (988 backend + 265 Vitest) — unchanged
 
 ---
 
