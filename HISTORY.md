@@ -1,6 +1,28 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-01** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint deployed, ~1231 tests (972 backend + 265 Vitest)
+Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 backend deployed, ~1246 tests (988 backend + 265 Vitest)
+
+---
+
+## Session — 2026-05-02 (Learning V2 Part 1: bulk import + materials API)
+
+**What changed**:
+- New migration `0016_learning_materials.py`: `learning_materials` table (UUID PK, topic FK CASCADE, TEXT content, JSONB metadata, unique on `topic_id`, RLS enabled)
+- New ORM `LearningMaterial` + `LearningTopic.material` one-to-one relationship (`src/core/models.py`)
+- New Pydantic schemas package: `src/api/schemas/__init__.py`, `src/api/schemas/learning_import.py` (LearningImportRequest, ImportResult, MaterialOut, MaterialUpdate — all `extra="forbid"`)
+- `POST /v1/learning/import` (5/min rate limit): two-step dry-run → commit, case-insensitive dedup, atomic rollback on error (`src/api/routes/learning.py`, `src/api/services/learning_service.py`)
+- `GET/PATCH/DELETE /v1/learning/topics/{id}/material` endpoints; GET returns null (not 404) when topic has no material
+- `load_tree` now selectinloads material; `topic_to_dict` emits `has_material: bool` when `include_children=True`
+- Import template doc: `docs/learning-import-template.md` (schema ref, 2 examples, copy-pasteable LLM prompt)
+- +16 tests: 11 in `tests/test_learning_import.py`, 5 in `tests/test_learning.py`
+
+**Files touched**: `alembic/versions/0016_learning_materials.py` (new), `src/core/models.py`, `src/api/middleware/rate_limit.py`, `src/api/routes/learning.py`, `src/api/services/learning_service.py`, `src/api/schemas/__init__.py` (new), `src/api/schemas/learning_import.py` (new), `tests/test_learning_import.py` (new), `tests/test_learning.py`, `docs/learning-import-template.md` (new), `CLAUDE.md`, `PROGRESS.md`, `HISTORY.md`, `ARCHITECTURE.md`
+
+**Decisions made**: `has_material` only in `topic_to_dict(include_children=True)` to avoid MissingGreenlet on routes that don't eagerly load the relationship. GET material returns 200+null (not 404) when topic exists but has no material. Position auto-assigned from array index; `extra="forbid"` rejects any `position` field with 422. Import is atomic: single `commit()`, `rollback()` on exception.
+
+**Gotchas found**: `MAX() or -1` is a Python falsy bug (0 is falsy → returns -1 when max=0); fixed to `result if result is not None else -1`. `expire_on_commit=False` in test sessions caches relationship values — need `session.expire_all()` before re-querying in tests that share session across HTTP calls. PROGRESS.md migration numbering can be ahead of `master`; always check `alembic/versions/` before assigning a new number (found a collision: two `0015_*` files).
+
+**Test count**: 988 backend (1062 with pre-existing skips excluded) + 265 Vitest = 1246 total (+16 backend)
 
 ---
 

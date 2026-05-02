@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.0
-**Date**: 2026-04-30
-**Status**: All phases + Training & Commitments V1 + Learning Library V1 + Todo redesign (focus card + project groups) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
+**Version**: 2.1
+**Date**: 2026-05-02
+**Status**: All phases + Training & Commitments V1 + Learning Library V2 backend (bulk import + materials API) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (23 tables)                                    │
+│ Structured Memory (24 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**23 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**24 tables**, all with UUID PKs (not BigInteger). No soft deletes.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -286,6 +286,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **learning_topics**: Top-level learning subjects with `depth` (`foundational`|`deep`), `is_active` flag (cron draws only from active topics; deactivation preserves all progress), `position` for ordering
 - **learning_sections**: Grouping of items under a topic; FK to `learning_topics` with `ON DELETE CASCADE`
 - **learning_items**: Leaf units with `status` (`pending`|`done`), `feedback` (free text; calibration signal for LLM selector), `notes` (personal reference), `completed_at`; FK to `learning_sections` with `ON DELETE CASCADE`
+- **learning_materials** (migration 0016): Source material stored one-to-one with a topic (unique constraint on `topic_id`, FK CASCADE). Columns: `content` TEXT (markdown body, unlimited), `source_type` VARCHAR(40), `source_url`, `source_title`, `metadata_json` JSONB. RLS enabled. Full material is NOT returned in the tree view — only `has_material: bool` flag. Bulk import at `POST /v1/learning/import` (schemas in `src/api/schemas/learning_import.py`). Material does NOT sync to `memory_items`.
 - **todo_items.learning_item_id**: FK column added by migration 0013 (`ON DELETE SET NULL`); distinguishes cron-generated learning todos from regular ones. Learning items DO NOT sync to `memory_items`; the derived todos DO, via existing `todo_sync.py`.
 
 ### Job monitoring

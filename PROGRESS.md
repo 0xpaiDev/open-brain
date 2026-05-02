@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint deployed (2026-05-01) — ~1231 tests (972 backend + 265 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 backend (bulk import + materials API) committed (2026-05-02) — ~1246 tests (988 backend + 265 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -10,7 +10,7 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) pending deploy
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
@@ -46,8 +46,9 @@
 
 ## Next Up
 
-- Deploy UI polish sprint (`web/components/dashboard/task-row.tsx`, `focus-card.tsx`, `task-utils.ts`, `web/hooks/use-todos.ts`, `web/components/dashboard/morning-pulse.tsx`) — frontend-only, no migration needed
+- **Run Learning V2 Part 2** (fresh session): `prompts/new/learning-v2-part-2-frontend.md` — import page, topic detail page, `has_material` badge in tree view, `react-markdown` dependency
+- **Deploy** migration 0016 (`learning_materials`) + the full commit `29c1864` — run `docker compose --profile migrate run --rm migrate` on GCP VM after `git pull`
+- Seed first learning topics + sections + items via bulk import (`POST /v1/learning/import`) using `docs/learning-import-template.md` + Claude.ai
 - Verify 2026-04-26 05:00 UTC pulse signal pipeline: `signal_type` populated, `parsed_data->'signal_trace'` is a JSON array. If always `open` with similar wording, address P1+P2 (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`).
-- Seed first learning topics + sections + items via new routes or Claude Code skill (TBD) — feature is live but empty
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)
 - Multi-metric aggregate form support in Settings page (`web/app/settings/page.tsx`)
