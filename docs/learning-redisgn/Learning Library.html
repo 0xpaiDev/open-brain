@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learning Library — Open Brain</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0a0a0b;
+  min-height: 100vh;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  display: flex;
+  align-items: stretch;
+}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.topic-card {
+  animation: fadeIn .22s ease both;
+}
+@keyframes checkPop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+.check-pop { animation: checkPop .18s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ─── Design tokens ─────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "cardStyle": "default",
+  "accentColor": "#6f95e2",
+  "showProgress": true,
+  "compactSections": true
+}/*EDITMODE-END*/;
+
+const C = {
+  bg:       "#111113",
+  sidebar:  "#0f0f11",
+  surface:  "#1a1a1d",
+  surface2: "#222226",
+  surface3: "#2a2a2e",
+  border:   "#2e2e33",
+  borderFaint: "#232328",
+  salmon:   "#e07060",
+  salmonDim:"rgba(224,112,96,0.1)",
+  salmonMid:"rgba(224,112,96,0.22)",
+  indigo:   "#7b8fc7",
+  indigoDim:"rgba(123,143,199,0.1)",
+  text:     "#f0efed",
+  textMid:  "#888890",
+  textDim:  "#505056",
+  green:    "#4caf7d",
+  greenDim: "rgba(76,175,125,0.14)",
+};
+
+// ─── Sample data ──────────────────────────────────────────────────────────
+const INIT_TOPICS = [
+  {
+    id: 1, name: "Chatbot architecture fundamentals", active: false,
+    sections: [
+      { id: 11, name: "Building blocks", items: [
+        { id: 111, text: "System prompts — purpose, structure, best practices", done: true },
+        { id: 112, text: "Few-shot examples and when to use them", done: true },
+        { id: 113, text: "Conversation history management", done: false },
+        { id: 114, text: "Context window limits and trimming strategies", done: false },
+        { id: 115, text: "Tool / function calling — how it works, when it's used", done: false },
+      ]},
+      { id: 12, name: "Common MVP sins", items: [
+        { id: 121, text: "No memory between sessions", done: false },
+        { id: 122, text: "Hardcoded prompts in source code", done: false },
+        { id: 123, text: "No fallback / error handling", done: false },
+        { id: 124, text: "API keys in plaintext", done: false },
+        { id: 125, text: "No logging or observability", done: false },
+        { id: 126, text: "No cost monitoring", done: false },
+      ]},
+      { id: 13, name: "RAG basics", items: [
+        { id: 131, text: "Chunking strategies", done: false },
+        { id: 132, text: "Embeddings — what they are, how they're generated", done: false },
+        { id: 133, text: "Vector search and retrieval", done: false },
+        { id: 134, text: "When RAG fits vs fine-tuning", done: false },
+        { id: 135, text: "Vocabulary consolidation", done: false },
+      ]},
+    ],
+  },
+  {
+    id: 2, name: "n8n crash course", active: true,
+    sections: [
+      { id: 21, name: "Core concepts", items: [
+        { id: 211, text: "What a workflow looks like", done: true },
+        { id: 212, text: "Trigger nodes — webhooks, cron, manual", done: true },
+        { id: 213, text: "HTTP request nodes", done: false },
+        { id: 214, text: "Data transformation with Set/Code nodes", done: false },
+      ]},
+      { id: 22, name: "Integrations", items: [
+        { id: 221, text: "Connecting to external APIs", done: false },
+        { id: 222, text: "Error handling and retry logic", done: false },
+        { id: 223, text: "Credential management", done: false },
+      ]},
+    ],
+  },
+  {
+    id: 3, name: "TypeScript for backend devs", active: true,
+    sections: [
+      { id: 31, name: "Type system essentials", items: [
+        { id: 311, text: "Union and intersection types", done: false },
+        { id: 312, text: "Generics — when and why", done: false },
+        { id: 313, text: "Utility types: Partial, Pick, Omit, Record", done: false },
+        { id: 314, text: "Type narrowing and guards", done: false },
+      ]},
+    ],
+  },
+];
+
+// ─── Tiny helpers ─────────────────────────────────────────────────────────
+let _nextId = 900;
+const uid = () => ++_nextId;
+
+function topicProgress(topic) {
+  const all = topic.sections.flatMap(s => s.items);
+  if (!all.length) return 0;
+  return all.filter(i => i.done).length / all.length;
+}
+function sectionProgress(section) {
+  if (!section.items.length) return 0;
+  return section.items.filter(i => i.done).length / section.items.length;
+}
+
+// ─── Progress ring ────────────────────────────────────────────────────────
+function Ring({ pct, size = 36, stroke = 2.5, color }) {
+  const r = (size - stroke * 2) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0, transform: "rotate(-90deg)" }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.border} strokeWidth={stroke} />
+      <circle
+        cx={size/2} cy={size/2} r={r} fill="none"
+        stroke={pct >= 1 ? C.green : color}
+        strokeWidth={stroke}
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dasharray .4s ease" }}
+      />
+    </svg>
+  );
+}
+
+// ─── Pill toggle ──────────────────────────────────────────────────────────
+function PillToggle({ on, onChange }) {
+  return (
+    <div
+      onClick={e => { e.stopPropagation(); onChange(!on); }}
+      style={{
+        width: 36, height: 20, borderRadius: 10, cursor: "pointer",
+        background: on ? C.green : C.surface3,
+        border: `1px solid ${on ? C.green : C.border}`,
+        position: "relative", transition: "background .2s, border-color .2s",
+        flexShrink: 0,
+      }}
+    >
+      <div style={{
+        position: "absolute", top: 2,
+        left: on ? 18 : 2,
+        width: 14, height: 14, borderRadius: 7,
+        background: on ? "#fff" : C.textDim,
+        transition: "left .2s, background .2s",
+        boxShadow: "0 1px 3px rgba(0,0,0,.4)",
+      }} />
+    </div>
+  );
+}
+
+// ─── Checkbox ────────────────────────────────────────────────────────────
+function Checkbox({ done, onChange, accent }) {
+  const [pop, setPop] = useState(false);
+  const handleClick = e => {
+    e.stopPropagation();
+    if (!done) { setPop(true); setTimeout(() => setPop(false), 200); }
+    onChange(!done);
+  };
+  return (
+    <div
+      onClick={handleClick}
+      className={pop ? "check-pop" : ""}
+      style={{
+        width: 18, height: 18, borderRadius: 5, flexShrink: 0, cursor: "pointer",
+        border: `1.5px solid ${done ? accent : C.border}`,
+        background: done ? accent : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "border-color .15s, background .15s",
+      }}
+    >
+      {done && (
+        <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+          <path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+    </div>
+  );
+}
+
+// ─── Inline editable text ────────────────────────────────────────────────
+function InlineEdit({ value, onCommit, style: s = {}, placeholder }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef();
+  useEffect(() => { if (editing && ref.current) ref.current.focus(); }, [editing]);
+  if (editing) return (
+    <input
+      ref={ref}
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => { setEditing(false); if (draft.trim()) onCommit(draft.trim()); else setDraft(value); }}
+      onKeyDown={e => {
+        if (e.key === "Enter") { e.target.blur(); }
+        if (e.key === "Escape") { setDraft(value); setEditing(false); }
+      }}
+      style={{
+        background: "transparent", border: "none", outline: "none",
+        borderBottom: `1px solid ${C.border}`,
+        color: C.text, width: "100%",
+        ...s,
+      }}
+      placeholder={placeholder}
+    />
+  );
+  return (
+    <span
+      onDoubleClick={() => setEditing(true)}
+      title="Double-click to rename"
+      style={{ cursor: "text", ...s }}
+    >{value}</span>
+  );
+}
+
+// ─── Section component ────────────────────────────────────────────────────
+function SectionBlock({ section, accent, compact, onUpdate, onDeleteSection }) {
+  const [expanded, setExpanded] = useState(true);
+  const [addingItem, setAddingItem] = useState(false);
+  const [newItemText, setNewItemText] = useState("");
+  const inputRef = useRef();
+  const pct = sectionProgress(section);
+  const doneCount = section.items.filter(i => i.done).length;
+
+  const toggleItem = (itemId) => {
+    onUpdate({
+      ...section,
+      items: section.items.map(it => it.id === itemId ? { ...it, done: !it.done } : it)
+    });
+  };
+
+  const addItem = () => {
+    if (!newItemText.trim()) return;
+    onUpdate({
+      ...section,
+      items: [...section.items, { id: uid(), text: newItemText.trim(), done: false }]
+    });
+    setNewItemText("");
+    setTimeout(() => inputRef.current?.focus(), 30);
+  };
+
+  const deleteItem = (itemId) => {
+    onUpdate({ ...section, items: section.items.filter(it => it.id !== itemId) });
+  };
+
+  const renameItem = (itemId, text) => {
+    onUpdate({ ...section, items: section.items.map(it => it.id === itemId ? { ...it, text } : it) });
+  };
+
+  useEffect(() => {
+    if (addingItem && inputRef.current) inputRef.current.focus();
+  }, [addingItem]);
+
+  return (
+    <div style={{
+      borderRadius: 10,
+      background: C.surface2,
+      border: `1px solid ${C.borderFaint}`,
+      overflow: "hidden",
+      marginBottom: compact ? 6 : 8,
+    }}>
+      {/* Section header */}
+      <div
+        onClick={() => setExpanded(x => !x)}
+        style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: compact ? "8px 12px" : "10px 14px",
+          cursor: "pointer", userSelect: "none",
+        }}
+      >
+        {/* Mini progress bar left accent */}
+        <div style={{
+          width: 3, height: 28, borderRadius: 2, flexShrink: 0,
+          background: `linear-gradient(180deg, ${accent} ${pct * 100}%, ${C.border} ${pct * 100}%)`,
+          transition: "background .4s",
+        }} />
+        <span style={{
+          flex: 1, color: C.textMid, fontSize: 11.5, fontWeight: 600,
+          letterSpacing: ".07em", textTransform: "uppercase",
+        }}>
+          {section.name}
+        </span>
+        {doneCount > 0 && (
+          <span style={{
+            background: C.greenDim, color: C.green,
+            fontSize: 10, fontWeight: 600, borderRadius: 6,
+            padding: "2px 7px",
+          }}>{doneCount}/{section.items.length}</span>
+        )}
+        <svg
+          width="10" height="6" viewBox="0 0 10 6" fill="none"
+          style={{ transform: expanded ? "rotate(0)" : "rotate(-90deg)", transition: "transform .18s", flexShrink: 0 }}
+        >
+          <path d="M1 1l4 4 4-4" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Items */}
+      {expanded && (
+        <div style={{ paddingBottom: 4 }}>
+          {section.items.map((item, idx) => (
+            <div
+              key={item.id}
+              style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: compact ? "5px 14px 5px 29px" : "7px 14px 7px 29px",
+                borderTop: idx === 0 ? `1px solid ${C.borderFaint}` : "none",
+                transition: "background .15s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = C.surface3}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <Checkbox done={item.done} onChange={() => toggleItem(item.id)} accent={accent} />
+              <InlineEdit
+                value={item.text}
+                onCommit={t => renameItem(item.id, t)}
+                style={{
+                  flex: 1,
+                  color: item.done ? C.textDim : C.text,
+                  fontSize: compact ? 12.5 : 13,
+                  lineHeight: 1.45,
+                  textDecoration: item.done ? "line-through" : "none",
+                  transition: "color .15s",
+                  marginTop: 1,
+                }}
+                placeholder="Item text"
+              />
+              <div
+                onClick={e => { e.stopPropagation(); deleteItem(item.id); }}
+                style={{
+                  opacity: 0, width: 16, height: 16, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0, marginTop: 1,
+                  transition: "opacity .15s",
+                }}
+                className="delete-btn"
+                onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                onMouseLeave={e => e.currentTarget.style.opacity = 0}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1 1l8 8M9 1L1 9" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+            </div>
+          ))}
+
+          {/* Add item row */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: compact ? "4px 14px 6px 29px" : "6px 14px 8px 29px",
+            borderTop: section.items.length > 0 ? `1px solid ${C.borderFaint}` : "none",
+          }}>
+            {addingItem ? (
+              <>
+                <div style={{
+                  width: 18, height: 18, borderRadius: 5, border: `1.5px dashed ${accent}`,
+                  flexShrink: 0, opacity: .5,
+                }} />
+                <input
+                  ref={inputRef}
+                  value={newItemText}
+                  onChange={e => setNewItemText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") addItem();
+                    if (e.key === "Escape") { setAddingItem(false); setNewItemText(""); }
+                  }}
+                  onBlur={() => { addItem(); setAddingItem(false); }}
+                  placeholder="New item…"
+                  style={{
+                    flex: 1, background: "transparent", border: "none", outline: "none",
+                    color: C.text, fontSize: 13,
+                    borderBottom: `1px solid ${C.border}`,
+                    paddingBottom: 2,
+                  }}
+                />
+              </>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setAddingItem(true); }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 7,
+                  color: C.textDim, fontSize: 12, padding: "2px 0",
+                  transition: "color .15s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = accent}
+                onMouseLeave={e => e.currentTarget.style.color = C.textDim}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Add item
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Topic card ───────────────────────────────────────────────────────────
+function TopicCard({ topic, accent, compact, onUpdate, onDelete }) {
+  const [expanded, setExpanded] = useState(true);
+  const [addingSec, setAddingSec] = useState(false);
+  const [newSecName, setNewSecName] = useState("");
+  const secInputRef = useRef();
+  const pct = topicProgress(topic);
+  const totalItems = topic.sections.flatMap(s => s.items).length;
+  const doneItems  = topic.sections.flatMap(s => s.items).filter(i => i.done).length;
+
+  useEffect(() => {
+    if (addingSec && secInputRef.current) secInputRef.current.focus();
+  }, [addingSec]);
+
+  const updateSection = (sec) => {
+    onUpdate({ ...topic, sections: topic.sections.map(s => s.id === sec.id ? sec : s) });
+  };
+  const deleteSection = (secId) => {
+    onUpdate({ ...topic, sections: topic.sections.filter(s => s.id !== secId) });
+  };
+  const addSection = () => {
+    if (!newSecName.trim()) return;
+    onUpdate({ ...topic, sections: [...topic.sections, { id: uid(), name: newSecName.trim(), items: [] }] });
+    setNewSecName("");
+    setAddingSec(false);
+  };
+
+  return (
+    <div className="topic-card" style={{
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 14,
+      marginBottom: 12,
+      overflow: "hidden",
+      transition: "border-color .2s",
+    }}
+    onMouseEnter={e => e.currentTarget.style.borderColor = C.surface3}
+    onMouseLeave={e => e.currentTarget.style.borderColor = C.border}
+    >
+      {/* Topic header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "14px 18px",
+        cursor: "pointer",
+        userSelect: "none",
+      }}
+      onClick={() => setExpanded(x => !x)}
+      >
+        {/* Progress ring */}
+        <Ring pct={pct} size={34} stroke={2.5} color={accent} />
+
+        {/* Name + meta */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            color: C.text, fontSize: 14.5, fontWeight: 600,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            marginBottom: 2,
+          }}>
+            {topic.name}
+          </div>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            color: C.textDim, fontSize: 11,
+          }}>
+            <span>{topic.sections.length} section{topic.sections.length !== 1 ? "s" : ""}</span>
+            <span style={{ width: 2, height: 2, borderRadius: 1, background: C.textDim, display: "inline-block" }} />
+            <span>{doneItems}/{totalItems} items</span>
+            {pct >= 1 && totalItems > 0 && (
+              <span style={{
+                background: C.greenDim, color: C.green,
+                fontSize: 10, fontWeight: 600, borderRadius: 6, padding: "1px 7px",
+              }}>Complete</span>
+            )}
+          </div>
+        </div>
+
+        {/* Active toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={e => e.stopPropagation()}>
+          <span style={{ color: topic.active ? C.green : C.textDim, fontSize: 11, fontWeight: 500 }}>
+            {topic.active ? "Active" : "Inactive"}
+          </span>
+          <PillToggle on={topic.active} onChange={v => onUpdate({ ...topic, active: v })} />
+        </div>
+
+        {/* Collapse chevron */}
+        <svg
+          width="10" height="6" viewBox="0 0 10 6" fill="none"
+          style={{ transform: expanded ? "rotate(0)" : "rotate(-90deg)", transition: "transform .2s", flexShrink: 0, marginLeft: 4 }}
+        >
+          <path d="M1 1l4 4 4-4" stroke={C.textDim} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Progress bar */}
+      {expanded && totalItems > 0 && (
+        <div style={{ padding: "0 18px 0" }}>
+          <div style={{ height: 2, background: C.surface2, borderRadius: 2, overflow: "hidden", marginBottom: 14 }}>
+            <div style={{
+              width: `${pct * 100}%`, height: "100%",
+              background: pct >= 1 ? C.green : accent,
+              borderRadius: 2, transition: "width .4s ease",
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Sections */}
+      {expanded && (
+        <div style={{ padding: "0 12px 12px" }}>
+          {topic.sections.map(sec => (
+            <SectionBlock
+              key={sec.id}
+              section={sec}
+              accent={accent}
+              compact={compact}
+              onUpdate={updateSection}
+              onDeleteSection={deleteSection}
+            />
+          ))}
+
+          {/* Add section */}
+          <div style={{ marginTop: 4 }}>
+            {addingSec ? (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: C.surface2, borderRadius: 8,
+                border: `1px solid ${C.border}`,
+                padding: "8px 12px",
+              }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M2 6h8M6 2v8" stroke={accent} strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <input
+                  ref={secInputRef}
+                  value={newSecName}
+                  onChange={e => setNewSecName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") addSection();
+                    if (e.key === "Escape") { setAddingSec(false); setNewSecName(""); }
+                  }}
+                  onBlur={() => { addSection(); if (!newSecName.trim()) setAddingSec(false); }}
+                  placeholder="Section name…"
+                  style={{
+                    flex: 1, background: "transparent", border: "none", outline: "none",
+                    color: C.text, fontSize: 13,
+                  }}
+                />
+              </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setAddingSec(true); }}
+                style={{
+                  background: "none", border: `1px dashed ${C.border}`, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                  color: C.textDim, fontSize: 12, padding: "8px 14px",
+                  borderRadius: 8, width: "100%",
+                  transition: "border-color .15s, color .15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.color = accent; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textDim; }}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                  <path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Add section
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────
+function Sidebar() {
+  const navItems = [
+    { icon: "today", label: "Today" },
+    { icon: "memory", label: "Memory" },
+    { icon: "chat", label: "Chat" },
+    { icon: "diary", label: "Diary" },
+    { icon: "analytics", label: "Analytics" },
+    { icon: "learning", label: "Learning", active: true },
+    { icon: "logs", label: "Logs" },
+  ];
+  const icons = {
+    today: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.4"/><path d="M5 1v3M11 1v3M1 7h14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+    memory: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><path d="M8 5v3.5L10.5 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+    chat: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2.5h12a1 1 0 011 1v7a1 1 0 01-1 1H5.5L2 14v-2.5A1 1 0 011 10.5v-7a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>,
+    diary: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1.5" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6 5.5h4M6 8h4M6 10.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+    analytics: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.5 14L5.5 9l3 3L13 5.5M13 5.5V9M13 5.5H9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    learning: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L1.5 5.5 8 9l6.5-3.5L8 2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M1.5 5.5V10M4 7v5l4 2 4-2V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    logs: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h8M2 12h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+  };
+
+  return (
+    <div style={{
+      width: 168, background: C.sidebar, flexShrink: 0,
+      display: "flex", flexDirection: "column",
+      borderRight: `1px solid ${C.borderFaint}`,
+    }}>
+      {/* Brand */}
+      <div style={{ padding: "20px 18px 28px", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: 7,
+          background: C.salmon, display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <circle cx="6.5" cy="6.5" r="4" stroke="#fff" strokeWidth="1.5"/>
+            <circle cx="6.5" cy="6.5" r="1.5" fill="#fff"/>
+          </svg>
+        </div>
+        <span style={{ color: C.text, fontSize: 13.5, fontWeight: 700, letterSpacing: ".02em" }}>Open Brain</span>
+      </div>
+
+      <div style={{ padding: "0 10px 8px" }}>
+        <div style={{ color: C.textDim, fontSize: 10, fontWeight: 600, letterSpacing: ".1em", padding: "0 8px 8px", textTransform: "uppercase" }}>Library</div>
+        {navItems.map(item => (
+          <div key={item.icon} style={{
+            display: "flex", alignItems: "center", gap: 9,
+            padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+            background: item.active ? C.salmonDim : "transparent",
+            color: item.active ? C.salmon : C.textMid,
+            fontSize: 13, fontWeight: item.active ? 600 : 400,
+            transition: "background .15s, color .15s",
+            marginBottom: 1,
+          }}
+          onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = C.surface2; }}
+          onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = "transparent"; }}
+          >
+            {icons[item.icon]}
+            {item.label}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Ingest button */}
+      <div style={{ padding: "0 10px 20px" }}>
+        <button style={{
+          width: "100%", background: C.salmon, border: "none",
+          borderRadius: 9, padding: "9px 0", cursor: "pointer",
+          color: "#fff", fontSize: 12.5, fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}>
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <path d="M5.5 1v9M1 5.5h9" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+          Ingest New Memory
+        </button>
+        <div style={{ height: 1, background: C.borderFaint, margin: "14px 0 12px" }} />
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "4px 8px", cursor: "pointer", color: C.textDim, fontSize: 12,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M7 5v2.5M7 9v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          Settings
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Top bar ─────────────────────────────────────────────────────────────
+function TopBar() {
+  return (
+    <div style={{
+      height: 52, flexShrink: 0,
+      display: "flex", alignItems: "center",
+      padding: "0 24px",
+      borderBottom: `1px solid ${C.borderFaint}`,
+      gap: 12,
+    }}>
+      <div style={{ flex: 1 }} />
+      {/* Search */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        background: C.surface, border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: "6px 12px", width: 220,
+      }}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <circle cx="5.5" cy="5.5" r="4" stroke={C.textDim} strokeWidth="1.3"/>
+          <path d="M9 9l2.5 2.5" stroke={C.textDim} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+        <span style={{ color: C.textDim, fontSize: 12 }}>Search memories…</span>
+      </div>
+      {/* Bell */}
+      <div style={{ width: 30, height: 30, borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1.5A4 4 0 003 5.5v3L1.5 10h11L11 8.5v-3A4 4 0 007 1.5z" stroke={C.textMid} strokeWidth="1.3" strokeLinejoin="round"/>
+          <path d="M5.5 10.5a1.5 1.5 0 003 0" stroke={C.textMid} strokeWidth="1.3"/>
+        </svg>
+      </div>
+      {/* Avatar */}
+      <div style={{
+        width: 30, height: 30, borderRadius: "50%",
+        background: C.salmon, display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#fff", fontSize: 12, fontWeight: 700,
+      }}>S</div>
+    </div>
+  );
+}
+
+// ─── Main app ──────────────────────────────────────────────────────────────
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [topics, setTopics] = useState(INIT_TOPICS);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [filter, setFilter] = useState("all"); // all | active | inactive
+  const topicInputRef = useRef();
+
+  const accent = tweaks.accentColor;
+  const compact = tweaks.compactSections;
+
+  const addTopic = () => {
+    if (!newTopicName.trim()) return;
+    setTopics(ts => [...ts, {
+      id: uid(), name: newTopicName.trim(), active: false, sections: [],
+    }]);
+    setNewTopicName("");
+  };
+
+  const updateTopic = (topic) => setTopics(ts => ts.map(t => t.id === topic.id ? topic : t));
+  const deleteTopic = (id) => setTopics(ts => ts.filter(t => t.id !== id));
+
+  const activeCount   = topics.filter(t => t.active).length;
+  const inactiveCount = topics.filter(t => !t.active).length;
+  const totalItems    = topics.flatMap(t => t.sections.flatMap(s => s.items)).length;
+  const doneItems     = topics.flatMap(t => t.sections.flatMap(s => s.items)).filter(i => i.done).length;
+
+  const filtered = topics.filter(t =>
+    filter === "all" ? true : filter === "active" ? t.active : !t.active
+  );
+
+  return (
+    <div style={{ display: "flex", height: "100vh", width: "100vw", background: C.bg, overflow: "hidden" }}>
+      <Sidebar />
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <TopBar />
+
+        {/* Page content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
+
+          {/* Page header */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
+            <div>
+              <h1 style={{
+                color: C.text, fontSize: 22, fontWeight: 700,
+                letterSpacing: "-.015em", marginBottom: 4,
+              }}>Learning Library</h1>
+              <p style={{ color: C.textDim, fontSize: 13 }}>
+                Topics, sections, and items. Active topics feed into the morning todo list.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: "7px 14px", cursor: "pointer",
+                color: C.textMid, fontSize: 12.5, fontWeight: 500,
+              }}>Refresh today</button>
+              <button style={{
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: "7px 14px", cursor: "pointer",
+                color: C.textMid, fontSize: 12.5, fontWeight: 500,
+              }}>Import</button>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+            {[
+              { label: "Topics", value: topics.length },
+              { label: "Active", value: activeCount, highlight: true },
+              { label: "Items done", value: `${doneItems}/${totalItems}` },
+            ].map(stat => (
+              <div key={stat.label} style={{
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 10, padding: "11px 18px",
+                display: "flex", flexDirection: "column", gap: 3,
+                minWidth: 90,
+              }}>
+                <span style={{ color: stat.highlight ? accent : C.text, fontSize: 20, fontWeight: 700, lineHeight: 1 }}>{stat.value}</span>
+                <span style={{ color: C.textDim, fontSize: 11 }}>{stat.label}</span>
+              </div>
+            ))}
+            <div style={{ flex: 1 }} />
+            {/* Overall progress */}
+            <div style={{
+              background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 10, padding: "11px 18px",
+              display: "flex", alignItems: "center", gap: 14,
+              minWidth: 160,
+            }}>
+              <Ring pct={totalItems ? doneItems / totalItems : 0} size={38} stroke={3} color={accent} />
+              <div>
+                <div style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>Overall progress</div>
+                <div style={{ color: C.textDim, fontSize: 11, marginTop: 2 }}>
+                  {totalItems ? Math.round((doneItems / totalItems) * 100) : 0}% complete
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Add topic + filter row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+            <div style={{
+              flex: 1, display: "flex", alignItems: "center",
+              background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 9, overflow: "hidden",
+              transition: "border-color .15s",
+            }}
+            onFocusCapture={e => e.currentTarget.style.borderColor = accent}
+            onBlurCapture={e => e.currentTarget.style.borderColor = C.border}
+            >
+              <input
+                ref={topicInputRef}
+                value={newTopicName}
+                onChange={e => setNewTopicName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addTopic()}
+                placeholder="New topic name…"
+                style={{
+                  flex: 1, background: "transparent", border: "none", outline: "none",
+                  color: C.text, fontSize: 13, padding: "10px 14px",
+                }}
+              />
+              <button
+                onClick={addTopic}
+                style={{
+                  background: accent, border: "none", cursor: "pointer",
+                  padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 600,
+                  transition: "opacity .15s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = ".85"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+              >Add topic</button>
+            </div>
+
+            {/* Filter pills */}
+            <div style={{ display: "flex", gap: 4 }}>
+              {[["all", "All"], ["active", "Active"], ["inactive", "Inactive"]].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  style={{
+                    background: filter === key ? accent : C.surface,
+                    border: `1px solid ${filter === key ? accent : C.border}`,
+                    borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+                    color: filter === key ? "#fff" : C.textMid, fontSize: 12.5, fontWeight: filter === key ? 600 : 400,
+                    transition: "all .15s",
+                  }}
+                >{label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Topics list */}
+          <div>
+            {filtered.length === 0 && (
+              <div style={{
+                color: C.textDim, fontSize: 13, textAlign: "center",
+                padding: "48px 0",
+              }}>
+                No {filter !== "all" ? filter : ""} topics yet.
+              </div>
+            )}
+            {filtered.map(topic => (
+              <TopicCard
+                key={topic.id}
+                topic={topic}
+                accent={accent}
+                compact={compact}
+                onUpdate={updateTopic}
+                onDelete={deleteTopic}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Tweaks panel */}
+      <TweaksPanel>
+        <TweakColor
+          label="Accent color"
+          value={tweaks.accentColor}
+          onChange={v => setTweak("accentColor", v)}
+        />
+        <TweakRadio
+          label="Card density"
+          value={tweaks.compactSections ? "compact" : "default"}
+          options={[{ label: "Default", value: "default" }, { label: "Compact", value: "compact" }]}
+          onChange={v => setTweak("compactSections", v === "compact")}
+        />
+        <TweakToggle
+          label="Show progress indicators"
+          value={tweaks.showProgress}
+          onChange={v => setTweak("showProgress", v)}
+        />
+        <TweakToggle
+          label="Compact sections"
+          value={tweaks.compactSections}
+          onChange={v => setTweak("compactSections", v)}
+        />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

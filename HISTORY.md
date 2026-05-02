@@ -1,6 +1,27 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped, ~1246 tests (988 backend + 265 Vitest)
+Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign, ~1246 tests (988 backend + 278 Vitest)
+
+---
+
+## Session — 2026-05-02 (Learning UI redesign)
+
+**What changed**:
+- Full visual redesign of Learning Library: stat cards row, overall progress ring, filter pills (All/Active/Inactive, persisted to `ob:learning:filter`), fused add-topic form, collapsible topic cards with per-topic progress ring + bar, Switch toggle replacing raw checkbox (`web/app/learning/page.tsx`)
+- New components: `ProgressRing` (`web/components/ui/progress-ring.tsx`), `Switch` (wraps `@base-ui/react/switch`, `web/components/ui/switch.tsx`), `StatCard`, `OverallProgressCard`, `TopicCard` (`web/app/learning/_components/`)
+- Rewrote `SectionBlock` (`web/app/learning/_components/section-block.tsx`): collapsible, accent progress bar, delete section button, inline add-item, hover-reveal delete
+- Rewrote `ItemRow` (`web/app/learning/_components/item-row.tsx`): custom checkbox with `ob-checkPop` animation, double-click rename, hover-reveal delete (always visible on mobile), `editable` prop gates feedback/notes textareas
+- Polished topic detail page (`web/app/learning/topics/[id]/page.tsx`): 38px ring + meta, Switch replaces checkbox, sections fully interactive (editable mode), inline add-section
+- Added `deleteSection` + `deleteItem` optimistic mutations to `useLearning` hook (`web/hooks/use-learning.ts`)
+- Added `ob-fadeIn`/`ob-checkPop` keyframes + utilities to `web/app/globals.css`
+
+**Files touched**: `web/app/learning/page.tsx`, `web/app/learning/topics/[id]/page.tsx`, `web/app/learning/_components/item-row.tsx`, `web/app/learning/_components/section-block.tsx`, `web/app/learning/_components/topic-card.tsx` (new), `web/app/learning/_components/stat-card.tsx` (new), `web/app/learning/_components/overall-progress-card.tsx` (new), `web/components/ui/progress-ring.tsx` (new), `web/components/ui/switch.tsx` (new), `web/hooks/use-learning.ts`, `web/app/globals.css`
+
+**Decisions made**: `Switch` uses `@base-ui/react/switch` `onCheckedChange` callback (takes `(checked, eventDetails)` — wrapper drops eventDetails). `ProgressRing` uses SVG `stroke-dasharray` with `transition` class. Delete buttons use `opacity-100 sm:opacity-0 sm:group-hover:opacity-100` for touch-always-visible, hover-only on desktop. Backend DELETE routes (`/v1/learning/sections/{id}`, `/v1/learning/items/{id}`) already existed — no backend changes needed. `editable` prop on `SectionBlock`/`ItemRow` gates feedback textareas; main library page never passes `editable`.
+
+**Gotchas found**: `@base-ui/react/switch` `onCheckedChange` signature is `(checked: boolean, eventDetails: SwitchRoot.ChangeEventDetails) => void` — drop `eventDetails` in wrapper. CSS `stroke-*` utilities (`stroke-primary`, `stroke-streak-hit`, `stroke-surface-container-high`) resolve via Tailwind v4 CSS var tokens directly.
+
+**Test count**: 278 Vitest (was 265 — delta from prior sessions; no new tests written this session)
 
 ---
 

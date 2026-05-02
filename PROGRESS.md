@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) (2026-05-02) — ~1246 tests (988 backend + 265 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) — ~1246 tests (988 backend + 278 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -46,8 +46,9 @@
 
 ## Next Up
 
-- **Deploy** migration 0016 (`learning_materials`) + all Learning V2 commits — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
-- Manual V2 verification checklist (step 10 from spec): paste import JSON, verify badge, click topic detail, edit material, check `/today` learning todos
+- **Deploy** migration 0016 (`learning_materials`) + all Learning V2 + redesign commits — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
+- **Visual verification** of redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons — desktop + iPhone 14 Pro DevTools (393×852)
+- **Write tests** for new components per spec: `progress-ring.test.tsx`, `switch.test.tsx`, `learning-item-row.test.tsx`, `learning-topic-card.test.tsx`, `learning-page.test.tsx` (`web/__tests__/`)
 - Seed first learning topics + sections + items via `/learning/import` using `docs/learning-import-template.md` + Claude.ai
 - Verify 2026-04-26 05:00 UTC pulse signal pipeline: `signal_type` populated, `parsed_data->'signal_trace'` is a JSON array. If always `open` with similar wording, address P1+P2 (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`).
 - Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)

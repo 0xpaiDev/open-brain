@@ -21,7 +21,9 @@ interface UseLearningReturn {
   createTopic: (name: string, depth?: "foundational" | "deep") => Promise<void>;
   toggleTopicActive: (id: string, isActive: boolean) => Promise<void>;
   createSection: (topicId: string, name: string) => Promise<void>;
+  deleteSection: (id: string) => Promise<void>;
   createItem: (sectionId: string, title: string) => Promise<void>;
+  deleteItem: (id: string) => Promise<void>;
   updateItem: (id: string, patch: Partial<Pick<LearningItem, "title" | "status" | "feedback" | "notes">>) => Promise<void>;
   triggerRefresh: () => Promise<void>;
   getMaterial: (topicId: string) => Promise<LearningMaterial | null>;
@@ -89,6 +91,24 @@ export function useLearning(): UseLearningReturn {
     [fetchTree],
   );
 
+  const deleteSection = useCallback(
+    async (id: string) => {
+      setTopics((prev) =>
+        prev.map((t) => ({
+          ...t,
+          sections: t.sections.filter((s) => s.id !== id),
+        })),
+      );
+      try {
+        await api("DELETE", `/v1/learning/sections/${id}?confirm=true`);
+      } catch {
+        toast.error("Failed to delete section");
+        await fetchTree();
+      }
+    },
+    [fetchTree],
+  );
+
   const createItem = useCallback(
     async (sectionId: string, title: string) => {
       try {
@@ -96,6 +116,27 @@ export function useLearning(): UseLearningReturn {
         await fetchTree();
       } catch {
         toast.error("Failed to create item");
+      }
+    },
+    [fetchTree],
+  );
+
+  const deleteItem = useCallback(
+    async (id: string) => {
+      setTopics((prev) =>
+        prev.map((t) => ({
+          ...t,
+          sections: t.sections.map((s) => ({
+            ...s,
+            items: s.items.filter((i) => i.id !== id),
+          })),
+        })),
+      );
+      try {
+        await api("DELETE", `/v1/learning/items/${id}?confirm=true`);
+      } catch {
+        toast.error("Failed to delete item");
+        await fetchTree();
       }
     },
     [fetchTree],
@@ -204,7 +245,9 @@ export function useLearning(): UseLearningReturn {
     createTopic,
     toggleTopicActive,
     createSection,
+    deleteSection,
     createItem,
+    deleteItem,
     updateItem,
     triggerRefresh,
     getMaterial,
