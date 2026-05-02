@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { api, ApiError } from "@/lib/api";
 import { useLearning } from "@/hooks/use-learning";
 import type { LearningImportResult } from "@/lib/types";
 
@@ -24,23 +25,25 @@ const TEMPLATE = `{
           ]
         }
       ],
-      "material": "# Optional markdown content\\nPaste source material here."
+      "material": "# Optional markdown\\nOmit this key entirely if no material yet — do not pass empty string."
     }
   ]
 }`;
 
 export default function ImportPage() {
   const router = useRouter();
-  const { importCurriculum } = useLearning();
+  const { refresh } = useLearning();
 
   const [jsonText, setJsonText] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [dryRunResult, setDryRunResult] = useState<LearningImportResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [importing, setImporting] = useState(false);
 
   const handleValidate = async () => {
     setParseError(null);
+    setApiError(null);
     setDryRunResult(null);
 
     let payload: unknown;
@@ -52,11 +55,23 @@ export default function ImportPage() {
     }
 
     setValidating(true);
-    const result = await importCurriculum(payload, { dryRun: true });
-    setValidating(false);
-
-    if (result) {
+    try {
+      const result = await api<LearningImportResult>(
+        "POST",
+        "/v1/learning/import?dry_run=true",
+        payload,
+      );
       setDryRunResult(result);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        setApiError("Too many requests — wait a minute and try again.");
+      } else if (e instanceof ApiError) {
+        setApiError(e.message);
+      } else {
+        setApiError("Unexpected error during validation.");
+      }
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -72,12 +87,25 @@ export default function ImportPage() {
     }
 
     setImporting(true);
-    const result = await importCurriculum(payload, { dryRun: false });
-    setImporting(false);
-
-    if (result) {
+    try {
+      const result = await api<LearningImportResult>(
+        "POST",
+        "/v1/learning/import?dry_run=false",
+        payload,
+      );
+      await refresh();
       toast.success(`Imported ${result.topics_created} topic${result.topics_created === 1 ? "" : "s"}`);
       router.push("/learning");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        toast.error("Too many imports — wait a minute");
+      } else if (e instanceof ApiError) {
+        toast.error(`Import failed: ${e.message}`);
+      } else {
+        toast.error("Import failed");
+      }
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -127,6 +155,7 @@ export default function ImportPage() {
               setJsonText(e.target.value);
               setDryRunResult(null);
               setParseError(null);
+              setApiError(null);
             }}
             placeholder='{ "topics": [ ... ] }'
             className="font-mono text-base md:text-sm h-[60vh] resize-none"
@@ -155,7 +184,12 @@ export default function ImportPage() {
         <div className="space-y-2">
           <p className="text-sm font-medium">Preview</p>
           <div className="rounded-lg border border-outline-variant bg-surface-container p-4 min-h-[200px]">
-            {dryRunResult ? (
+            {apiError ? (
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-red-500">Validation failed</p>
+                <p className="text-sm text-on-surface-variant whitespace-pre-wrap">{apiError}</p>
+              </div>
+            ) : dryRunResult ? (
               <div className="space-y-3">
                 <p className="text-sm font-medium text-primary">
                   Dry run complete — ready to import

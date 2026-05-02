@@ -51,7 +51,13 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, `API error: ${res.status}`);
+    let detail = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+      else if (body?.detail) detail = JSON.stringify(body.detail);
+    } catch { /* non-JSON error body — keep default */ }
+    throw new ApiError(res.status, detail);
   }
 
   if (res.status === 204) return undefined as T;
