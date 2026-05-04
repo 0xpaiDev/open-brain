@@ -342,14 +342,14 @@ async def list_commitments(
     session: AsyncSession = Depends(get_db),
 ) -> CommitmentListResponse:
     """List commitments. Default: active only. Use ?status=all for all."""
+    today = _get_today()
     stmt = select(Commitment).order_by(Commitment.created_at.desc())
     if status_filter != "all":
         stmt = stmt.where(Commitment.status == status_filter)
+        stmt = stmt.where(Commitment.start_date <= today)
 
     result = await session.execute(stmt)
     commitments = list(result.scalars().all())
-
-    today = _get_today()
     responses = []
     for c in commitments:
         entries_result = await session.execute(
@@ -446,6 +446,8 @@ async def log_count(
         )
     if commitment.status != "active":
         raise HTTPException(status_code=400, detail="Commitment is not active")
+    if today < commitment.start_date:
+        raise HTTPException(status_code=400, detail="Commitment has not started yet")
 
     # Find today's entry
     entry_result = await session.execute(
