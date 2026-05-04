@@ -213,7 +213,7 @@ def _deterministic_fallback(
     return ordered[:target_count]
 
 
-async def _create_learning_todo(session: AsyncSession, item: LearningItem) -> TodoItem:
+async def _create_learning_todo(session: AsyncSession, item: LearningItem, today: date) -> TodoItem:
     """Create a TodoItem tied to this learning item.
 
     The description is seeded verbatim from the item title; importance stays
@@ -223,7 +223,8 @@ async def _create_learning_todo(session: AsyncSession, item: LearningItem) -> To
         session,
         description=item.title,
         priority="normal",
-        due_date=None,
+        due_date=datetime.combine(today, datetime.min.time(), tzinfo=UTC),
+        project="Learning",
     )
     todo.learning_item_id = item.id
     await session.commit()
@@ -282,7 +283,7 @@ async def run_learning_selection(session: AsyncSession) -> dict[str, Any]:
     created = 0
     for item in selected:
         try:
-            await _create_learning_todo(session, item)
+            await _create_learning_todo(session, item, today)
             created += 1
         except Exception:
             logger.warning("learning_todo_create_failed", item_id=str(item.id), exc_info=True)
