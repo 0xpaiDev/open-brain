@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.1
-**Date**: 2026-05-02
-**Status**: All phases + Training & Commitments V1 + Learning Library V2 backend (bulk import + materials API) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
+**Version**: 2.2
+**Date**: 2026-05-05
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -85,7 +85,7 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (24 tables)                                    │
+│ Structured Memory (26 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
@@ -240,7 +240,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**24 tables**, all with UUID PKs (not BigInteger). No soft deletes.
+**26 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -276,8 +276,10 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **rag_conversations**: Persisted conversation buffer; unique on (channel_id, user_id)
 
 ### Module: Training & Commitments
-- **commitments**: Challenge definitions with exercise, daily_target, metric (reps/minutes/tss), date range, status (active/completed/abandoned). `cadence` column: "daily" (per-day entries + log) or "aggregate" (period total from Strava). Aggregate has `targets` JSONB (e.g. `{"km": 200}`) and `progress` JSONB (cumulative actuals).
-- **commitment_entries**: One row per commitment per day, pre-generated on creation (daily cadence only); logged_count incremented by log actions; status: pending→hit (auto on target met) or pending→miss (nightly cron)
+- **commitments**: Challenge definitions with `kind` ("single"|"routine"|"plan"), `exercise` (nullable for multi-exercise kinds), `daily_target`, `metric`, `cadence` ("daily"|"aggregate"), date range, status (active/completed/abandoned). Aggregate has `targets`/`progress` JSONB. `import_hash` (SHA-256, indexed) used for plan import idempotency.
+- **commitment_entries**: One row per commitment per day, pre-generated on creation (daily cadence; plan kind: workout days only — rest days have no entry). `logged_count` incremented by log actions; status: pending→hit (auto when target/all-exercises met) or pending→miss (nightly cron)
+- **commitment_exercises** (migration 0017): Per-exercise definition for routine/plan kinds. Columns: `name`, `target`, `metric`, `progression_metric`, `position`. Unique on (commitment_id, name).
+- **commitment_exercise_logs** (migration 0017): Per-exercise log entry. Soft-deleted via `deleted_at`. Columns: `sets`, `reps`, `weight_kg`, `duration_minutes`, `notes`. A day is "hit" when every exercise has ≥1 active (non-deleted) log for that date.
 - **commitment_activities**: Junction table linking aggregate commitments to Strava activities for dedup and audit; unique constraint on (commitment_id, strava_activity_id); progress recalculated from all linked activities on every change
 - **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response; TSS computed from NP and FTP on ingest
 - **strava_tokens**: Single-row OAuth token store; bootstrapped from env vars on first webhook; auto-refreshed via `_get_valid_access_token()` when expired

@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-02** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign, ~1246 tests (988 backend + 278 Vitest)
+Covering **2026-03-13 to 2026-05-05** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments, ~1347 tests (1069 backend + 278 Vitest)
+
+---
+
+## Session — 2026-05-05 (Multi-exercise commitments)
+
+**What changed**:
+- Added `kind="routine"` (1–5 named exercises, logged daily) and `kind="plan"` (imported multi-week schedule with workout/rest days) to the commitment system; `kind="single"` legacy path unchanged
+- New migration 0017: `commitment_exercises` + `commitment_exercise_logs` tables (soft-delete via `deleted_at`), `kind`/`import_hash` columns + `ix_commitments_import_hash` index on `commitments`
+- New backend: import schema/service (`src/api/schemas/commitment_import.py`, `src/api/services/commitment_import_service.py`), 7 new routes in `src/api/routes/commitments.py` (import, per-exercise log, soft-delete log, progression), SHA-256 idempotency on plan import
+- New frontend: dashboard `MultiExerciseCommitmentCard` with per-exercise rows (`web/components/dashboard/commitment-list.tsx`), import page (`web/app/commitments/import/page.tsx`), progression chart page with recharts (`web/app/commitments/[id]/page.tsx`), chart series colors in `web/app/globals.css`
+- Reviewer catch: `loggedExerciseIds` was always empty — added `logged_today: bool` to `ExerciseResponse` and today's-logs query to list/detail/PATCH routes
+
+**Files touched**: `alembic/versions/0017_multi_exercise_commitments.py` (new), `src/core/models.py`, `src/api/routes/commitments.py`, `src/api/schemas/commitment_import.py` (new), `src/api/services/commitment_import_service.py` (new), `src/pipeline/training_sync.py`, `tests/test_commitment_import.py` (new, 22 tests), `web/lib/types.ts`, `web/hooks/use-commitments.ts`, `web/components/dashboard/commitment-list.tsx`, `web/app/commitments/import/page.tsx` (new), `web/app/commitments/[id]/page.tsx` (new), `web/app/globals.css`, `web/__tests__/components/commitment-list.test.tsx`, `web/__tests__/hooks/use-commitments.test.ts`, `CLAUDE.md`, `PROGRESS.md`
+
+**Decisions made**: Soft-delete via `deleted_at` on exercise logs (not hard delete) for audit trail. Plan import idempotency via SHA-256 index (not unique constraint — single-user). Workout-day-only `CommitmentEntry` pre-generation for plan kind; rest days have no entry, so existing "No entry" 400 serves as rest-day rejection. `ExerciseResponse.logged_today` populated from server-side query rather than client-side tracking (client had no log data).
+
+**Gotchas found**: `loggedExerciseIds = new Set<string>()` initialized empty and never populated — `MultiExerciseCommitmentCard` couldn't show per-exercise completion until `logged_today` was added to the API response. Session left with `git stash` applied mid-review; required `git stash pop` at start of next turn.
+
+**Test count**: 1347 total (1069 backend + 278 Vitest); backend grew by 81 (new commitment import tests)
 
 ---
 

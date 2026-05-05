@@ -372,8 +372,9 @@ def _format_commitment_summary_content(
     commitment: Commitment, entries: list[CommitmentEntry]
 ) -> str:
     """Build a natural-language completion summary for a commitment."""
+    exercise_label = commitment.exercise or "multi-exercise"
     parts = [
-        f"Commitment completed: {commitment.name} ({commitment.exercise}, "
+        f"Commitment completed: {commitment.name} ({exercise_label}, "
         f"{commitment.start_date} to {commitment.end_date})."
     ]
     parts.append(f"Cadence: {commitment.cadence}.")

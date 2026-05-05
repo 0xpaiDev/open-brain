@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) — ~1246 tests (988 backend + 278 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + **multi-exercise commitments (routine + plan kinds, 2026-05-04)** — ~1347 tests (1069 backend + 278 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -10,7 +10,7 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) pending deploy alongside Learning V2 frontend
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) + **0017 (multi-exercise commitments)** pending deploy
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
@@ -36,6 +36,9 @@
 - **T3**: `hybrid_search()` tag filtering (tags @> query) not yet wired — column and GIN index exist but no API surface.
 - **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
 - **T5**: `/v1/commitments` list default filter is `status=active`; completed-but-not-reached aggregates only visible on settings (`status=all`). If dashboard should surface "not reached" tombstones, add a separate "recent" section rather than widening the active filter (`web/app/dashboard/page.tsx`, `web/components/dashboard/commitment-list.tsx`).
+- **C1**: Multi-exercise commitment detail page (`web/app/commitments/[id]/page.tsx`) requires navigating to `/commitments/{id}` — there is no link from the dashboard card yet. Add a card header link or "View progression" button in `MultiExerciseCommitmentCard`.
+- **C2**: Exercise logging from dashboard is a simple "Done" tap (empty body `{}`). No UI for logging sets/reps/weight — only available via API directly. Add a log modal if per-session detail is needed.
+- **C3**: `import_hash` has an index but no `UNIQUE` constraint — concurrent identical imports could create duplicates in theory. Acceptable for single-user; add constraint if multi-user.
 - **L5**: Learning cron uses two-commit pattern in `_create_learning_todo` (`src/jobs/learning_daily.py`) — todo created then FK set. Non-atomic but low-probability; worst case one extra todo on next run. Consolidate into one transaction if this ever manifests.
 - **L6**: Web sidebar `/learning` link is hardcoded, not gated by `/v1/modules`. When `module_learning_enabled=False` clicking shows 404 gracefully. Acceptable for single-user; fix if multi-user.
 - **L7**: `/v1/learning/*` routes return `dict[str, Any]` rather than Pydantic response models. Matches modules endpoint style; tighten to models if stricter OpenAPI spec is needed.

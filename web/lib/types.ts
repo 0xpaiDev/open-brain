@@ -335,13 +335,59 @@ export interface CommitmentEntry {
   updated_at: string;
 }
 
+export interface CommitmentExercise {
+  id: string;
+  commitment_id: string;
+  name: string;
+  target: number;
+  metric: string;
+  progression_metric: string;
+  position: number;
+  logged_today: boolean;
+}
+
+export interface CommitmentExerciseLog {
+  id: string;
+  commitment_id: string;
+  exercise_id: string;
+  log_date: string;
+  sets: number | null;
+  reps: number | null;
+  weight_kg: number | null;
+  duration_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ProgressionPoint {
+  date: string;
+  value: number;
+  metric: string;
+}
+
+export interface ExerciseProgression {
+  exercise_id: string;
+  exercise_name: string;
+  points: ProgressionPoint[];
+}
+
+export interface CommitmentImportResult {
+  dry_run: boolean;
+  commitment_id: string | null;
+  already_exists: boolean;
+  workout_days: number;
+  rest_days: number;
+  exercise_count: number;
+}
+
 export interface CommitmentResponse {
   id: string;
   name: string;
-  exercise: string;
+  exercise: string | null;
   daily_target: number;
   metric: string;
   cadence: "daily" | "aggregate";
+  kind: "single" | "routine" | "plan";
   targets: Record<string, number> | null;
   progress: Record<string, number> | null;
   pace: Record<string, number> | null;
@@ -353,6 +399,7 @@ export interface CommitmentResponse {
   current_streak: number;
   goal_reached: boolean | null;
   entries: CommitmentEntry[];
+  exercises: CommitmentExercise[];
 }
 
 export interface CommitmentListResponse {
@@ -362,11 +409,18 @@ export interface CommitmentListResponse {
 
 export interface CommitmentCreate {
   name: string;
-  exercise: string;
-  daily_target: number;
+  exercise?: string | null;
+  kind?: "single" | "routine" | "plan";
+  daily_target?: number;
   metric?: string;
   cadence?: "daily" | "aggregate";
   targets?: Record<string, number>;
+  exercises?: Array<{
+    name: string;
+    target: number;
+    metric?: string;
+    progression_metric?: string;
+  }>;
   start_date: string;
   end_date: string;
 }

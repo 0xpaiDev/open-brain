@@ -551,20 +551,24 @@ class Commitment(Base):
     """A commitment challenge with daily or aggregate targets and date range.
 
     cadence: "daily" (per-day entries + log) | "aggregate" (period total from Strava)
-    metric: "reps" | "minutes" | "tss" (used by daily cadence)
+    kind: "single" (legacy, one exercise) | "routine" (multi-exercise, every day) | "plan" (imported, mixed workout/rest days)
+    metric: "reps" | "minutes" | "tss" (used by single cadence)
     targets: JSONB dict of metric→target for aggregate (e.g. {"km": 200, "tss": 400})
     progress: JSONB dict of metric→actual for aggregate (e.g. {"km": 145.3})
     status: "active" | "completed" | "abandoned"
+    import_hash: SHA-256 of canonicalized plan payload for idempotency (plan kind only)
     """
 
     __tablename__ = "commitments"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    exercise: Mapped[str] = mapped_column(String(100), nullable=False)
-    daily_target: Mapped[int] = mapped_column(Integer, nullable=False)
+    exercise: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    daily_target: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     metric: Mapped[str] = mapped_column(String(20), default="reps")
     cadence: Mapped[str] = mapped_column(String(20), default="daily")
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True, default="single")
+    import_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     targets: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     progress: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -582,6 +586,12 @@ class Commitment(Base):
     linked_activities: Mapped[list["CommitmentActivity"]] = relationship(
         "CommitmentActivity", back_populates="commitment", cascade="all, delete-orphan"
     )
+    exercises: Mapped[list["CommitmentExercise"]] = relationship(
+        "CommitmentExercise", back_populates="commitment", cascade="all, delete-orphan",
+        order_by="CommitmentExercise.position",
+    )
+
+    __table_args__ = (Index("ix_commitments_import_hash", "import_hash"),)
 
 
 class CommitmentEntry(Base):
@@ -673,6 +683,73 @@ class CommitmentActivity(Base):
     )
     strava_activity: Mapped["StravaActivity"] = relationship(
         "StravaActivity", back_populates="commitment_links"
+    )
+
+
+class CommitmentExercise(Base):
+    """Per-exercise definition for routine/plan commitments.
+
+    position: display order (0-indexed, 0–4)
+    metric: unit logged ("reps" | "minutes" | "kg")
+    progression_metric: the metric to chart for progression ("reps" | "kg" | "minutes")
+    """
+
+    __tablename__ = "commitment_exercises"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    commitment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    target: Mapped[int] = mapped_column(Integer, nullable=False)
+    metric: Mapped[str] = mapped_column(String(20), nullable=False, default="reps")
+    progression_metric: Mapped[str] = mapped_column(String(20), nullable=False, default="reps")
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("commitment_id", "name", name="uq_commitment_exercise_name"),
+        Index("ix_commitment_exercises_commitment", "commitment_id"),
+    )
+
+    commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="exercises")
+    logs: Mapped[list["CommitmentExerciseLog"]] = relationship(
+        "CommitmentExerciseLog", back_populates="exercise", cascade="all, delete-orphan"
+    )
+
+
+class CommitmentExerciseLog(Base):
+    """One log entry per exercise per logging session. Soft-delete via deleted_at.
+
+    A day is "hit" when every CommitmentExercise for the commitment has ≥1 active
+    (deleted_at IS NULL) log for that log_date.
+    """
+
+    __tablename__ = "commitment_exercise_logs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    commitment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
+    )
+    exercise_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitment_exercises.id", ondelete="CASCADE"), nullable=False
+    )
+    log_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_exercise_logs_commitment_exercise_date", "commitment_id", "exercise_id", "log_date"),
+        Index("ix_exercise_logs_commitment_date", "commitment_id", "log_date"),
+    )
+
+    exercise: Mapped["CommitmentExercise"] = relationship(
+        "CommitmentExercise", back_populates="logs"
     )
 
 

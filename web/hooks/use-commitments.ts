@@ -7,6 +7,9 @@ import type {
   CommitmentListResponse,
   CommitmentCreate,
   CommitmentEntry,
+  CommitmentExerciseLog,
+  ExerciseProgression,
+  CommitmentImportResult,
 } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -103,5 +106,61 @@ export function useCommitments(statusFilter: "active" | "all" = "active") {
     [],
   );
 
-  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment };
+  const logExercise = useCallback(
+    async (
+      commitmentId: string,
+      exerciseId: string,
+      data: { reps?: number; sets?: number; weight_kg?: number; duration_minutes?: number; notes?: string },
+    ) => {
+      try {
+        const log = await api<CommitmentExerciseLog>(
+          "POST",
+          `/v1/commitments/${commitmentId}/exercises/${exerciseId}/log`,
+          data,
+        );
+        await refresh();
+        return log;
+      } catch (err) {
+        toast.error("Failed to log exercise");
+        throw err;
+      }
+    },
+    [refresh],
+  );
+
+  const deleteExerciseLog = useCallback(
+    async (commitmentId: string, exerciseId: string, logId: string) => {
+      try {
+        await api("DELETE", `/v1/commitments/${commitmentId}/exercises/${exerciseId}/logs/${logId}`);
+        await refresh();
+      } catch {
+        toast.error("Failed to delete log");
+      }
+    },
+    [refresh],
+  );
+
+  const getProgression = useCallback(
+    async (commitmentId: string): Promise<ExerciseProgression[]> => {
+      return api<ExerciseProgression[]>("GET", `/v1/commitments/${commitmentId}/progression`);
+    },
+    [],
+  );
+
+  const importPlan = useCallback(
+    async (payload: unknown, dryRun: boolean): Promise<CommitmentImportResult> => {
+      const result = await api<CommitmentImportResult>(
+        "POST",
+        `/v1/commitments/import?dry_run=${dryRun}`,
+        payload,
+      );
+      if (!dryRun && !result.already_exists) {
+        await refresh();
+      }
+      return result;
+    },
+    [refresh],
+  );
+
+  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment, logExercise, deleteExerciseLog, getProgression, importPlan };
 }

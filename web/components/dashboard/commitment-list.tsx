@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Dumbbell, Flame, TrendingUp } from "lucide-react";
+import { Check, Dumbbell, Flame, TrendingUp } from "lucide-react";
 import { useCommitments } from "@/hooks/use-commitments";
-import type { CommitmentResponse, CommitmentEntry } from "@/lib/types";
+import type { CommitmentResponse, CommitmentEntry, CommitmentExercise } from "@/lib/types";
 
 // ── Streak dots ──────────────────────────────────────────────────────────────
 
@@ -270,10 +270,135 @@ function AggregateCommitmentCard({ commitment }: { commitment: CommitmentRespons
   );
 }
 
+// ── Multi-exercise commitment card ────────────────────────────────────────────
+
+function ExerciseRow({
+  exercise,
+  isLogged,
+  isRestDay,
+  onLog,
+}: {
+  exercise: CommitmentExercise;
+  isLogged: boolean;
+  isRestDay: boolean;
+  onLog: (exerciseId: string) => Promise<void>;
+}) {
+  const [pending, setPending] = useState(false);
+
+  const handleLog = async () => {
+    if (isLogged || isRestDay || pending) return;
+    setPending(true);
+    try {
+      await onLog(exercise.id);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="font-body text-sm text-on-surface">{exercise.name}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-on-surface-variant text-sm font-body">
+          {exercise.target} {exercise.metric}
+        </span>
+        {isRestDay ? (
+          <span className="text-outline text-xs font-body">rest</span>
+        ) : isLogged ? (
+          <Check className="w-4 h-4 text-streak-hit" aria-label="Done" />
+        ) : (
+          <button
+            onClick={handleLog}
+            disabled={pending}
+            aria-label={`Log ${exercise.name}`}
+            className="bg-primary-container text-on-primary-container rounded-full px-3 h-8 text-base md:text-sm font-body
+              hover:bg-primary hover:text-on-primary active:scale-95 transition-all
+              disabled:opacity-50 cursor-pointer"
+          >
+            Done
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MultiExerciseCommitmentCard({
+  commitment,
+  onLogExercise,
+}: {
+  commitment: CommitmentResponse;
+  onLogExercise: (commitmentId: string, exerciseId: string) => Promise<void>;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntry = commitment.entries.find((e) => e.entry_date === today);
+  const isRestDay = !todayEntry && commitment.kind === "plan";
+
+  const totalDays =
+    Math.ceil(
+      (new Date(commitment.end_date).getTime() - new Date(commitment.start_date).getTime()) /
+        (1000 * 60 * 60 * 24),
+    ) + 1;
+  const elapsedDays =
+    Math.ceil(
+      (new Date(today).getTime() - new Date(commitment.start_date).getTime()) /
+        (1000 * 60 * 60 * 24),
+    ) + 1;
+  const dayNumber = Math.max(1, Math.min(elapsedDays, totalDays));
+
+  return (
+    <div className={`bg-surface-container rounded-2xl p-5 space-y-3 ${isRestDay ? "opacity-70" : ""}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Dumbbell className="w-4 h-4 text-primary" />
+          <span className="font-headline text-lg text-on-surface">{commitment.name}</span>
+          {isRestDay && (
+            <span className="bg-outline/20 text-outline text-xs font-body rounded-full px-2 py-0.5">
+              Rest Day
+            </span>
+          )}
+        </div>
+        <span className="text-on-surface-variant text-sm font-body">
+          Day {dayNumber}/{totalDays}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <StreakDots entries={commitment.entries} today={today} />
+        {commitment.current_streak > 0 && (
+          <div className="flex items-center gap-1 text-streak-hit text-sm">
+            <Flame className="w-3.5 h-3.5" />
+            <span className="font-body">{commitment.current_streak}-day</span>
+          </div>
+        )}
+      </div>
+
+      <div className="divide-y divide-outline/10">
+        {commitment.exercises.map((ex) => (
+          <ExerciseRow
+            key={ex.id}
+            exercise={ex}
+            isLogged={ex.logged_today || todayEntry?.status === "hit"}
+            isRestDay={isRestDay}
+            onLog={(exerciseId) => onLogExercise(commitment.id, exerciseId)}
+          />
+        ))}
+      </div>
+
+      {todayEntry?.status === "hit" && (
+        <div className="flex items-center gap-1 text-streak-hit text-sm font-body">
+          <Check className="w-4 h-4" />
+          <span>All done today!</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Commitment list (main export) ────────────────────────────────────────────
 
 export function CommitmentList() {
-  const { commitments, loading, logCount } = useCommitments();
+  const { commitments, loading, logCount, logExercise } = useCommitments();
 
   if (loading) {
     return (
@@ -296,13 +421,23 @@ export function CommitmentList() {
           {commitments.length}
         </span>
       </div>
-      {commitments.map((c) =>
-        c.cadence === "aggregate" ? (
-          <AggregateCommitmentCard key={c.id} commitment={c} />
-        ) : (
-          <CommitmentCard key={c.id} commitment={c} onLog={logCount} />
-        ),
-      )}
+      {commitments.map((c) => {
+        if (c.cadence === "aggregate") {
+          return <AggregateCommitmentCard key={c.id} commitment={c} />;
+        }
+        if (c.kind === "routine" || c.kind === "plan") {
+          return (
+            <MultiExerciseCommitmentCard
+              key={c.id}
+              commitment={c}
+              onLogExercise={async (commitmentId, exerciseId) => {
+                await logExercise(commitmentId, exerciseId, {});
+              }}
+            />
+          );
+        }
+        return <CommitmentCard key={c.id} commitment={c} onLog={logCount} />;
+      })}
     </div>
   );
 }
