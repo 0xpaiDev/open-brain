@@ -99,7 +99,7 @@ export default function CommitmentDetailPage({
     return (
       <main className="min-h-screen bg-background p-4 md:p-8 max-w-2xl mx-auto">
         <div className="mb-6">
-          <Link href="/" className={buttonVariants({ variant: "ghost" })}>
+          <Link href="/commitments" className={buttonVariants({ variant: "ghost" })}>
             ← Back
           </Link>
         </div>
@@ -113,7 +113,7 @@ export default function CommitmentDetailPage({
   return (
     <main className="min-h-screen bg-background p-4 md:p-8 max-w-2xl mx-auto">
       <div className="mb-6">
-        <Link href="/" className={buttonVariants({ variant: "ghost" })}>
+        <Link href="/commitments" className={buttonVariants({ variant: "ghost" })}>
           ← Back
         </Link>
       </div>

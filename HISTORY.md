@@ -1,6 +1,27 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-05** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments, ~1347 tests (1069 backend + 278 Vitest)
+Covering **2026-03-13 to 2026-05-05** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab, ~1347 tests (1069 backend + 303 Vitest)
+
+---
+
+## Session — 2026-05-05 (Commitments first-class tab)
+
+**What changed**:
+- Added `/commitments` page with active list (invisible overlay links → `/commitments/[id]`), collapsible create form, and history section with Reached/Not Reached/abandoned badges sorted by `end_date` desc (`web/app/commitments/page.tsx`)
+- Extracted commitment create form from Settings into standalone component (`web/components/commitments/commitment-create-form.tsx`); form receives `createCommitment` as prop, calls `onCreated` on success only
+- Removed entire commitment block from Settings page (276 lines removed — hook call, state, handlers, JSX) (`web/app/settings/page.tsx`)
+- Added Commitments nav item after Today in sidebar (`task_alt` icon); replaced Analytics with Commitments in mobile bottom-tabs (`web/components/layout/sidebar.tsx`, `web/components/layout/bottom-tabs.tsx`)
+- Back-links in detail + import pages updated from `/` to `/commitments` (`web/app/commitments/[id]/page.tsx`, `web/app/commitments/import/page.tsx`)
+- Exported `CommitmentCard`, `AggregateCommitmentCard`, `MultiExerciseCommitmentCard` from commitment-list for use on new page (`web/components/dashboard/commitment-list.tsx`)
+- 25 new Vitest tests across `commitment-create-form.test.tsx` and `commitments-page.test.tsx`; Reviewer catch: second back-link occurrence in detail page was not updated by replace_all
+
+**Files touched**: `web/app/commitments/page.tsx` (new), `web/components/commitments/commitment-create-form.tsx` (new), `web/__tests__/components/commitment-create-form.test.tsx` (new), `web/__tests__/components/commitments-page.test.tsx` (new), `web/components/dashboard/commitment-list.tsx`, `web/components/layout/sidebar.tsx`, `web/components/layout/bottom-tabs.tsx`, `web/app/settings/page.tsx`, `web/app/commitments/[id]/page.tsx`, `web/app/commitments/import/page.tsx`
+
+**Decisions made**: Analytics removed from mobile bottom-tabs (zero content; still reachable on desktop sidebar); restore when Analytics ships real features. Card overlay link pattern (`absolute inset-0 z-0` Link + `relative z-10` content) used so interactive buttons inside cards stay clickable. `CommitmentCreateForm` receives `createCommitment` as prop (not calling hook internally) for testability. `refresh()` called via `onCreated` callback after each successful create for confirmed server state. History sorted client-side by `end_date` desc (API returns `created_at` desc).
+
+**Gotchas found**: `replace_all: true` on Edit tool matches by string content — two `<Link href="/" ...>← Back</Link>` in detail page had different indentation so only one was replaced; the second (loaded-state branch, line 116) required a separate edit. Multi-role prompt execution: Explorer → Skeptic → Architect → UI/UX → Implementer → Reviewer → Security Reviewer; Reviewer found the missed back-link that the Implementer overlooked.
+
+**Test count**: 303 Vitest (was 278; +25 this session) | 1069 backend (unchanged)
 
 ---
 

@@ -8,7 +8,7 @@ const tabs = [
   { href: "/memory", icon: "database", label: "Memory" },
   { href: "/chat", icon: "chat", label: "Chat" },
   { href: "/diary", icon: "auto_stories", label: "Diary" },
-  { href: "/analytics", icon: "analytics", label: "Analytics" },
+  { href: "/commitments", icon: "task_alt", label: "Commitments" },
 ];
 
 export function BottomTabs() {

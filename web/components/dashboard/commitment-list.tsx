@@ -73,7 +73,7 @@ function LogInput({
 
 // ── Commitment card ──────────────────────────────────────────────────────────
 
-function CommitmentCard({
+export function CommitmentCard({
   commitment,
   onLog,
 }: {
@@ -194,7 +194,7 @@ const METRIC_LABELS: Record<string, string> = {
   elevation_m: "m elev",
 };
 
-function AggregateCommitmentCard({ commitment }: { commitment: CommitmentResponse }) {
+export function AggregateCommitmentCard({ commitment }: { commitment: CommitmentResponse }) {
   const today = new Date().toISOString().slice(0, 10);
   const targets = commitment.targets ?? {};
   const progress = commitment.progress ?? {};
@@ -323,7 +323,7 @@ function ExerciseRow({
   );
 }
 
-function MultiExerciseCommitmentCard({
+export function MultiExerciseCommitmentCard({
   commitment,
   onLogExercise,
 }: {

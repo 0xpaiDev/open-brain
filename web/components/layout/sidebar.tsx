@@ -6,6 +6,7 @@ import { useProjectLabels } from "@/hooks/use-project-labels";
 
 const navItems = [
   { href: "/dashboard", icon: "today", label: "Today" },
+  { href: "/commitments", icon: "task_alt", label: "Commitments" },
   { href: "/memory", icon: "database", label: "Memory" },
   { href: "/chat", icon: "chat", label: "Chat" },
   { href: "/diary", icon: "auto_stories", label: "Diary" },

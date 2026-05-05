@@ -102,7 +102,7 @@ export default function CommitmentImportPage() {
       } else {
         toast.success("Plan imported successfully!");
       }
-      router.push("/");
+      router.push("/commitments");
     } catch (e) {
       if (e instanceof ApiError) {
         setApiError(e.message);
@@ -117,7 +117,7 @@ export default function CommitmentImportPage() {
   return (
     <main className="min-h-screen bg-background p-4 md:p-8 max-w-2xl mx-auto">
       <div className="mb-6">
-        <Link href="/" className={buttonVariants({ variant: "ghost" })}>
+        <Link href="/commitments" className={buttonVariants({ variant: "ghost" })}>
           ← Back
         </Link>
       </div>

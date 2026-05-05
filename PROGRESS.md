@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + **multi-exercise commitments (routine + plan kinds, 2026-05-04)** — ~1347 tests (1069 backend + 278 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + **Commitments first-class tab (2026-05-05)** — ~1347 tests (1069 backend + 303 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -35,8 +35,8 @@
 - **M1**: `sync_todo_to_memory()` flips `is_superseded=True` but does NOT set `supersedes_memory_id` pointer.
 - **T3**: `hybrid_search()` tag filtering (tags @> query) not yet wired — column and GIN index exist but no API surface.
 - **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
-- **T5**: `/v1/commitments` list default filter is `status=active`; completed-but-not-reached aggregates only visible on settings (`status=all`). If dashboard should surface "not reached" tombstones, add a separate "recent" section rather than widening the active filter (`web/app/dashboard/page.tsx`, `web/components/dashboard/commitment-list.tsx`).
-- **C1**: Multi-exercise commitment detail page (`web/app/commitments/[id]/page.tsx`) requires navigating to `/commitments/{id}` — there is no link from the dashboard card yet. Add a card header link or "View progression" button in `MultiExerciseCommitmentCard`.
+- **T5**: ~~completed-but-not-reached aggregates only visible on settings~~ — **resolved**: now visible in Commitments tab History view (`web/app/commitments/page.tsx`).
+- **C1**: ~~No link from dashboard card to detail page~~ — **resolved**: Commitments tab cards have overlay nav links to `/commitments/[id]` (`web/app/commitments/page.tsx`). Dashboard cards still have no direct link — address separately if needed (`web/components/dashboard/commitment-list.tsx`).
 - **C2**: Exercise logging from dashboard is a simple "Done" tap (empty body `{}`). No UI for logging sets/reps/weight — only available via API directly. Add a log modal if per-session detail is needed.
 - **C3**: `import_hash` has an index but no `UNIQUE` constraint — concurrent identical imports could create duplicates in theory. Acceptable for single-user; add constraint if multi-user.
 - **L5**: Learning cron uses two-commit pattern in `_create_learning_todo` (`src/jobs/learning_daily.py`) — todo created then FK set. Non-atomic but low-probability; worst case one extra todo on next run. Consolidate into one transaction if this ever manifests.
@@ -49,10 +49,11 @@
 
 ## Next Up
 
-- **Deploy** migration 0016 (`learning_materials`) + all Learning V2 + redesign commits — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
-- **Visual verification** of redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons — desktop + iPhone 14 Pro DevTools (393×852)
-- **Write tests** for new components per spec: `progress-ring.test.tsx`, `switch.test.tsx`, `learning-item-row.test.tsx`, `learning-topic-card.test.tsx`, `learning-page.test.tsx` (`web/__tests__/`)
+- **Deploy** all pending changes (migrations 0016+0017 + Learning V2 + Commitments tab) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
+- **Visual verification** of Commitments tab: active list cards + overlay links, collapsible form, history section with badges, sidebar + mobile bottom-tabs — desktop + iPhone 14 Pro DevTools (393×852)
+- **Visual verification** of Learning redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons
+- **Write tests** for Learning components: `progress-ring.test.tsx`, `switch.test.tsx`, `learning-item-row.test.tsx`, `learning-topic-card.test.tsx`, `learning-page.test.tsx` (`web/__tests__/`)
 - Seed first learning topics + sections + items via `/learning/import` using `docs/learning-import-template.md` + Claude.ai
-- Verify 2026-04-26 05:00 UTC pulse signal pipeline: `signal_type` populated, `parsed_data->'signal_trace'` is a JSON array. If always `open` with similar wording, address P1+P2 (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`).
-- Add tag filtering to `hybrid_search()` for training memory queries (`src/retrieval/search.py`)
-- Multi-metric aggregate form support in Settings page (`web/app/settings/page.tsx`)
+- Verify pulse signal pipeline telemetry; address P1+P2 if always `open` (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`)
+- Multi-metric aggregate form support in Commitments tab (`web/components/commitments/commitment-create-form.tsx`)
+- Dashboard commitment cards currently have no detail link — consider adding "View" chevron to `MultiExerciseCommitmentCard` (`web/components/dashboard/commitment-list.tsx`)
