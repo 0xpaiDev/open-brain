@@ -31,10 +31,10 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _VALID_STATUSES = {"active", "completed", "abandoned"}
-_VALID_METRICS = {"reps", "minutes", "tss"}
+_VALID_METRICS = {"reps", "minutes", "tss", "seconds"}
 _VALID_CADENCES = {"daily", "aggregate"}
 _VALID_TARGET_KEYS = {"km", "tss", "minutes", "hours", "elevation_m"}
-_VALID_EXERCISE_METRICS = {"reps", "minutes", "kg"}
+_VALID_EXERCISE_METRICS = {"reps", "minutes", "kg", "seconds"}
 _VALID_KINDS = {"single", "routine", "plan"}
 
 

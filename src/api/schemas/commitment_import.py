@@ -10,8 +10,8 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-_VALID_METRICS = {"reps", "minutes", "kg"}
-_VALID_PROGRESSION_METRICS = {"reps", "minutes", "kg"}
+_VALID_METRICS = {"reps", "minutes", "kg", "seconds"}
+_VALID_PROGRESSION_METRICS = {"reps", "minutes", "kg", "seconds"}
 
 
 class ImportExerciseSpec(BaseModel):
