@@ -339,6 +339,7 @@ export interface CommitmentExercise {
   id: string;
   commitment_id: string;
   name: string;
+  sets: number | null;
   target: number;
   metric: string;
   progression_metric: string;

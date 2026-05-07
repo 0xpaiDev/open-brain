@@ -300,7 +300,7 @@ function ExerciseRow({
       <span className="font-body text-sm text-on-surface">{exercise.name}</span>
       <div className="flex items-center gap-2">
         <span className="text-on-surface-variant text-sm font-body">
-          {exercise.target} {exercise.metric}
+          {exercise.sets != null ? `${exercise.sets} × ` : ""}{exercise.target} {exercise.metric}
         </span>
         {isRestDay ? (
           <span className="text-outline text-xs font-body">rest</span>

@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + **Commitments first-class tab (2026-05-05)** — ~1347 tests (1069 backend + 303 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + Commitments first-class tab (2026-05-05) + **commitment plan import with per-exercise sets (2026-05-07)** — ~1372 tests (1069 backend + 303 Vitest)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -10,7 +10,7 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) + **0017 (multi-exercise commitments)** pending deploy
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) + 0017 (multi-exercise commitments) + **0018 (commitment_exercises.sets + widened unique constraint)** pending deploy
 **Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
@@ -37,7 +37,7 @@
 - **T4**: Settings form only supports single-metric aggregate commitments; backend supports multi-metric via JSONB `targets`.
 - **T5**: ~~completed-but-not-reached aggregates only visible on settings~~ — **resolved**: now visible in Commitments tab History view (`web/app/commitments/page.tsx`).
 - **C1**: ~~No link from dashboard card to detail page~~ — **resolved**: Commitments tab cards have overlay nav links to `/commitments/[id]` (`web/app/commitments/page.tsx`). Dashboard cards still have no direct link — address separately if needed (`web/components/dashboard/commitment-list.tsx`).
-- **C2**: Exercise logging from dashboard is a simple "Done" tap (empty body `{}`). No UI for logging sets/reps/weight — only available via API directly. Add a log modal if per-session detail is needed.
+- **C2**: Exercise logging from dashboard is a simple "Done" tap (empty body `{}`). No UI for logging actual sets/reps/weight achieved — only prescription (sets × target metric) shown. Add a log modal if per-session detail recording is needed.
 - **C3**: `import_hash` has an index but no `UNIQUE` constraint — concurrent identical imports could create duplicates in theory. Acceptable for single-user; add constraint if multi-user.
 - **L5**: Learning cron uses two-commit pattern in `_create_learning_todo` (`src/jobs/learning_daily.py`) — todo created then FK set. Non-atomic but low-probability; worst case one extra todo on next run. Consolidate into one transaction if this ever manifests.
 - **L6**: Web sidebar `/learning` link is hardcoded, not gated by `/v1/modules`. When `module_learning_enabled=False` clicking shows 404 gracefully. Acceptable for single-user; fix if multi-user.
@@ -49,7 +49,8 @@
 
 ## Next Up
 
-- **Deploy** all pending changes (migrations 0016+0017 + Learning V2 + Commitments tab) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
+- **Deploy** all pending changes (migrations 0016+0017+0018 + Learning V2 + Commitments tab + plan import sets) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
+- **Import first real plan** via `POST /v1/commitments/import` using the Cycling Strength Week 1 JSON; verify exercises show `3 × 10 reps` in web UI
 - **Visual verification** of Commitments tab: active list cards + overlay links, collapsible form, history section with badges, sidebar + mobile bottom-tabs — desktop + iPhone 14 Pro DevTools (393×852)
 - **Visual verification** of Learning redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons
 - **Write tests** for Learning components: `progress-ring.test.tsx`, `switch.test.tsx`, `learning-item-row.test.tsx`, `learning-topic-card.test.tsx`, `learning-page.test.tsx` (`web/__tests__/`)

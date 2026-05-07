@@ -1,6 +1,24 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-05** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab, ~1347 tests (1069 backend + 303 Vitest)
+Covering **2026-03-13 to 2026-05-07** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets, ~1372 tests (1069 backend + 303 Vitest)
+
+---
+
+## Session — 2026-05-07 (Commitment plan import: per-exercise sets)
+
+**What changed**:
+- Added `sets` field to `CommitmentExercise` model and `ExerciseResponse`; threaded through import schema, service, route response, TS interface, and UI display (`3 × 10 reps` format)
+- Changed import deduplication key from `name` → `(name, sets)` — same exercise with different set counts on different days becomes separate `CommitmentExercise` rows (`src/api/services/commitment_import_service.py`)
+- Migration 0018: adds `sets INTEGER NULL` column, drops `uq_commitment_exercise_name` unique constraint, creates `uq_commitment_exercise_name_sets` on `(commitment_id, name, sets)` (`alembic/versions/0018_commitment_exercise_sets.py`)
+- UI now renders `{sets} × {target} {metric}` when sets is non-null in `ExerciseRow` (`web/components/dashboard/commitment-list.tsx`)
+
+**Files touched**: `alembic/versions/0018_commitment_exercise_sets.py` (new), `src/core/models.py`, `src/api/schemas/commitment_import.py`, `src/api/services/commitment_import_service.py`, `src/api/routes/commitments.py`, `web/lib/types.ts`, `web/components/dashboard/commitment-list.tsx`, `CLAUDE.md`, `PROGRESS.md`
+
+**Decisions made**: Deduplicate by `(name, sets)` rather than adding a per-day exercise override table — keeps schema simple; same exercise with identical sets on multiple days still creates one row. `sets` is nullable for backward compat with existing routine/single commitments. `exercise_count` in import result counts unique `(name, sets)` pairs, not `max(exercises per day)`.
+
+**Gotchas found**: Migration 0017 had `UniqueConstraint("commitment_id", "name")` — this must be dropped in 0018 before adding the wider `(name, sets)` constraint, otherwise the same exercise name with different sets would violate the old constraint.
+
+**Test count**: 1069 backend (unchanged) | 303 Vitest (unchanged)
 
 ---
 

@@ -77,6 +77,7 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 - **`ExerciseResponse.logged_today` is required for correct UI state**: The list/detail/PATCH routes query today's active logs and pass them to `_commitment_to_response()` → `_exercise_to_response()`. Without this, `MultiExerciseCommitmentCard` cannot show per-exercise completion. Do NOT remove this query or stub it out — it was the critical bug caught in review.
 - **Plan kind: workout-day-only entry pre-generation**: `import_commitment_plan()` creates `CommitmentEntry` rows only for workout days. Rest days have no entry. The existing "No entry for today" error naturally serves as rest-day rejection — no special status needed.
 - **Exercise logs are soft-deleted, not hard-deleted**: `CommitmentExerciseLog.deleted_at` is set on "delete". All queries filter `deleted_at.is_(None)`. Hard deletes are rejected. This preserves audit trail.
+- **Plan import deduplicates exercises by `(name, sets)`, not just `name`**: `import_commitment_plan()` (`src/api/services/commitment_import_service.py`) uses `dict[tuple[str, int | None], CommitmentExercise]`. Same exercise with different set counts → separate `CommitmentExercise` rows. Unique constraint on `commitment_exercises` is `(commitment_id, name, sets)` — name is `uq_commitment_exercise_name_sets` (migration 0018). `exercise_count` in `CommitmentImportResult` is distinct `(name, sets)` pairs, not `max(exercises per day)`.
 
 ## Footguns
 

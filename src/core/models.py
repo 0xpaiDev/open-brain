@@ -701,6 +701,7 @@ class CommitmentExercise(Base):
         UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target: Mapped[int] = mapped_column(Integer, nullable=False)
     metric: Mapped[str] = mapped_column(String(20), nullable=False, default="reps")
     progression_metric: Mapped[str] = mapped_column(String(20), nullable=False, default="reps")
@@ -708,7 +709,7 @@ class CommitmentExercise(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("commitment_id", "name", name="uq_commitment_exercise_name"),
+        UniqueConstraint("commitment_id", "name", "sets", name="uq_commitment_exercise_name_sets"),
         Index("ix_commitment_exercises_commitment", "commitment_id"),
     )
 

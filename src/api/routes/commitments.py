@@ -163,6 +163,7 @@ class ExerciseResponse(BaseModel):
     id: str
     commitment_id: str
     name: str
+    sets: int | None = None
     target: int
     metric: str
     progression_metric: str
@@ -338,6 +339,7 @@ def _exercise_to_response(ex: CommitmentExercise, logged_today: bool = False) ->
         id=str(ex.id),
         commitment_id=str(ex.commitment_id),
         name=ex.name,
+        sets=ex.sets,
         target=ex.target,
         metric=ex.metric,
         progression_metric=ex.progression_metric,

@@ -43,7 +43,13 @@ async def import_commitment_plan(
     """
     workout_days = [d for d in request.schedule if not d.rest]
     rest_days = [d for d in request.schedule if d.rest]
-    exercise_count = max((len(d.exercises) for d in workout_days), default=0)
+
+    # Unique exercise definitions by (name, sets) — same name with different sets = separate rows
+    _seen_keys: set[tuple[str, int | None]] = set()
+    for day in workout_days:
+        for ex_spec in day.exercises:
+            _seen_keys.add((ex_spec.name, ex_spec.sets))
+    exercise_count = len(_seen_keys)
 
     if dry_run:
         return CommitmentImportResult(
@@ -77,22 +83,24 @@ async def import_commitment_plan(
             exercise_count=exercise_count,
         )
 
-    # Collect all exercise definitions across workout days (unique by name)
-    # For plan kind: exercises may vary per day; we store all unique named exercises
-    seen_exercises: dict[str, CommitmentExercise] = {}
-    exercise_order = []
+    # Collect unique exercise definitions by (name, sets) across all workout days.
+    # Same exercise with different sets counts as a distinct definition.
+    seen_exercises: dict[tuple[str, int | None], CommitmentExercise] = {}
+    exercise_order: list[CommitmentExercise] = []
     for day in workout_days:
         for ex_spec in day.exercises:
-            if ex_spec.name not in seen_exercises:
+            key = (ex_spec.name, ex_spec.sets)
+            if key not in seen_exercises:
                 ex_obj = CommitmentExercise(
                     id=uuid4(),
                     name=ex_spec.name,
+                    sets=ex_spec.sets,
                     target=ex_spec.target,
                     metric=ex_spec.metric,
                     progression_metric=ex_spec.progression_metric,
                     position=len(seen_exercises),
                 )
-                seen_exercises[ex_spec.name] = ex_obj
+                seen_exercises[key] = ex_obj
                 exercise_order.append(ex_obj)
 
     try:

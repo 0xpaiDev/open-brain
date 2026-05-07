@@ -18,6 +18,7 @@ class ImportExerciseSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=100)
+    sets: int | None = Field(default=None, ge=1, le=100)
     target: int = Field(gt=0)
     metric: str = Field(default="reps")
     progression_metric: str = Field(default="reps")
