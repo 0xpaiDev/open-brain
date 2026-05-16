@@ -1,18 +1,17 @@
-.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker logs-bot check-config check-env
+.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker check-config check-env
 
 help:
 	@echo "Open Brain Makefile"
 	@echo ""
 	@echo "Local (WSL2 / no Docker):"
-	@echo "  make start           - Start API, worker, and Discord bot locally"
+	@echo "  make start           - Start API and worker locally"
 	@echo "  make stop            - Stop all local processes"
-	@echo "  make logs            - Tail all three logs at once"
+	@echo "  make logs            - Tail API and worker logs"
 	@echo "  make logs-api        - Tail API log"
 	@echo "  make logs-worker     - Tail worker log"
-	@echo "  make logs-bot        - Tail Discord bot log"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make up              - Start services via docker compose (api, worker, discord, scheduler)"
+	@echo "  make up              - Start services via docker compose (api, worker, scheduler)"
 	@echo "  make down            - Stop docker compose services"
 	@echo "  make job-status      - Check scheduled job status (requires API_KEY env var)"
 	@echo ""
@@ -38,7 +37,7 @@ stop:
 	@bash stop.sh
 
 logs:
-	@tail -f /tmp/ob-api.log /tmp/ob-worker.log /tmp/ob-bot.log
+	@tail -f /tmp/ob-api.log /tmp/ob-worker.log
 
 logs-api:
 	@tail -f /tmp/ob-api.log
@@ -46,17 +45,14 @@ logs-api:
 logs-worker:
 	@tail -f /tmp/ob-worker.log
 
-logs-bot:
-	@tail -f /tmp/ob-bot.log
-
 # ── Docker ────────────────────────────────────────────────────────────────────
 
 up:
-	docker compose --profile api --profile worker --profile discord --profile scheduler up -d
+	docker compose --profile api --profile worker --profile scheduler up -d
 	@echo "Services started. Run 'make migrate' to apply Alembic migrations to Supabase."
 
 down:
-	docker compose --profile api --profile worker --profile discord --profile scheduler down
+	docker compose --profile api --profile worker --profile scheduler down
 
 job-status:
 	@curl -s -H "X-API-Key: $${API_KEY}" http://localhost:8000/v1/jobs/status | python3 -m json.tool

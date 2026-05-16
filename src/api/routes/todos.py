@@ -93,8 +93,6 @@ class TodoResponse(BaseModel):
     label: str | None
     project: str | None
     learning_item_id: str | None
-    discord_message_id: str | None
-    discord_channel_id: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -144,8 +142,6 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         label=todo.label,
         project=todo.project,
         learning_item_id=str(todo.learning_item_id) if todo.learning_item_id else None,
-        discord_message_id=todo.discord_message_id,
-        discord_channel_id=todo.discord_channel_id,
         created_at=todo.created_at,
         updated_at=todo.updated_at,
     )

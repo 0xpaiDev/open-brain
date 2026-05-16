@@ -44,9 +44,6 @@ dependencies = [
     "structlog>=23.2.0",
     "python-json-logger>=2.0.0",
 
-    # Discord integration
-    "discord.py>=2.3.0",
-
     # Rate limiting
     "slowapi>=0.1.9",
 
@@ -112,10 +109,6 @@ strict_optional = true
 
 [[tool.mypy.overrides]]
 module = "voyageai.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "discord.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

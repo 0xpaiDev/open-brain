@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + Commitments first-class tab (2026-05-05) + **commitment plan import with per-exercise sets (2026-05-07)** — ~1372 tests (1069 backend + 303 Vitest)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + Commitments first-class tab (2026-05-05) + commitment plan import with per-exercise sets (2026-05-07) + **Discord integration fully removed (2026-05-16)** — ~838 backend tests (Vitest unchanged at ~303)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -10,8 +10,8 @@
 **Server**: GCP e2-medium, Ubuntu 24.04, `34.118.15.81` (static IP: `open-brain-ip`)
 **Domain**: `0xpai.com` (DNS at Spaceship, A record → `34.118.15.81`)
 **MCP**: `.mcp.json` → `https://0xpai.com` (routes through Caddy; port 8000 is localhost-only)
-**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) + 0017 (multi-exercise commitments) + **0018 (commitment_exercises.sets + widened unique constraint)** pending deploy
-**Services**: API + Worker + Discord bot + Web + Caddy (Docker Compose)
+**Database**: Supabase (session-mode pooler, port 5432) — migrations at head (0015 — todo project field + project_labels Personal seed, deployed 2026-04-30); 0016 (learning_materials) + 0017 (multi-exercise commitments) + 0018 (commitment_exercises.sets + widened unique constraint) + **0019 (drop rag_conversations table + discord_message_id/discord_channel_id columns from todo_items/daily_pulse)** pending deploy
+**Services**: API + Worker + Web + Caddy (Docker Compose) — Discord bot removed
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
 
@@ -49,7 +49,7 @@
 
 ## Next Up
 
-- **Deploy** all pending changes (migrations 0016+0017+0018 + Learning V2 + Commitments tab + plan import sets) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart `web` container
+- **Deploy** all pending changes (migrations 0016–0019 + Learning V2 + Commitments tab + plan import sets + Discord removal) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart services; remove `discord-bot` container if running (`docker rm -f openbrain-discord`)
 - **Import first real plan** via `POST /v1/commitments/import` using the Cycling Strength Week 1 JSON; verify exercises show `3 × 10 reps` in web UI
 - **Visual verification** of Commitments tab: active list cards + overlay links, collapsible form, history section with badges, sidebar + mobile bottom-tabs — desktop + iPhone 14 Pro DevTools (393×852)
 - **Visual verification** of Learning redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons

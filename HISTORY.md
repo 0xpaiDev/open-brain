@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-07** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets, ~1372 tests (1069 backend + 303 Vitest)
+Covering **2026-03-13 to 2026-05-16** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal, ~838 backend + ~303 Vitest
+
+---
+
+## Session — 2026-05-16 (Discord integration removed)
+
+**What changed**:
+- Deleted all Discord-specific code: bot entry point, kernel helpers, 4 cogs (core/todo/pulse/rag), 5 test files (`src/integrations/discord_bot.py`, `src/integrations/kernel.py`, `src/integrations/modules/`, `tests/test_discord_bot.py`, `tests/test_bot_modules.py`, `tests/test_todo_cog.py`, `tests/test_pulse.py`, `tests/test_rag_cog.py`)
+- Stripped Discord columns from ORM + API schemas: `discord_message_id`/`discord_channel_id` from `TodoItem` and `TodoResponse`; `discord_message_id` from `DailyPulse` and `PulseResponse`/`PulseCreate`/`PulseUpdate`; deleted `RagConversation` model entirely (`src/core/models.py`, `src/api/routes/todos.py`, `src/api/routes/pulse.py`)
+- Removed Discord/RAG-Discord settings from config: bot token, user IDs, channel IDs, `pulse_reply_window_minutes`, `pulse_accept_freetext`, `rag_trigger_prefix`, `rag_conversation_buffer_size`, `rag_conversation_ttl_hours`, `rag_save_qa_as_memory`, `discord_rag_channel_ids`, `module_rag_chat_enabled` — kept `rag_default_model`/`rag_sonnet_model` (used by web `/v1/chat`) (`src/core/config.py`)
+- Refactored pulse job: removed DM sending, embed building, reply parsing; now calls `POST /v1/pulse/start` only (`src/jobs/pulse.py`); removed `_send_discord_alert()` from runner (`src/jobs/runner.py`)
+- Ops cleanup: removed `discord-bot` Docker service (`docker-compose.yml`), `--profile discord` from Makefile, bot startup/stop from `start.sh`/`stop.sh`, `logs-bot` target; added migration 0019 to drop `rag_conversations` table + discord columns (`alembic/versions/0019_drop_discord_columns.py`)
+
+**Files touched**: `src/integrations/discord_bot.py` (deleted), `src/integrations/kernel.py` (deleted), `src/integrations/modules/` (deleted), `tests/test_discord_bot.py` (deleted), `tests/test_bot_modules.py` (deleted), `tests/test_todo_cog.py` (deleted), `tests/test_pulse.py` (deleted), `tests/test_rag_cog.py` (deleted), `src/core/models.py`, `src/core/config.py`, `src/api/routes/todos.py`, `src/api/routes/pulse.py`, `src/api/routes/learning.py`, `src/jobs/pulse.py`, `src/jobs/runner.py`, `pyproject.toml`, `.env.example`, `docker-compose.yml`, `Makefile`, `start.sh`, `stop.sh`, `tests/test_worker.py`, `tests/test_calendar.py`, `alembic/versions/0019_drop_discord_columns.py` (new), `CLAUDE.md`, `PROGRESS.md`
+
+**Decisions made**: `rag_default_model`/`rag_sonnet_model` settings kept — web `/v1/chat` uses them independently of Discord. `RagConversation` DB table dropped in migration 0019 — web chat is intentionally stateless (client-side history only). Discord-only pulse settings (`pulse_reply_window_minutes`, `pulse_accept_freetext`) removed; web pulse endpoints are unaffected.
+
+**Gotchas found**: `_generate_ai_question()` in `src/jobs/pulse.py` was imported by `src/api/routes/pulse.py` legacy fallback — removing it from pulse.py broke the API route; function must stay in pulse.py even though the cron job no longer uses it directly.
+
+**Test count**: 838 backend (down from 1069 — Discord test files deleted) | ~303 Vitest (unchanged)
 
 ---
 

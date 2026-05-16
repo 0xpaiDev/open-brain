@@ -6,7 +6,7 @@ Google API calls are always mocked.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,41 +19,6 @@ def _make_settings(credentials_path: str = "/fake/credentials.json", token_path:
     s.google_calendar_credentials_path = credentials_path
     s.google_calendar_token_path = token_path
     return s
-
-
-# ── _is_within_reply_window (pure function from pulse_cog, tested here) ────────
-
-
-def test_is_within_reply_window_true():
-    """Message within window returns True."""
-    from src.integrations.modules.pulse_cog import _is_within_reply_window
-
-    created_at = datetime.now(UTC) - timedelta(minutes=30)
-    assert _is_within_reply_window(created_at, window_minutes=120) is True
-
-
-def test_is_within_reply_window_false_expired():
-    """Message outside window returns False."""
-    from src.integrations.modules.pulse_cog import _is_within_reply_window
-
-    created_at = datetime.now(UTC) - timedelta(minutes=180)
-    assert _is_within_reply_window(created_at, window_minutes=120) is False
-
-
-def test_is_within_reply_window_boundary():
-    """Message at exact boundary (window_minutes ago) is outside window."""
-    from src.integrations.modules.pulse_cog import _is_within_reply_window
-
-    created_at = datetime.now(UTC) - timedelta(minutes=120, seconds=1)
-    assert _is_within_reply_window(created_at, window_minutes=120) is False
-
-
-def test_is_within_reply_window_just_inside():
-    """Message 1 second before the boundary is inside window."""
-    from src.integrations.modules.pulse_cog import _is_within_reply_window
-
-    created_at = datetime.now(UTC) - timedelta(minutes=119, seconds=59)
-    assert _is_within_reply_window(created_at, window_minutes=120) is True
 
 
 # ── fetch_today_events — fallback paths ────────────────────────────────────────

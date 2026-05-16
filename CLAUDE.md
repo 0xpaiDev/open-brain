@@ -4,7 +4,7 @@
 
 ```bash
 # Backend (local, no Docker)
-make start          # API + worker + Discord bot (logs: /tmp/ob-*.log)
+make start          # API + worker (logs: /tmp/ob-api.log /tmp/ob-worker.log)
 make stop
 make test           # pytest
 make lint           # ruff + black --check + mypy
@@ -14,7 +14,7 @@ cd web && npm test           # Vitest
 cd web && npx playwright test  # E2E
 
 # Docker (production) — profiles are mandatory
-make up             # api + worker + discord + scheduler
+make up             # api + worker + scheduler
 docker compose --profile web up -d        # Next.js dashboard
 docker compose --profile caddy up -d      # TLS reverse proxy
 docker compose --profile migrate run --rm migrate  # Alembic migrations

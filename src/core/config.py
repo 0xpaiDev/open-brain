@@ -70,10 +70,6 @@ class Settings(BaseSettings):
     # extractor wraps each call in an outer asyncio.wait_for with this bound.
     voice_command_llm_timeout_seconds: float = 1.5
 
-    # Discord integration (optional — leave blank to disable)
-    discord_bot_token: SecretStr = SecretStr("")
-    discord_allowed_user_ids: list[int] = []
-
     # Open Brain API URL (used by integrations to call the local API)
     open_brain_api_url: str = "http://localhost:8000"
 
@@ -90,7 +86,6 @@ class Settings(BaseSettings):
     # ── Feature flags ──────────────────────────────────────────────────────────
     module_todo_enabled: bool = True
     module_pulse_enabled: bool = True
-    module_rag_chat_enabled: bool = True
     module_training_enabled: bool = True
     module_learning_enabled: bool = True
 
@@ -99,16 +94,10 @@ class Settings(BaseSettings):
     learning_feedback_lookback_days: int = 7
     learning_llm_timeout_seconds: float = 30.0
 
-    # ── Todo ───────────────────────────────────────────────────────────────────
-    discord_todo_channel_id: int = 0  # channel ID for prefix listener; 0 = disabled
-
     # ── Morning Pulse ──────────────────────────────────────────────────────────
     pulse_timezone: str = "UTC"
-    pulse_reply_window_minutes: int = 240
     google_calendar_credentials_path: str = ""
     google_calendar_token_path: str = ""
-    discord_pulse_user_id: int = 0
-    pulse_accept_freetext: bool = False  # gate legacy DM reply flow; modal is primary
 
     # ── Signal-driven Morning Pulse (Phase 1) ─────────────────────────────────
     # pulse_signal_detectors="" disables the pipeline — legacy _generate_ai_question fires.
@@ -121,14 +110,9 @@ class Settings(BaseSettings):
     pulse_focus_keywords: str = "1:1,demo,review,interview,launch,presentation"
     pulse_signal_debug_ui: bool = False
 
-    # ── RAG Chat ───────────────────────────────────────────────────────────────
-    rag_trigger_prefix: str = "?"
-    rag_conversation_buffer_size: int = 5
-    rag_conversation_ttl_hours: int = 24
+    # ── Chat (web RAG chat) ────────────────────────────────────────────────────
     rag_default_model: str = "claude-haiku-4-5-20251001"
     rag_sonnet_model: str = "claude-sonnet-4-6"
-    rag_save_qa_as_memory: bool = False
-    discord_rag_channel_ids: list[int] = []
 
     @field_validator("sqlalchemy_url")
     @classmethod

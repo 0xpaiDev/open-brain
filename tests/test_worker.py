@@ -350,10 +350,10 @@ async def test_process_job_caps_importance_for_claude_code_source(async_session)
 async def test_process_job_does_not_cap_importance_for_other_sources(async_session):
     """process_job() does NOT cap base_importance for non-claude-code sources.
 
-    Intentional memories from Discord, CLI, or MCP get their full Claude-assigned
+    Intentional memories from manual, CLI, or MCP get their full Claude-assigned
     importance score.
     """
-    raw = RawMemory(source="discord", raw_text="haircut on 2026-03-25")
+    raw = RawMemory(source="manual", raw_text="haircut on 2026-03-25")
     async_session.add(raw)
     await async_session.flush()
 
@@ -943,7 +943,7 @@ async def test_store_memory_item_skips_tasks_for_auto_capture_source(async_sessi
 @pytest.mark.asyncio
 async def test_store_memory_item_creates_tasks_for_intentional_source(async_session):
     """store_memory_item() creates Task rows for non-auto-capture sources."""
-    raw = RawMemory(source="discord", raw_text="need to buy groceries")
+    raw = RawMemory(source="manual", raw_text="need to buy groceries")
     async_session.add(raw)
     await async_session.flush()
 

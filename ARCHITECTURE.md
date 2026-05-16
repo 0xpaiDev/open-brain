@@ -1,42 +1,23 @@
 # Open Brain Architecture
 
-**Version**: 2.3
-**Date**: 2026-05-07
-**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Modules: Foundation, Todo, RAG Chat, Morning Pulse, Training, Learning.
+**Version**: 2.4
+**Date**: 2026-05-16
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. Modules: Foundation, Todo, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
 Three modules added in Phase 6, each gated by a feature flag in settings:
 
-### Discord Bot Module Architecture (`src/integrations/modules/`)
-The Discord bot is refactored into a thin loader (`discord_bot.py`) + conditionally-registered cog modules:
-
-| Module | Flag | Cog File | Responsibilities |
-|---|---|---|---|
-| Core | always on | `core_cog.py` | `/search`, `/digest`, `/status` slash commands |
-| Todo | `module_todo_enabled` | `todo_cog.py` | `/todo` subcommand group + interactive buttons/modals |
-| RAG Chat | `module_rag_chat_enabled` | `rag_cog.py` | `on_message` handler for RAG-grounded LLM chat in designated channels |
-| Morning Pulse | `module_pulse_enabled` | `pulse_cog.py` | `on_message` handler for DM reply parsing + wellness tracking |
-
-**DM guard order** (in `discord_bot.py on_message`):
-1. Own messages → skip
-2. Unauthorized users → skip
-3. Empty content → skip
-4. RAG guard (trigger prefix in RAG channel) → route to RAG cog
-5. **Pulse guard** (DM from `discord_pulse_user_id` within reply window) → route to pulse cog
-6. Default → memory ingest
-
 ### Morning Pulse (`src/jobs/pulse.py` + `src/integrations/calendar.py`)
 Cron-triggered morning check-in:
-1. `send_morning_pulse()` — fetches calendar events + todos, generates Haiku question, sends DM via Discord REST API (not gateway), creates `daily_pulse` record
-2. User replies in DM → `PulseCog.handle_reply()` intercepts, calls `parse_pulse_reply()`, stores structured data
+1. `trigger_morning_pulse()` — calls `POST /v1/pulse/start` on the local API
+2. API generates question using signal-driven pipeline (`focus`, `opportunity`, `open` detectors) or legacy `_generate_ai_question()` fallback
 3. Calendar integration is fully optional: google libs guarded with `try/except ImportError`, empty `CalendarState` returned on any error
 
 ### New Tables (Phase 6)
 - `todo_items` — todo tasks with priority/status/due_date
 - `todo_history` — append-only state change log for todos
 - `daily_pulse` — one row per calendar day; unique constraint on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped
-- `rag_conversations` — persisted conversation buffer for RAG chat; unique on (channel_id, user_id)
 
 ---
 
@@ -85,12 +66,12 @@ Core principles:
                      │
                      v
 ┌─────────────────────────────────────────────────────────────────┐
-│ Structured Memory (26 tables)                                    │
+│ Structured Memory (25 tables)                                    │
 │ - memory_items (extracted knowledge, ranked)                     │
 │ - entities, entity_aliases, entity_relations (knowledge graph)   │
 │ - decisions, tasks (specialized memory types)                    │
 │ - todos, todo_history (task management)                          │
-│ - daily_pulse, rag_conversations (daily synthesis + chat)        │
+│ - daily_pulse (daily wellness check-in)                          │
 │ - retrieval_events (audit trail for dynamic importance)          │
 └────────────────────┬────────────────────────────────────────────┘
                      │
@@ -240,7 +221,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**26 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
+**25 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -262,7 +243,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **failed_refinements**: Dead letter queue with error reasons, retry count, last output
 
 ### Module: Todo
-- **todo_items**: Todo tasks with priority/status/due_date/label/project (soft reference to project_labels.name, nullable), Discord message tracking, learning_item_id FK
+- **todo_items**: Todo tasks with priority/status/due_date/label/project (soft reference to project_labels.name, nullable), learning_item_id FK
 - **todo_history**: Append-only state change log for todos
 - **todo_labels**: User-defined labels with name (unique) and hex color
 
@@ -271,9 +252,6 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ### Module: Daily Pulse
 - **daily_pulse**: One row per calendar day; unique on `pulse_date`; statuses: sent/replied/parsed/parse_failed/skipped/completed
-
-### Module: RAG Chat
-- **rag_conversations**: Persisted conversation buffer; unique on (channel_id, user_id)
 
 ### Module: Training & Commitments
 - **commitments**: Challenge definitions with `kind` ("single"|"routine"|"plan"), `exercise` (nullable for multi-exercise kinds), `daily_target`, `metric`, `cadence` ("daily"|"aggregate"), date range, status (active/completed/abandoned). Aggregate has `targets`/`progress` JSONB. `import_hash` (SHA-256, indexed) used for plan import idempotency.

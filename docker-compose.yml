@@ -71,29 +71,6 @@ services:
           cpus: "1.0"
           memory: 512M
 
-  discord-bot:
-    build: .
-    container_name: openbrain-discord
-    env_file: .env
-    command: python -m src.integrations.discord_bot
-    environment:
-      # Override API URL to use Docker service name instead of localhost
-      - OPEN_BRAIN_API_URL=http://api:8000
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    networks:
-      - openbrain
-    profiles:
-      - discord
-    restart: unless-stopped
-    logging: *default-logging
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-
   scheduler:
     build: .
     container_name: openbrain-scheduler

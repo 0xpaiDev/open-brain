@@ -1,8 +1,7 @@
-"""Job runner wrapper — tracks execution in job_runs and alerts on failure.
+"""Job runner wrapper — tracks execution in job_runs and logs on failure.
 
 Wraps each scheduled job with:
 1. A JobRun record (started_at, finished_at, status, duration)
-2. Discord DM alert to the pulse user on failure
 
 Usage:
     from src.jobs.runner import run_tracked
@@ -17,40 +16,12 @@ from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
 import structlog
 
-from src.core.config import get_settings
 from src.core.database import close_db, get_db_context, init_db
 from src.core.models import JobRun
 
 logger = structlog.get_logger(__name__)
-
-
-async def _send_discord_alert(job_name: str, error_msg: str, started_at: datetime) -> None:
-    """Send a failure alert via Discord DM to the pulse user."""
-    settings = get_settings()
-    bot_token = settings.discord_bot_token.get_secret_value()
-    user_id = settings.discord_pulse_user_id
-    if not bot_token or not user_id:
-        logger.warning("discord_alert_skipped", reason="no bot token or user id")
-        return
-
-    from src.jobs.pulse import get_or_create_dm_channel, send_dm_via_rest
-
-    message = (
-        f"**Job failed: `{job_name}`**\n"
-        f"Error: {error_msg[:500]}\n"
-        f"Time: {started_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    )
-
-    async with httpx.AsyncClient(timeout=10.0) as http:
-        try:
-            channel_id = await get_or_create_dm_channel(http, bot_token, user_id)
-            await send_dm_via_rest(http, bot_token, channel_id, content=message)
-            logger.info("discord_alert_sent", job_name=job_name)
-        except Exception:
-            logger.exception("discord_alert_failed", job_name=job_name)
 
 
 async def run_tracked(
@@ -122,9 +93,3 @@ async def run_tracked(
     finally:
         await close_db()
 
-    # Send alert outside the DB context (best-effort)
-    if status == "failed" and error_msg:
-        try:
-            await _send_discord_alert(job_name, error_msg, started_at)
-        except Exception:
-            logger.exception("discord_alert_outer_failed", job_name=job_name)

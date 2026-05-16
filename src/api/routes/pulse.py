@@ -67,7 +67,6 @@ def _get_settings():
 class PulseCreate(BaseModel):
     pulse_date: datetime
     status: str = "sent"
-    discord_message_id: str | None = None
     ai_question: str | None = None
     signal_type: str | None = None
     parsed_data: dict | None = None
@@ -84,7 +83,6 @@ class PulseUpdate(BaseModel):
     status: str | None = None
     clean_meal: bool | None = None
     alcohol: bool | None = None
-    discord_message_id: str | None = None
 
     @field_validator("sleep_quality", "energy_level")
     @classmethod
@@ -113,7 +111,6 @@ class PulseResponse(BaseModel):
     ai_question_response: str | None
     notes: str | None
     status: str
-    discord_message_id: str | None
     clean_meal: bool | None
     alcohol: bool | None
     signal_type: str | None = None
@@ -142,7 +139,6 @@ def _pulse_to_response(pulse: DailyPulse) -> PulseResponse:
         ai_question_response=pulse.ai_question_response,
         notes=pulse.notes,
         status=pulse.status,
-        discord_message_id=pulse.discord_message_id,
         clean_meal=pulse.clean_meal,
         alcohol=pulse.alcohol,
         signal_type=pulse.signal_type,
@@ -337,8 +333,7 @@ async def create_pulse(
     """Create a pulse record for today. Enforces one record per calendar day.
 
     Args:
-        body: PulseCreate with pulse_date (required), status, discord_message_id,
-              and ai_question.
+        body: PulseCreate with pulse_date (required), status, and ai_question.
 
     Returns:
         PulseResponse with the created record.
@@ -349,7 +344,6 @@ async def create_pulse(
     pulse = DailyPulse(
         pulse_date=body.pulse_date,
         status=body.status,
-        discord_message_id=body.discord_message_id,
         ai_question=body.ai_question,
         signal_type=body.signal_type,
         parsed_data=body.parsed_data,
@@ -463,8 +457,6 @@ async def update_today_pulse(
         pulse.clean_meal = body.clean_meal
     if body.alcohol is not None:
         pulse.alcohol = body.alcohol
-    if body.discord_message_id is not None:
-        pulse.discord_message_id = body.discord_message_id
 
     await session.flush()
     await session.commit()

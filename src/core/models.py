@@ -391,11 +391,10 @@ class ProjectLabel(Base):
 
 
 class TodoItem(Base):
-    """First-class todo item managed via Discord slash commands.
+    """First-class todo item.
 
     priority: "high" | "normal" | "low"
     status: "open" | "done" | "cancelled"
-    discord_message_id/channel_id: stored to allow in-place embed edits on bot restart.
     """
 
     __tablename__ = "todo_items"
@@ -414,8 +413,6 @@ class TodoItem(Base):
         nullable=True,
         index=True,
     )
-    discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    discord_channel_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -481,42 +478,12 @@ class DailyPulse(Base):
     ai_question_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="sent")
-    discord_message_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     clean_meal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     alcohol: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     signal_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-# ── Module: RAG Chat ───────────────────────────────────────────────────────────
-
-
-class RagConversation(Base):
-    """Persisted conversation buffer for Discord RAG chat.
-
-    One row per (channel, user) pair. Survives bot restarts.
-    messages: [{role: "user"|"assistant", content: "..."}]
-    model_name: tracks which model is active for this conversation.
-    Unique constraint on (discord_channel_id, discord_user_id).
-    """
-
-    __tablename__ = "rag_conversations"
-
-    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    discord_channel_id: Mapped[str] = mapped_column(String(30), nullable=False)
-    discord_user_id: Mapped[str] = mapped_column(String(30), nullable=False)
-    messages: Mapped[list] = mapped_column(JSON_TYPE, nullable=False, default=list)
-    model_name: Mapped[str] = mapped_column(String(100), default="claude-haiku-4-5-20251001")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    last_active_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    __table_args__ = (
-        UniqueConstraint("discord_channel_id", "discord_user_id", name="uq_rag_conv_channel_user"),
     )
 
 

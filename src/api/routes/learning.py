@@ -474,7 +474,6 @@ async def get_modules() -> dict[str, bool]:
     return {
         "todo": s.module_todo_enabled,
         "pulse": s.module_pulse_enabled,
-        "rag_chat": s.module_rag_chat_enabled,
         "training": s.module_training_enabled,
         "learning": s.module_learning_enabled,
     }
