@@ -1,6 +1,6 @@
 # Open Brain — Progress
 
-**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + Commitments first-class tab (2026-05-05) + commitment plan import with per-exercise sets (2026-05-07) + Discord integration fully removed (2026-05-16) + **Learning cron cross-day dedup + topic context on todo responses (2026-05-17)** — ~844 backend tests (Vitest unchanged at ~303)
+**Status**: All phases + dashboard + training/commitments + Strava live + Learning Library V1 + commitment completion bugfix + bulk todo defer + signal-driven pulse Phase 1 + scheduler boot sweep + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped (backend + frontend) + Learning UI redesign (2026-05-02) + multi-exercise commitments (routine + plan kinds, 2026-05-04) + Commitments first-class tab (2026-05-05) + commitment plan import with per-exercise sets (2026-05-07) + Discord integration fully removed (2026-05-16) + Learning cron cross-day dedup + topic context on todo responses (2026-05-17) + **Claude Code Memory Flywheel V1 (SessionEnd hook + SessionStart catch-up + memory_expand MCP tool + tier-0/1/2/3 retrieval contract + local memory cron, 2026-05-17)** — 859 backend tests (Vitest unchanged at ~303)
 **Project**: 2026-03-13 → 2026-04-30 | See [HISTORY.md](HISTORY.md) for completed phases and session notes
 
 ---
@@ -15,7 +15,7 @@
 
 **Strava**: Webhook subscription active (ID: 340388), callback `https://0xpai.com/v1/strava/webhook`, auto-refresh tokens in `strava_tokens` table, FTP=190w, MAX_HR=195, RESTING_HR=57 (HR-based TSS fallback enabled)
 
-**Cron jobs**:
+**Cron jobs (VM, supercronic via `crontab`)**:
 - `importance` — 01:00 UTC daily
 - `synthesis` — 00:00 UTC Sunday
 - `backup` — 03:30 AM daily
@@ -23,6 +23,11 @@
 - `commitment_miss` — 00:30 UTC daily + once on scheduler container boot (`docker-compose.yml` command wrapper)
 - `training_weekly` — 01:00 UTC Monday
 - `learning_daily` — 04:30 UTC daily (runs before pulse)
+
+**Memory flywheel cron (WSL2 local, per-machine via `make memory-install-cron`)**:
+- `daily-memory-distill` — 23:00 local daily + anacron catch-up on next boot (`scripts/memory/run-distill.sh`, `cron/jobs/daily-memory-distill.md`); sentinel-anchored window (`context/.last-distill`) so missed days are processed oldest→newest on next run
+- `weekly-memory-curator` — Sunday 09:00 local + anacron weekly catch-up (`scripts/memory/run-curate.sh`, `cron/jobs/weekly-memory-curator.md`); stateless, prunes `~/.claude/projects/.../memory/*.md` to per-file caps
+- SessionStart hook fires daily distill opportunistically in-session (`scripts/claude-code/session-start-distill.sh`), throttled to once per `OB_SESSION_START_MIN_HOURS` (default 6h)
 
 ---
 
@@ -44,12 +49,16 @@
 - **L7**: `/v1/learning/*` routes return `dict[str, Any]` rather than Pydantic response models. Matches modules endpoint style; tighten to models if stricter OpenAPI spec is needed.
 - **P1**: Pulse `_fetch_yesterday_pulse` only looks back exactly 1 day (`src/pulse_signals/context.py`). If yesterday was silent or missing (cron skip, infra hiccup), today's `open` signal loses its alternation hint. Widen to "most recent non-silent pulse within last 7 days".
 - **P2**: `open` catch-all signal fires whenever there is ≥1 todo or ≥1 calendar event (urgency 5.0 = silence threshold) (`src/pulse_signals/detectors/open.py`). When `focus` keyword and `opportunity` weather pattern don't trigger, `open` wins every day, and its prompt's "prefer alternation" rule is a soft hint with no flavor label, so Haiku may produce near-identical wording on consecutive days. Decide post-Phase-1 telemetry whether to raise threshold, lower `open` urgency, or add a hard A/B rule when consecutive `open` days occur (`src/pulse_signals/prompts.py`).
+- **MF1**: Personal memory layer at `~/.claude/projects/-home-shu-projects-open-brain/memory/` is severely over caps as of 2026-05-17 (`learning.md` 1637%, `project_sequence.md` 296%, `project_web_dashboard.md` 230%, `feedback_multi_agent_workflow.md` 112%) per `make memory-state`. First real `make memory-curate` run should consolidate. Inspect before deploying any auto-prune logic.
+- **MF2**: `OB_SESSION_END_BACKEND` and `OB_SESSION_START_MIN_HOURS` need to be documented in `.env.example` (currently only in `docs/setup-new-machine.md`). Add when next touching env config (`src/core/config.py`, `.env.example`).
 
 ---
 
 ## Next Up
 
-- **Deploy** all pending changes (migrations 0016–0019 + Learning V2 + Commitments tab + plan import sets + Discord removal + Learning cron cross-day dedup + topic context on TodoResponse — `src/jobs/learning_daily.py`, `src/api/routes/todos.py`, `src/core/models.py`, `web/components/dashboard/task-row.tsx`) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart services; remove `discord-bot` container if running (`docker rm -f openbrain-discord`)
+- **Deploy** all pending changes (migrations 0016–0019 + Learning V2 + Commitments tab + plan import sets + Discord removal + Learning cron cross-day dedup + topic context on TodoResponse + **memory_expand endpoint + `claude-code-session` source in `AUTO_CAPTURE_SOURCES`** — `src/api/routes/memory.py`, `src/api/services/memory_service.py`, `src/mcp_server.py`, `src/pipeline/constants.py`, plus session-end-2026-05-17 batch) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart services; remove `discord-bot` container if running (`docker rm -f openbrain-discord`)
+- **Install memory flywheel locally (this machine)**: symlink both hooks into `~/.claude/hooks/`, add `OB_SESSION_END_BACKEND=cli` + `OPENBRAIN_*` to `~/.claude/openbrain.env`, add SessionStart + SessionEnd entries to `~/.claude/settings.json`, run `make memory-install-cron` (sudo), add `[boot] command = "service cron start"` to `/etc/wsl.conf` then `wsl --shutdown`. Verify via `make memory-state` + tail `/tmp/ob-session-*.log` on next CC session — see `docs/setup-new-machine.md` (`scripts/claude-code/`, `scripts/memory/`)
+- **First weekly curator run** to consolidate over-cap personal layer files (MF1) — `make memory-curate`, review diff before next run
 - **Import first real plan** via `POST /v1/commitments/import` using the Cycling Strength Week 1 JSON; verify exercises show `3 × 10 reps` in web UI
 - **Visual verification** of Commitments tab: active list cards + overlay links, collapsible form, history section with badges, sidebar + mobile bottom-tabs — desktop + iPhone 14 Pro DevTools (393×852)
 - **Visual verification** of Learning redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons

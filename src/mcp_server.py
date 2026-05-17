@@ -133,6 +133,60 @@ def _do_get_context(query: str, limit: int) -> str:
     return context + footer
 
 
+def _format_memory_expand(memory_id: str, data: dict) -> str:
+    """Format an /expand response payload as a readable markdown block."""
+    content: str = data.get("content", "")
+    raw_text: str | None = data.get("raw_text")
+    neighbors: list[dict] = data.get("neighbors", [])
+    metadata: dict = data.get("metadata", {})
+
+    lines: list[str] = [
+        f"# Memory {data.get('memory_id', memory_id)}",
+        "",
+        f"Source: {metadata.get('source') or 'unknown'}"
+        f"   Project: {metadata.get('project') or 'Personal'}"
+        f"   Created: {(metadata.get('created_at') or '')[:19]}",
+        "",
+        "## Content",
+        content or "(empty)",
+    ]
+    if raw_text:
+        lines.extend(["", "## Raw provenance", raw_text])
+    if neighbors:
+        lines.extend(["", f"## Neighbors ({len(neighbors)})"])
+        for i, n in enumerate(neighbors, 1):
+            n_date = (n.get("created_at") or "")[:10]
+            n_id = n.get("memory_id", "?")
+            n_content = n.get("content") or ""
+            snippet = n_content[:200] + ("..." if len(n_content) > 200 else "")
+            lines.append(f"[{i}] {n_date} | id={n_id}")
+            lines.append(f"    {snippet}")
+    return "\n".join(lines)
+
+
+def _do_memory_expand(memory_id: str) -> str:
+    """Core logic for memory_expand — returns formatted markdown."""
+    if not memory_id.strip():
+        return "Error: memory_id must not be empty."
+    try:
+        resp = _get(f"/v1/memory/{memory_id.strip()}/expand", {})
+    except httpx.ConnectError:
+        return "Error: could not connect to Open Brain API. Is the server running?"
+    except httpx.TimeoutException:
+        return "Error: Open Brain API timed out."
+
+    if resp.status_code == 401:
+        return "Error: authentication failed — check OPENBRAIN_API_KEY."
+    if resp.status_code == 422:
+        return "Error: memory_id is not a valid UUID."
+    if resp.status_code == 404:
+        return f"Error: MemoryItem {memory_id} not found (missing or superseded)."
+    if resp.status_code != 200:
+        return f"Error: API returned {resp.status_code}."
+
+    return _format_memory_expand(memory_id, resp.json())
+
+
 def _do_ingest_memory(text: str, source: str) -> str:
     """Core logic for ingest_memory — returns status string."""
     if not text.strip():
@@ -191,6 +245,24 @@ async def get_context(query: str, limit: int = 10) -> str:
         Token-budgeted context string ready for use in a system prompt.
     """
     return _do_get_context(query, limit)
+
+
+@mcp.tool()
+async def memory_expand(memory_id: str) -> str:
+    """Expand a memory item: full content + parent raw text + nearby neighbors.
+
+    Tier-2 progressive disclosure for memory retrieval. Use this when a result
+    from ``search_memory`` looks relevant but the snippet is truncated, or you
+    want to read the full source text and a few sibling items captured close
+    in time from the same source.
+
+    Args:
+        memory_id: UUID of the MemoryItem (returned by ``search_memory``).
+
+    Returns:
+        Markdown block with content, raw provenance, and neighbor snippets.
+    """
+    return _do_memory_expand(memory_id)
 
 
 @mcp.tool()

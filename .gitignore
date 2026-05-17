@@ -7,6 +7,15 @@
 # MCP config (contains API keys — personal, not for sharing)
 .mcp.json
 
+# Per-session Claude Code memory log — high churn, low durable value;
+# durable summaries live in memory_items via the SessionEnd hook.
+context/sessions/
+
+# Per-machine catch-up sentinel for the daily distill cron — local state,
+# never shared across machines.
+context/.last-distill
+context/.last-curate
+
 # Python
 __pycache__/
 *.py[cod]

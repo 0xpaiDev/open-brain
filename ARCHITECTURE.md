@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.4
-**Date**: 2026-05-16
-**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. Modules: Foundation, Todo, Morning Pulse, Training, Learning.
+**Version**: 2.5
+**Date**: 2026-05-17
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** Modules: Foundation, Todo, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -185,6 +185,27 @@ importance_score = 0.6 × base_importance + 0.4 × dynamic_importance
 6. Insert one row per result into retrieval_events table
 
 **Critical**: GIN index query must use identical `to_tsvector('english', content)` expression as the index definition, else query optimizer skips the index → sequential scan.
+
+### Progressive Disclosure (`GET /v1/memory/{id}/expand`)
+
+Tier-2 endpoint for callers that already have a memory_id from search and need the **full** content + provenance + nearby siblings:
+
+1. Resolve `MemoryItem` by UUID; 404 if missing or `is_superseded=True`.
+2. Fetch parent `RawMemory.raw_text` (full original input).
+3. Query up to 3 older + 3 newer non-superseded `MemoryItem` rows from the **same source**, merge in Python, sort by absolute `created_at` distance, take top 3. This avoids Postgres-only `EXTRACT(EPOCH FROM ...)` so SQLite tests pass.
+4. Return `{memory_id, content, raw_text, neighbors[], metadata}`.
+
+Surfaced as the `memory_expand` MCP tool (`src/mcp_server.py`). Memory retrieval contract documented in `CLAUDE.md`: tier-0 (in-context markdown) → tier-1 `search_memory` → tier-2 `memory_expand` → tier-3 `get_context`.
+
+### Claude Code Memory Flywheel (local hooks + local cron)
+
+Per-machine layer that feeds the vector DB and curates a markdown snapshot for tier-0 free recall:
+
+- **SessionEnd hook** (`scripts/claude-code/session-end-ingest.sh` + `session_end_ingest.py`) — fires on every CC session exit; Haiku-summarises the JSONL transcript; appends to `context/sessions/{date}.md`; POSTs to `/v1/memory` with `source="claude-code-session"` and `metadata.project` (resolved via hardcoded `REPO_PROJECT_MAP`). Backend pluggable via `OB_SESSION_END_BACKEND` (`cli` = `claude --print` subscription, `api` = REST + `ANTHROPIC_API_KEY`, `auto`).
+- **SessionStart hook** (`session-start-distill.sh`) — self-scopes by `cwd`-vs-script-repo match; opportunistically fires the daily distill in background on `source=startup`, throttled to once per `OB_SESSION_START_MIN_HOURS` (default 6h).
+- **Local cron** (`scripts/memory/install-anacron.sh`) — writes `/etc/cron.d/ob-memory-flywheel` (daily 23:00 + Sun 09:00) and `/etc/anacrontab` catch-up entries. Sentinel files (`context/.last-distill`, `.last-curate`) make the daily job idempotent across missed runs.
+
+Crons run **locally** because they read `~/.claude/projects/.../memory/*.md` and `context/sessions/*.md` — paths neither the prod VM nor a remote scheduler can see.
 
 ---
 

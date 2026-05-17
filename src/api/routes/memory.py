@@ -25,11 +25,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import limiter, memory_limit
 from src.api.services.memory_service import (
+    MemoryItemNotFound,
     SupersedesInvalidUUID,
     SupersedesNotFound,
 )
 from src.api.services.memory_service import (
     content_hash as _content_hash,  # re-exported for backward compat with tests
+)
+from src.api.services.memory_service import (
+    expand_memory as _expand_memory,
 )
 from src.api.services.memory_service import (
     ingest_memory as _ingest_memory,
@@ -100,6 +104,25 @@ class MemoryRecentResponse(BaseModel):
     total: int
 
 
+class MemoryNeighborResponse(BaseModel):
+    """One neighbor item in MemoryExpandResponse."""
+
+    memory_id: str
+    content: str
+    created_at: datetime
+    source: str | None = None
+
+
+class MemoryExpandResponse(BaseModel):
+    """Response body for GET /v1/memory/{id}/expand."""
+
+    memory_id: str
+    content: str
+    raw_text: str | None = None
+    neighbors: list[MemoryNeighborResponse] = []
+    metadata: dict[str, Any] = {}
+
+
 @router.post("/v1/memory", status_code=status.HTTP_202_ACCEPTED, response_model=MemoryResponse)
 @limiter.limit(memory_limit)
 async def ingest_memory_route(
@@ -129,9 +152,7 @@ async def ingest_memory_route(
             supersedes_id=body.supersedes_id,
         )
     except SupersedesInvalidUUID:
-        raise HTTPException(
-            status_code=422, detail="supersedes_id is not a valid UUID"
-        ) from None
+        raise HTTPException(status_code=422, detail="supersedes_id is not a valid UUID") from None
     except SupersedesNotFound:
         raise HTTPException(status_code=404, detail="supersedes_id not found") from None
 
@@ -187,8 +208,10 @@ async def list_recent_memories(
         401: Missing or invalid X-API-Key (handled by middleware).
     """
     base = select(MemoryItem).where(MemoryItem.is_superseded == False)  # noqa: E712
-    count_base = select(func.count()).select_from(MemoryItem).where(
-        MemoryItem.is_superseded == False  # noqa: E712
+    count_base = (
+        select(func.count())
+        .select_from(MemoryItem)
+        .where(MemoryItem.is_superseded == False)  # noqa: E712
     )
 
     if type_filter is not None:
@@ -210,6 +233,49 @@ async def list_recent_memories(
     return MemoryRecentResponse(
         items=[_memory_item_to_response(i) for i in items],
         total=total,
+    )
+
+
+@router.get("/v1/memory/{memory_id}/expand", response_model=MemoryExpandResponse)
+@limiter.limit(memory_limit)
+async def expand_memory_route(
+    request: Request,
+    memory_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> MemoryExpandResponse:
+    """Expand a MemoryItem with full content, parent raw text, and neighbors.
+
+    Tier-2 progressive disclosure endpoint: returns the full untruncated
+    ``content``, the parent ``raw_memory.raw_text`` (when present), up to 3
+    same-source neighbors closest by ``created_at``, and a metadata dict.
+
+    Raises:
+        404: ``memory_id`` not found or ``is_superseded=True``.
+        422: ``memory_id`` is not a valid UUID.
+        401: Missing or invalid X-API-Key (middleware).
+    """
+    try:
+        result = await _expand_memory(session, memory_id=memory_id)
+    except SupersedesInvalidUUID:
+        raise HTTPException(status_code=422, detail="memory_id is not a valid UUID") from None
+    except MemoryItemNotFound:
+        raise HTTPException(status_code=404, detail=f"MemoryItem {memory_id} not found") from None
+
+    logger.info("memory_item_expanded", memory_id=memory_id, neighbors=len(result.neighbors))
+    return MemoryExpandResponse(
+        memory_id=result.memory_id,
+        content=result.content,
+        raw_text=result.raw_text,
+        neighbors=[
+            MemoryNeighborResponse(
+                memory_id=n.memory_id,
+                content=n.content,
+                created_at=n.created_at,
+                source=n.source,
+            )
+            for n in result.neighbors
+        ],
+        metadata=result.metadata,
     )
 
 

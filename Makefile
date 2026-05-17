@@ -1,4 +1,4 @@
-.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker check-config check-env
+.PHONY: help start stop up down migrate db-shell test lint format clean logs logs-api logs-worker check-config check-env memory-state memory-distill memory-curate memory-logs memory-tail memory-clean-logs memory-install-cron memory-uninstall-cron
 
 help:
 	@echo "Open Brain Makefile"
@@ -27,6 +27,16 @@ help:
 	@echo "  make check-config    - Validate all config variables are used"
 	@echo "  make check-env       - Validate env vars are consistent"
 	@echo "  make clean           - Remove __pycache__, .pytest_cache, etc."
+	@echo ""
+	@echo "Memory flywheel:"
+	@echo "  make memory-state         - Show last-distill, pending sessions, file sizes vs caps"
+	@echo "  make memory-distill       - Run daily memory distillation on demand"
+	@echo "  make memory-curate        - Run weekly memory curator on demand"
+	@echo "  make memory-logs          - Show recent distill/curate run summaries"
+	@echo "  make memory-tail          - Live-tail the distill and curate logs"
+	@echo "  make memory-clean-logs    - Truncate /tmp/ob-memory-*.log files"
+	@echo "  make memory-install-cron  - Install anacron entries for daily/weekly runs"
+	@echo "  make memory-uninstall-cron- Remove the anacron entries"
 
 # ── Local run (no Docker) ─────────────────────────────────────────────────────
 
@@ -102,4 +112,36 @@ check-config:
 
 check-env:
 	python3 scripts/check_env_consistency.py
+
+# ── Memory flywheel ───────────────────────────────────────────────────────────
+
+memory-state:
+	@python3 scripts/memory/state.py
+
+memory-distill:
+	@bash scripts/memory/run-distill.sh
+
+memory-curate:
+	@bash scripts/memory/run-curate.sh
+
+memory-logs:
+	@echo "==== distill (last 5) ===="
+	@grep -E '^==== .* (start|done) ' /tmp/ob-memory-distill.log 2>/dev/null | tail -10 || echo "(no log)"
+	@echo
+	@echo "==== curate (last 5) ===="
+	@grep -E '^==== .* (start|done) ' /tmp/ob-memory-curate.log 2>/dev/null | tail -10 || echo "(no log)"
+
+memory-tail:
+	@tail -f /tmp/ob-memory-distill.log /tmp/ob-memory-curate.log
+
+memory-clean-logs:
+	@for f in /tmp/ob-memory-distill.log /tmp/ob-memory-curate.log; do \
+		if [ -f "$$f" ]; then : > "$$f"; echo "truncated $$f"; fi \
+	done
+
+memory-install-cron:
+	@bash scripts/memory/install-anacron.sh
+
+memory-uninstall-cron:
+	@bash scripts/memory/install-anacron.sh --uninstall
 

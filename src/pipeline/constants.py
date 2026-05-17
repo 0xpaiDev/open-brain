@@ -10,6 +10,7 @@ AUTO_CAPTURE_SOURCES: frozenset[str] = frozenset(
         "claude_code_memory",
         "claude_code_history",
         "claude_code_project",
+        "claude-code-session",
         "strava-activity",
     }
 )

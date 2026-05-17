@@ -1,5 +1,41 @@
 # CLAUDE.md
 
+## Session Context
+
+At session start, also read these project-bound state files in addition to the
+auto-loaded `~/.claude/projects/.../memory/MEMORY.md`:
+
+- `context/STATE.md` — active threads, current sprint, in-flight decisions
+- `context/DECISIONS.md` — architectural decisions (dated, append-only)
+
+These three together form the **tier-0 frozen snapshot** (~3,000 tokens). Mid-session
+writes to any of them persist to disk but only take effect next session.
+
+## Memory Retrieval
+
+When the user asks about past context, conversations, or decisions, escalate
+retrieval tiers in order. Only move to the next tier if the previous one didn't
+answer.
+
+- **Tier 0** — already in context (free, instant): `MEMORY.md` + supporting
+  files in `~/.claude/projects/.../memory/`, plus `context/STATE.md` and
+  `context/DECISIONS.md`. Try this first — most "what's our prod domain?" style
+  questions are answered here without a tool call.
+
+- **Tier 1** — `mcp__open-brain__search_memory("query", limit=5)`: hybrid vector
+  + keyword search across all `memory_items`. Returns top chunks with memory_ids.
+
+- **Tier 2** — `mcp__open-brain__memory_expand(memory_id)`: full content of one
+  item + parent `RawMemory.raw_text` + up to 3 same-source neighbors. Use when a
+  T1 hit looks relevant but the snippet is truncated.
+
+- **Tier 3** — `mcp__open-brain__get_context("query", limit=20)`: token-budgeted
+  broad dump (~8,000 tokens max). Last resort, expensive — use only when T0–T2
+  failed.
+
+If all four tiers come up empty: "I don't have a record of that. Want me to
+search the web?"
+
 ## Quick Start
 
 ```bash
@@ -79,6 +115,9 @@ docker compose --profile migrate run --rm migrate  # Alembic migrations
 - **Plan kind: workout-day-only entry pre-generation**: `import_commitment_plan()` creates `CommitmentEntry` rows only for workout days. Rest days have no entry. The existing "No entry for today" error naturally serves as rest-day rejection — no special status needed.
 - **Exercise logs are soft-deleted, not hard-deleted**: `CommitmentExerciseLog.deleted_at` is set on "delete". All queries filter `deleted_at.is_(None)`. Hard deletes are rejected. This preserves audit trail.
 - **Plan import deduplicates exercises by `(name, sets)`, not just `name`**: `import_commitment_plan()` (`src/api/services/commitment_import_service.py`) uses `dict[tuple[str, int | None], CommitmentExercise]`. Same exercise with different set counts → separate `CommitmentExercise` rows. Unique constraint on `commitment_exercises` is `(commitment_id, name, sets)` — name is `uq_commitment_exercise_name_sets` (migration 0018). `exercise_count` in `CommitmentImportResult` is distinct `(name, sets)` pairs, not `max(exercises per day)`.
+- **Claude Code memory flywheel — local-only cron, two-layer markdown**: The personal layer (`~/.claude/projects/-home-shu-projects-open-brain/memory/*.md`, per-machine) + the project layer (`context/STATE.md`, `context/DECISIONS.md`, gitignored `context/sessions/`) form a tier-0 frozen snapshot loaded at session start. SessionEnd hook (`scripts/claude-code/session-end-ingest.sh` + `session_end_ingest.py`) summarises each session via Haiku and POSTs to `/v1/memory` with `source="claude-code-session"`. SessionStart hook (`session-start-distill.sh`) opportunistically fires the daily distill in the background, self-scoped to the open-brain cwd, throttled to one fire per `OB_SESSION_START_MIN_HOURS` (default 6h). `make memory-state` shows usage vs caps; `make memory-distill`/`memory-curate` runs jobs on demand; `make memory-install-cron` installs `/etc/cron.d/ob-memory-flywheel` + anacron catch-up entries. **Crons MUST run locally** — they read `~/.claude/.../memory/` and `context/sessions/` which neither the prod VM nor `/schedule`-style remote scheduler can see.
+- **`/v1/memory/{id}/expand` is tier-2 progressive disclosure**: Returns full content + parent `RawMemory.raw_text` + up to 3 same-source neighbors nearest by `created_at`. Service: `expand_memory()` in `src/api/services/memory_service.py`. MCP tool: `memory_expand` in `src/mcp_server.py`. Neighbor query uses two windowed lookups (3 older + 3 newer same-source) merged + Python-sorted by absolute time delta — avoids Postgres-only `EXTRACT(EPOCH FROM ...)` arithmetic, works under SQLite tests. 404 on missing or `is_superseded=True`. Memory retrieval contract is tier-0 (in-context markdown) → tier-1 `search_memory` → tier-2 `memory_expand` → tier-3 `get_context`, documented in the Memory Retrieval section above.
+- **SessionEnd hook backend is configurable (`OB_SESSION_END_BACKEND`)**: `cli` shells out to `claude --print` (subscription billing, default when binary is on PATH); `api` calls the Anthropic REST API directly (pay-per-token, needs `ANTHROPIC_API_KEY`); `auto` picks `cli` when available else `api`. Both backends share `_normalise_summary()` so `NO_CAPTURE` sentinel + 10k-char cap behave identically.
 
 ## Footguns
 
@@ -104,6 +143,9 @@ These patterns can be re-introduced by new code. The fixes exist but aren't enfo
 - **`Button` does not support `asChild`** — `web/components/ui/button.tsx` uses `@base-ui/react/button`, not Radix. There is no `asChild` prop. To render a Link that looks like a Button, apply `buttonVariants({ variant })` as a className on the `<Link>` directly: `<Link href="..." className={buttonVariants({ variant: "outline" })}>`.
 - **Tailwind v4 — no `tailwind.config.ts`** — This project uses Tailwind v4 with PostCSS. There is no `tailwind.config.ts`. Plugin registration uses the `@plugin` CSS directive in `web/app/globals.css` (e.g., `@plugin "@tailwindcss/typography"`), not a JS config object.
 - **React 19 dynamic route `params` is a Promise** — Next.js 16 + React 19: `params` in `page.tsx` must be typed as `Promise<{ id: string }>` and unwrapped with `use(params)` in client components. The first `[id]` route is `web/app/learning/topics/[id]/page.tsx` — use it as the reference pattern.
+- **SQLite stores datetimes naive, Postgres stores them tz-aware** — subtracting one from the other inside the same test session raises `TypeError: can't subtract offset-naive and offset-aware datetimes`. When you need cross-DB time arithmetic (e.g. neighbor distance), use a helper like `_as_utc_timestamp()` in `src/api/services/memory_service.py` that coerces both sides to UTC POSIX timestamps before differencing. Don't rely on `EXTRACT(EPOCH FROM ...)` — Postgres-only and silently breaks SQLite tests.
+- **`/schedule` slash command runs on Anthropic-hosted runtime, NOT your laptop** — markdown specs in `cron/jobs/*.md` describe behaviour, but `/schedule create` can't reach `~/.claude/projects/.../memory/` or `context/sessions/`. Local memory cron MUST go through `make memory-install-cron` (writes `/etc/cron.d/ob-memory-flywheel` + anacron entries) or `make memory-distill`/`memory-curate` on demand. The SessionStart hook is the in-session catch-up belt.
+- **SessionStart hook self-scopes by cwd vs script repo** — `scripts/claude-code/session-start-distill.sh` exits silently if `cwd != $(repo containing the script)`. Safe to install as a global `~/.claude/hooks/session-start-distill.sh` symlink — it no-ops in every other repo. Only fires on `source=startup` (not resume/clear/compact). Uses `flock` for single-fire across parallel CC windows + throttle via `context/.last-distill` mtime ≥ `OB_SESSION_START_MIN_HOURS` (default 6h).
 
 Check directory structure before creating new top-level modules or folders.
 

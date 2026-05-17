@@ -11,7 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from src.mcp_server import _do_get_context, _do_ingest_memory, _do_search_memory
+from src.mcp_server import (
+    _do_get_context,
+    _do_ingest_memory,
+    _do_memory_expand,
+    _do_search_memory,
+)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -339,3 +344,82 @@ def test_ingest_memory_custom_source():
 
     sent_body = mock_post.call_args.args[1]
     assert sent_body["source"] == "claude-code"
+
+
+# ── memory_expand ─────────────────────────────────────────────────────────────
+
+
+def test_memory_expand_returns_formatted_markdown():
+    """Happy path: full content, raw provenance, and neighbor snippets in output."""
+    body = {
+        "memory_id": "aaaa-1111",
+        "content": "Full memory body.",
+        "raw_text": "Original transcript.",
+        "neighbors": [
+            {
+                "memory_id": "bbbb-2222",
+                "content": "Sibling memory captured close in time.",
+                "created_at": "2026-05-15T12:00:00Z",
+                "source": "claude-code-session",
+            }
+        ],
+        "metadata": {
+            "source": "claude-code-session",
+            "project": "open-brain",
+            "created_at": "2026-05-17T09:00:00Z",
+        },
+    }
+    with patch("src.mcp_server._get", return_value=_mock_resp(200, body)) as mock_get:
+        result = _do_memory_expand("aaaa-1111")
+
+    mock_get.assert_called_once_with("/v1/memory/aaaa-1111/expand", {})
+    assert "Full memory body." in result
+    assert "Original transcript." in result
+    assert "Sibling memory captured close in time." in result
+    assert "open-brain" in result
+    assert "claude-code-session" in result
+
+
+def test_memory_expand_404_returns_error_string():
+    """404 from API surfaces as user-friendly error, not exception."""
+    with patch("src.mcp_server._get", return_value=_mock_resp(404, {})):
+        result = _do_memory_expand("00000000-0000-0000-0000-000000000000")
+    assert "not found" in result.lower()
+
+
+def test_memory_expand_422_returns_uuid_error():
+    """422 from API surfaces as 'not a valid UUID' message."""
+    with patch("src.mcp_server._get", return_value=_mock_resp(422, {})):
+        result = _do_memory_expand("not-a-uuid")
+    assert "uuid" in result.lower()
+
+
+def test_memory_expand_empty_id_no_api_call():
+    """Empty memory_id short-circuits before any HTTP call."""
+    with patch("src.mcp_server._get") as mock_get:
+        result = _do_memory_expand("   ")
+    mock_get.assert_not_called()
+    assert "Error" in result
+
+
+def test_memory_expand_connect_error_returns_string():
+    """Connection refused returns an error string instead of raising."""
+    with patch("src.mcp_server._get", side_effect=httpx.ConnectError("refused")):
+        result = _do_memory_expand("aaaa-1111")
+    assert "Error" in result
+    assert isinstance(result, str)
+
+
+def test_memory_expand_handles_missing_optional_fields():
+    """Missing neighbors / raw_text don't break formatting."""
+    body = {
+        "memory_id": "cccc-3333",
+        "content": "Just content, no neighbors.",
+        "raw_text": None,
+        "neighbors": [],
+        "metadata": {"source": "api", "project": None, "created_at": None},
+    }
+    with patch("src.mcp_server._get", return_value=_mock_resp(200, body)):
+        result = _do_memory_expand("cccc-3333")
+    assert "Just content, no neighbors." in result
+    assert "Personal" in result  # null project renders as Personal
