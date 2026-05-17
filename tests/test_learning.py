@@ -452,3 +452,135 @@ async def test_get_tree_includes_has_material_flag(test_client, api_key_headers,
     resp2 = await test_client.get("/v1/learning", headers=api_key_headers)
     topics2 = resp2.json()["topics"]
     assert topics2[0]["has_material"] is True
+
+
+# ── Cross-day dedup (the duplication bug fix) ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_open_todo_blocks_reselection_across_days(async_session, monkeypatch):
+    """An open todo for a learning_item (from any day) blocks re-scheduling."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.core import config as _config
+    from src.jobs.learning_daily import run_learning_selection
+
+    topic = await _mk_topic(async_session, "T")
+    section = await _mk_section(async_session, topic.id)
+    items = [
+        await _mk_item(async_session, section.id, title=f"I{i}", position=i) for i in range(5)
+    ]
+
+    # Pre-existing OPEN todo from yesterday targeting items[0]
+    existing = TodoItem(
+        description="study I0",
+        status="open",
+        learning_item_id=items[0].id,
+    )
+    async_session.add(existing)
+    await async_session.commit()
+    existing.created_at = datetime.now(UTC) - timedelta(days=1)
+    await async_session.commit()
+
+    monkeypatch.setattr(_config.settings, "anthropic_api_key", None)
+
+    await run_learning_selection(async_session)
+
+    # items[0] must NOT have any todo other than the pre-existing one
+    result = await async_session.execute(
+        select(TodoItem).where(
+            TodoItem.learning_item_id == items[0].id,
+            TodoItem.id != existing.id,
+        )
+    )
+    assert result.scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_todo_does_not_block_reselection(async_session, monkeypatch):
+    """A cancelled todo for a learning_item must NOT block re-scheduling."""
+    from src.core import config as _config
+    from src.jobs.learning_daily import run_learning_selection
+
+    topic = await _mk_topic(async_session, "T")
+    section = await _mk_section(async_session, topic.id)
+    item = await _mk_item(async_session, section.id, "I0", position=0)
+
+    cancelled = TodoItem(
+        description="prev attempt",
+        status="cancelled",
+        learning_item_id=item.id,
+    )
+    async_session.add(cancelled)
+    await async_session.commit()
+
+    monkeypatch.setattr(_config.settings, "anthropic_api_key", None)
+
+    await run_learning_selection(async_session)
+
+    # A new todo for `item` should now exist (the cancelled one does not block it)
+    result = await async_session.execute(
+        select(TodoItem).where(
+            TodoItem.learning_item_id == item.id,
+            TodoItem.status == "open",
+        )
+    )
+    assert result.scalars().first() is not None
+
+
+# ── Topic context exposed on TodoResponse ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_todo_response_exposes_learning_topic(
+    test_client, api_key_headers, async_session
+):
+    """GET /v1/todos/{id} includes learning_topic_id + learning_topic_name."""
+    topic = await _mk_topic(async_session, "pgvector")
+    section = await _mk_section(async_session, topic.id, "Indexing")
+    item = await _mk_item(async_session, section.id, "HNSW basics")
+
+    resp = await test_client.post(
+        "/v1/todos", json={"description": "study HNSW"}, headers=api_key_headers
+    )
+    assert resp.status_code == 201
+    todo_id = resp.json()["id"]
+
+    todo = await async_session.get(TodoItem, uuid.UUID(todo_id))
+    todo.learning_item_id = item.id
+    await async_session.commit()
+    async_session.expire_all()  # flush identity-map staleness in shared session
+
+    resp = await test_client.get(f"/v1/todos/{todo_id}", headers=api_key_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["learning_item_id"] == str(item.id)
+    assert body["learning_topic_id"] == str(topic.id)
+    assert body["learning_topic_name"] == "pgvector"
+
+
+@pytest.mark.asyncio
+async def test_todo_list_includes_learning_topic(
+    test_client, api_key_headers, async_session
+):
+    """GET /v1/todos (list) also populates topic info via eager-load."""
+    topic = await _mk_topic(async_session, "async-sql")
+    section = await _mk_section(async_session, topic.id, "Sessions")
+    item = await _mk_item(async_session, section.id, "AsyncSession lifecycle")
+
+    resp = await test_client.post(
+        "/v1/todos", json={"description": "study sessions"}, headers=api_key_headers
+    )
+    todo_id = resp.json()["id"]
+    todo = await async_session.get(TodoItem, uuid.UUID(todo_id))
+    todo.learning_item_id = item.id
+    await async_session.commit()
+    async_session.expire_all()
+
+    resp = await test_client.get("/v1/todos?status=open", headers=api_key_headers)
+    assert resp.status_code == 200
+    todos = resp.json()["todos"]
+    learning_entries = [t for t in todos if t.get("learning_item_id") == str(item.id)]
+    assert len(learning_entries) == 1
+    assert learning_entries[0]["learning_topic_id"] == str(topic.id)
+    assert learning_entries[0]["learning_topic_name"] == "async-sql"

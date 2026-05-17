@@ -18,6 +18,8 @@ const OVERDUE_TODO: TodoItem = {
   label: null,
   project: null,
   learning_item_id: null,
+  learning_topic_id: null,
+  learning_topic_name: null,
   created_at: "2020-01-01T00:00:00Z",
   updated_at: "2020-01-01T00:00:00Z",
 };

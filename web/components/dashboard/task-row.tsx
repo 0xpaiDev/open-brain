@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { TodoItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -330,7 +331,17 @@ export function TaskRow({
               </span>
             )}
 
-            {todo.learning_item_id && (
+            {todo.learning_item_id && todo.learning_topic_id && (
+              <Link
+                href={`/learning/topics/${todo.learning_topic_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-accent/20 text-accent hover:bg-accent/30 transition-colors max-w-45 truncate"
+                title={`Learning · ${todo.learning_topic_name ?? "topic"}`}
+              >
+                Learning · {todo.learning_topic_name ?? "topic"}
+              </Link>
+            )}
+            {todo.learning_item_id && !todo.learning_topic_id && (
               <span
                 className="text-xs rounded-full px-2 py-0.5 shrink-0 font-label bg-accent/20 text-accent"
                 title="Generated from your learning library"

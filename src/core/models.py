@@ -424,6 +424,9 @@ class TodoItem(Base):
     history: Mapped[list["TodoHistory"]] = relationship(
         "TodoHistory", back_populates="todo", cascade="all, delete-orphan"
     )
+    learning_item: Mapped["LearningItem | None"] = relationship(
+        "LearningItem", lazy="raise"
+    )
 
 
 class TodoHistory(Base):

@@ -1,6 +1,26 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-16** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal, ~838 backend + ~303 Vitest
+Covering **2026-03-13 to 2026-05-17** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos, ~844 backend + ~303 Vitest
+
+---
+
+## Session — 2026-05-17 (Learning cron cross-day dedup + topic context on todos)
+
+**What changed**:
+- Fixed cross-day learning-todo duplication: `_existing_learning_item_ids_today()` (date-windowed) replaced with `_open_learning_item_ids()` — every `learning_item` with any open todo (regardless of day) is now excluded from re-selection (`src/jobs/learning_daily.py`). Same-day idempotency gate kept; the two checks are now orthogonal.
+- Added topic context to every TodoResponse: new `learning_topic_id` + `learning_topic_name` fields populated via selectinload chain (`TodoItem.learning_item → LearningItem.section → LearningSection.topic`); new `_with_learning_topic()` helper applied to GET /v1/todos, GET /v1/todos/{id}, GET /v1/todos/overdue-undeferred, POST /v1/todos/defer-all, PATCH /v1/todos/{id} (with post-update re-fetch since `session.refresh()` expires eager loads) (`src/api/routes/todos.py`).
+- New `TodoItem.learning_item` ORM relationship with `lazy="raise"` — converts silent async lazy-loads into loud sync errors (`src/core/models.py`).
+- Frontend: Learning chip in `task-row.tsx` is now a `next/link` rendering `Learning · <Topic Name>` routing to `/learning/topics/{id}`, with graceful fallback chip when topic info is missing (`web/components/dashboard/task-row.tsx`, `web/lib/types.ts`). Five vitest mock files updated with new optional fields.
+- 4 new pytest cases pinning the dedup behavior + topic exposure (`tests/test_learning.py`).
+- User cleared duplicate "API keys in plaintext" rows from prod DB manually; one-shot cleanup script written then deleted by user (not needed long-term).
+
+**Files touched**: `src/jobs/learning_daily.py`, `src/core/models.py`, `src/api/routes/todos.py`, `web/lib/types.ts`, `web/components/dashboard/task-row.tsx`, `web/__tests__/hooks/use-todos.test.ts`, `web/__tests__/hooks/use-overdue.test.ts`, `web/__tests__/components/focus-card.test.tsx`, `web/__tests__/components/project-group.test.tsx`, `web/__tests__/components/task-list.test.tsx`, `tests/test_learning.py`, `CLAUDE.md`, `PROGRESS.md`
+
+**Decisions made**: Title-only description + topic chip in the UI (rejected: enriching `description` with topic/section text, would have polluted memory embeddings). No new `GET /v1/learning/topics/{id}` endpoint — topic info is embedded in TodoResponse, frontend `/learning/topics/[id]` page already exists and reads from the full-tree endpoint. `lazy="raise"` chosen over default lazy-select to make missing eager-loads loud in dev rather than silent in prod. Per-user request: this fix not deployed standalone — bundled with the next bigger-feature deploy.
+
+**Gotchas found**: `session.refresh(obj)` inside `update_todo()` expires all eager-loaded relationships including `learning_item` — PATCH/bulk-defer routes must re-fetch with `_with_learning_topic()` before serializing or `lazy="raise"` will crash. Also: when capturing IDs from a freshly-created ORM object for use after `session.expire_all()` in tests, save `.id` into a local var first — accessing it later triggers a sync re-fetch and `MissingGreenlet`.
+
+**Test count**: 844 backend (838 → 844, +6 net: 4 new cross-day + topic-response tests, +2 vitest mock-field updates didn't change count) | ~303 Vitest (unchanged, 3 pre-existing date-of-week failures on master unrelated)
 
 ---
 

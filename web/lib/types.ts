@@ -51,6 +51,8 @@ export interface TodoItem {
   label: string | null;
   project: string | null;
   learning_item_id: string | null;
+  learning_topic_id: string | null;
+  learning_topic_name: string | null;
   created_at: string;
   updated_at: string;
 }

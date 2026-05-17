@@ -15,11 +15,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import asc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.api.middleware.rate_limit import limiter, todos_limit
 from src.api.services.todo_service import create_todo, update_todo
 from src.core.database import get_db
-from src.core.models import ProjectLabel, TodoHistory, TodoItem
+from src.core.models import (
+    LearningItem,
+    LearningSection,
+    ProjectLabel,
+    TodoHistory,
+    TodoItem,
+)
 from src.pipeline.todo_sync import supersede_memory_for_todo
 
 logger = structlog.get_logger(__name__)
@@ -93,6 +100,8 @@ class TodoResponse(BaseModel):
     label: str | None
     project: str | None
     learning_item_id: str | None
+    learning_topic_id: str | None = None
+    learning_topic_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -131,7 +140,27 @@ class TodoBulkDeferResponse(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
+def _with_learning_topic(stmt):
+    """Attach selectinload chain so _todo_to_response can read topic info
+    without triggering an async lazy-load (lazy='raise' on TodoItem.learning_item)."""
+    return stmt.options(
+        selectinload(TodoItem.learning_item)
+        .selectinload(LearningItem.section)
+        .selectinload(LearningSection.topic)
+    )
+
+
 def _todo_to_response(todo: TodoItem) -> TodoResponse:
+    topic_id: str | None = None
+    topic_name: str | None = None
+    if todo.learning_item_id is not None:
+        try:
+            li = todo.learning_item
+        except Exception:
+            li = None  # relationship not preloaded; skip enrichment silently
+        if li is not None and li.section is not None and li.section.topic is not None:
+            topic_id = str(li.section.topic.id)
+            topic_name = li.section.topic.name
     return TodoResponse(
         id=str(todo.id),
         description=todo.description,
@@ -142,6 +171,8 @@ def _todo_to_response(todo: TodoItem) -> TodoResponse:
         label=todo.label,
         project=todo.project,
         learning_item_id=str(todo.learning_item_id) if todo.learning_item_id else None,
+        learning_topic_id=topic_id,
+        learning_topic_name=topic_name,
         created_at=todo.created_at,
         updated_at=todo.updated_at,
     )
@@ -230,7 +261,7 @@ async def bulk_defer_todos_route(
     Raises:
         422: If ``todo_ids`` is empty, exceeds 50 entries, or any UUID is malformed.
     """
-    stmt = select(TodoItem).where(TodoItem.id.in_(body.todo_ids))
+    stmt = _with_learning_topic(select(TodoItem).where(TodoItem.id.in_(body.todo_ids)))
     result = await session.execute(stmt)
     found: dict[str, TodoItem] = {str(t.id): t for t in result.scalars().all()}
 
@@ -253,7 +284,11 @@ async def bulk_defer_todos_route(
             reason=body.reason,
             fields_set={"due_date"},
         )
-        deferred.append(_todo_to_response(updated))
+        # session.refresh() inside update_todo expires the eager-loaded
+        # learning_item relationship — re-fetch so the response includes topic info.
+        reload_stmt = _with_learning_topic(select(TodoItem).where(TodoItem.id == updated.id))
+        reloaded = (await session.execute(reload_stmt)).scalar_one()
+        deferred.append(_todo_to_response(reloaded))
 
     logger.info(
         "bulk_defer_todos_route",
@@ -314,6 +349,7 @@ async def list_todos(
     total = total_result.scalar_one()
 
     stmt = stmt.order_by(TodoItem.created_at.desc(), TodoItem.id.desc()).offset(offset).limit(limit)
+    stmt = _with_learning_topic(stmt)
     result = await session.execute(stmt)
     todos = list(result.scalars().all())
 
@@ -346,7 +382,7 @@ async def list_overdue_undeferred(
         .where(TodoHistory.created_at >= start_of_today)
     ).subquery()
 
-    stmt = (
+    stmt = _with_learning_topic(
         select(TodoItem)
         .where(TodoItem.status == "open")
         .where(TodoItem.due_date < start_of_today)
@@ -378,7 +414,8 @@ async def get_todo(
         404: If no todo with that ID exists.
         422: If todo_id is not a valid UUID.
     """
-    todo = await session.get(TodoItem, todo_id)
+    stmt = _with_learning_topic(select(TodoItem).where(TodoItem.id == todo_id))
+    todo = (await session.execute(stmt)).scalar_one_or_none()
     if todo is None:
         raise HTTPException(status_code=404, detail=f"Todo {todo_id} not found")
     return _todo_to_response(todo)
@@ -427,8 +464,12 @@ async def update_todo_route(
         learning_feedback=body.learning_feedback,
         learning_notes=body.learning_notes,
     )
+    # Re-fetch with eager-load: session.refresh() inside update_todo expires
+    # the learning_item relationship (lazy='raise' would crash on access).
+    reload_stmt = _with_learning_topic(select(TodoItem).where(TodoItem.id == todo.id))
+    reloaded = (await session.execute(reload_stmt)).scalar_one()
     logger.info("update_todo_route", todo_id=str(todo_id))
-    return _todo_to_response(todo)
+    return _todo_to_response(reloaded)
 
 
 # ── DELETE /v1/todos/{id} ──────────────────────────────────────────────────────

@@ -58,16 +58,16 @@ async def _count_todays_learning_todos(session: AsyncSession, today: date) -> in
     return int(result.scalar_one())
 
 
-async def _existing_learning_item_ids_today(session: AsyncSession, today: date) -> set[str]:
-    start = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
-    end = start + timedelta(days=1)
+async def _open_learning_item_ids(session: AsyncSession) -> set[str]:
+    """All learning_item_ids that already have at least one OPEN todo,
+    regardless of creation date. These items must NOT be re-scheduled
+    until the user finishes or cancels the existing todo."""
     stmt = select(TodoItem.learning_item_id).where(
         TodoItem.learning_item_id.is_not(None),
-        TodoItem.created_at >= start,
-        TodoItem.created_at < end,
+        TodoItem.status == "open",
     )
     result = await session.execute(stmt)
-    return {str(r) for r in result.scalars().all()}
+    return {str(r) for r in result.scalars().all() if r is not None}
 
 
 async def _active_topics_with_pending(session: AsyncSession) -> list[LearningTopic]:
@@ -260,7 +260,7 @@ async def run_learning_selection(session: AsyncSession) -> dict[str, Any]:
         }
 
     remaining = target - existing_count
-    excluded = await _existing_learning_item_ids_today(session, today)
+    excluded = await _open_learning_item_ids(session)
     topics = await _active_topics_with_pending(session)
     feedback = await _recent_feedback(session, settings.learning_feedback_lookback_days)
     payload, flat = _build_llm_payload(topics, feedback, remaining, today, excluded)
