@@ -273,6 +273,9 @@ def _call_haiku_cli(transcript: str) -> str | None:
     cmd = [
         CLAUDE_CLI_BIN,
         "--print",
+        "--dangerously-skip-permissions",
+        "--output-format",
+        "text",
         "--model",
         HAIKU_MODEL,
         "--append-system-prompt",
@@ -283,18 +286,23 @@ def _call_haiku_cli(transcript: str) -> str | None:
         completed = subprocess.run(
             cmd,
             input=user_prompt,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             timeout=CLAUDE_CLI_TIMEOUT_S,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
+        _log(f"claude CLI timed out after {CLAUDE_CLI_TIMEOUT_S}s — skipping")
+        return None
+    except OSError as exc:
         _log(f"claude CLI failed: {exc}")
         return None
 
+    if completed.stderr:
+        _log(f"claude CLI stderr: {completed.stderr.strip()[:300]!r}")
     if completed.returncode != 0:
-        stderr = (completed.stderr or "").strip()[:300]
-        _log(f"claude CLI exit={completed.returncode} stderr={stderr!r}")
+        _log(f"claude CLI exit={completed.returncode}")
         return None
     return completed.stdout
 

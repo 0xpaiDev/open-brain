@@ -1,6 +1,40 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-17** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1, 859 backend + ~303 Vitest
+Covering **2026-03-13 to 2026-05-18** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1 + spec lifecycle management, 859 backend + ~303 Vitest
+
+---
+
+## Session — 2026-05-18 (Nav scroll-hide + memory card polish)
+
+**What changed**:
+- New `useScrollVisibility` hook: passive scroll listener, hides on >10px downscroll, reveals on any upscroll (`web/hooks/use-scroll-visibility.ts`)
+- `TopNav` and `BottomTabs` consume hook via CSS `translate` transforms with 300ms transition (`web/components/layout/top-nav.tsx`, `web/components/layout/bottom-tabs.tsx`)
+- Memory card: removed `border-l-4 border-l-tertiary` from task/todo/todo_completion; added `MEMORY` + `TASK` badges to types that lacked them; amber `HIGH` badge on todo/task when `importance_score >= 0.8` (`web/components/memory/memory-card.tsx`)
+
+**Files touched**: `web/hooks/use-scroll-visibility.ts` (new), `web/__tests__/hooks/use-scroll-visibility.test.ts` (new), `web/components/layout/top-nav.tsx`, `web/components/layout/bottom-tabs.tsx`, `web/components/memory/memory-card.tsx`, `docs/superpowers/specs/active/→done/2026-05-18-nav-scroll-hide-memory-card-polish.md`, `docs/superpowers/plans/2026-05-18-nav-scroll-hide-memory-card-polish.md` (new)
+
+**Decisions made**: Priority signal on memory cards uses `importance_score >= 0.8` threshold (no `priority` field on `MemoryItemResponse`; `TodoItem.priority` not surfaced in memory card response shape)
+
+**Gotchas found**: none
+
+**Test count**: 859 backend + 309 Vitest (308 passing; task-list.test.tsx "done group" test was pre-existing failure, not a regression)
+
+---
+
+## Session — 2026-05-18 (Spec lifecycle management)
+
+**What changed**:
+- Added `active/` and `done/` subdirectories to `docs/superpowers/specs/`; moved memory flywheel spec into `active/`
+- Created `INDEX.md` (append-only done log) and `README.md` (local path override for brainstorming skill)
+- Added Step 1.5 to endsession skill: optionally archives an active spec to `done/` + appends one line to `INDEX.md`
+
+**Files touched**: `docs/superpowers/specs/active/` (new dir), `docs/superpowers/specs/done/` (new dir), `docs/superpowers/specs/INDEX.md` (new), `docs/superpowers/specs/README.md` (new), `.claude/skills/endsession/SKILL.md`
+
+**Decisions made**: Folder-based lifecycle (`active/`→`done/`) over status prefixes in filenames or flat INDEX tracking. Brainstorming skill path override via README.md (plugin cache is read-only). Archive triggered by endsession (session has context) rather than git hook (no context).
+
+**Gotchas found**: Brainstorming skill writes path is hardcoded in plugin cache (read-only) — local README.md is the only override mechanism without forking the plugin.
+
+**Test count**: 859 backend + ~303 Vitest (unchanged)
 
 ---
 
