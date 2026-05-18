@@ -24,6 +24,7 @@ const TYPE_CONFIG: Record<
 > = {
   memory: {
     icon: "format_quote",
+    badge: "MEMORY",
     className: "bg-surface-container-high",
   },
   decision: {
@@ -33,7 +34,8 @@ const TYPE_CONFIG: Record<
   },
   task: {
     icon: "task_alt",
-    className: "bg-surface-container-high border-l-4 border-l-tertiary",
+    badge: "TASK",
+    className: "bg-surface-container-high",
   },
   context: {
     icon: "info",
@@ -43,12 +45,12 @@ const TYPE_CONFIG: Record<
   todo: {
     icon: "checklist",
     badge: "TODO",
-    className: "bg-surface-container-high border-l-4 border-l-tertiary",
+    className: "bg-surface-container-high",
   },
   todo_completion: {
     icon: "task_alt",
     badge: "DONE",
-    className: "bg-surface-container-high border-l-4 border-l-tertiary",
+    className: "bg-surface-container-high",
   },
   daily_pulse: {
     icon: "vitals",
@@ -84,6 +86,13 @@ export function MemoryCard({ item }: MemoryCardProps) {
               {config.badge}
             </span>
           )}
+          {(item.type === "todo" || item.type === "task") &&
+            item.importance_score != null &&
+            item.importance_score >= 0.8 && (
+              <span className="text-[10px] font-label font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                HIGH
+              </span>
+            )}
           {item.project && (
             <span className="text-[10px] font-label font-semibold tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary">
               {item.project}

@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { useScrollVisibility } from "@/hooks/use-scroll-visibility";
 
 export function TopNav() {
   const { logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const visible = useScrollVisibility();
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
 
   function handleSearch(e: React.FormEvent) {
@@ -32,7 +34,7 @@ export function TopNav() {
   }
 
   return (
-    <header className="fixed top-0 z-50 w-full flex justify-between items-center px-6 py-3 bg-background/80 backdrop-blur-xl shadow-2xl shadow-black/20 font-headline tracking-tight">
+    <header className={`fixed top-0 z-50 w-full flex justify-between items-center px-6 py-3 bg-background/80 backdrop-blur-xl shadow-2xl shadow-black/20 font-headline tracking-tight transition-transform duration-300 ease-in-out ${visible ? "translate-y-0" : "-translate-y-full"}`}>
       <div className="flex items-center gap-4">
         <span className="text-xl font-bold text-primary">Open Brain</span>
       </div>

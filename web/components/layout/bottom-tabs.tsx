@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useScrollVisibility } from "@/hooks/use-scroll-visibility";
 
 const tabs = [
   { href: "/dashboard", icon: "today", label: "Today" },
@@ -13,9 +14,10 @@ const tabs = [
 
 export function BottomTabs() {
   const pathname = usePathname();
+  const visible = useScrollVisibility();
 
   return (
-    <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest border-t border-outline-variant/15 px-2 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom,0px))]">
+    <nav className={`flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-lowest border-t border-outline-variant/15 px-2 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom,0px))] transition-transform duration-300 ease-in-out ${visible ? "translate-y-0" : "translate-y-full"}`}>
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (
