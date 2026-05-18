@@ -147,6 +147,13 @@ export function useCommitments(statusFilter: "active" | "all" = "active") {
     [],
   );
 
+  const fetchById = useCallback(
+    async (commitmentId: string): Promise<CommitmentResponse> => {
+      return api<CommitmentResponse>("GET", `/v1/commitments/${commitmentId}`);
+    },
+    [],
+  );
+
   const importPlan = useCallback(
     async (payload: unknown, dryRun: boolean): Promise<CommitmentImportResult> => {
       const result = await api<CommitmentImportResult>(
@@ -162,5 +169,5 @@ export function useCommitments(statusFilter: "active" | "all" = "active") {
     [refresh],
   );
 
-  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment, logExercise, deleteExerciseLog, getProgression, importPlan };
+  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment, logExercise, deleteExerciseLog, getProgression, fetchById, importPlan };
 }
