@@ -78,14 +78,13 @@ export default function CommitmentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { commitments, getProgression } = useCommitments();
+  const { fetchById, getProgression } = useCommitments();
   const [commitment, setCommitment] = useState<CommitmentResponse | null>(null);
   const [progression, setProgression] = useState<ExerciseProgression[]>([]);
 
   useEffect(() => {
-    const found = commitments.find((c) => c.id === id) ?? null;
-    setCommitment(found);
-  }, [commitments, id]);
+    fetchById(id).then(setCommitment).catch(() => {});
+  }, [id, fetchById]);
 
   useEffect(() => {
     if (!commitment) return;
