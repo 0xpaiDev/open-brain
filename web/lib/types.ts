@@ -347,6 +347,15 @@ export interface CommitmentExercise {
   progression_metric: string;
   position: number;
   logged_today: boolean;
+  last_logged: LastLoggedValues | null;
+}
+
+export interface LastLoggedValues {
+  reps: number | null;
+  sets: number | null;
+  weight_kg: number | null;
+  duration_minutes: number | null;
+  log_date: string;
 }
 
 export interface CommitmentExerciseLog {
