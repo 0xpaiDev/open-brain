@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Dumbbell, Flame, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { Check, ChevronRight, Dumbbell, Flame, TrendingUp } from "lucide-react";
 import { useCommitments } from "@/hooks/use-commitments";
 import type { CommitmentResponse, CommitmentEntry, CommitmentExercise } from "@/lib/types";
 
@@ -103,10 +104,15 @@ export function CommitmentCard({
     <div className="bg-surface-container rounded-2xl p-5 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <Link
+          href={`/commitments/${commitment.id}`}
+          className="flex items-center gap-2 group hover:opacity-80 transition-opacity"
+          aria-label={`Open ${commitment.name}`}
+        >
           <Dumbbell className="w-4 h-4 text-primary" />
           <span className="font-headline text-lg text-on-surface">{commitment.name}</span>
-        </div>
+          <ChevronRight className="w-4 h-4 text-outline opacity-0 group-hover:opacity-100 transition-opacity" />
+        </Link>
         <span className="text-on-surface-variant text-sm font-body">
           Day {dayNumber}/{totalDays}
         </span>
@@ -216,10 +222,15 @@ export function AggregateCommitmentCard({ commitment }: { commitment: Commitment
     <div className="bg-surface-container rounded-2xl p-5 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <Link
+          href={`/commitments/${commitment.id}`}
+          className="flex items-center gap-2 group hover:opacity-80 transition-opacity"
+          aria-label={`Open ${commitment.name}`}
+        >
           <TrendingUp className="w-4 h-4 text-primary" />
           <span className="font-headline text-lg text-on-surface">{commitment.name}</span>
-        </div>
+          <ChevronRight className="w-4 h-4 text-outline opacity-0 group-hover:opacity-100 transition-opacity" />
+        </Link>
         <span className="text-on-surface-variant text-sm font-body">
           Day {dayNumber}/{totalDays}
         </span>
@@ -493,7 +504,11 @@ export function MultiExerciseCommitmentCard({
   return (
     <div className={`bg-surface-container rounded-2xl p-5 space-y-3 ${isRestDay ? "opacity-70" : ""}`}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <Link
+          href={`/commitments/${commitment.id}`}
+          className="flex items-center gap-2 group hover:opacity-80 transition-opacity"
+          aria-label={`Open ${commitment.name}`}
+        >
           <Dumbbell className="w-4 h-4 text-primary" />
           <span className="font-headline text-lg text-on-surface">{commitment.name}</span>
           {isRestDay && (
@@ -501,7 +516,8 @@ export function MultiExerciseCommitmentCard({
               Rest Day
             </span>
           )}
-        </div>
+          <ChevronRight className="w-4 h-4 text-outline opacity-0 group-hover:opacity-100 transition-opacity" />
+        </Link>
         <span className="text-on-surface-variant text-sm font-body">
           Day {dayNumber}/{totalDays}
         </span>
