@@ -355,6 +355,10 @@ async def test_plan_import_dry_run_zero_writes(test_client, api_key_headers) -> 
 async def test_plan_import_commit_creates_rows(test_client, api_key_headers) -> None:
     """Commit creates commitment with exercises and workout-day entries only."""
     payload = _make_plan_payload()
+    payload["resolved_exercises"] = [
+        {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        {"name": "Bench Press", "display_name": "Bench Press", "target": 5, "metric": "reps", "progression_metric": "kg"},
+    ]
     resp = await test_client.post(
         "/v1/commitments/import?dry_run=false",
         json=payload,
@@ -394,6 +398,9 @@ async def test_plan_import_rest_day_rejects_log(test_client, api_key_headers) ->
                     {"name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"}
                 ],
             },
+        ],
+        "resolved_exercises": [
+            {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
         ],
     }
     import_resp = await test_client.post(
@@ -446,6 +453,10 @@ def test_resolved_exercise_with_exercise_id_is_valid():
 async def test_plan_import_idempotent_same_hash(test_client, api_key_headers) -> None:
     """Re-importing the same payload returns existing commitment_id, no new rows."""
     payload = _make_plan_payload(name="Idempotent Plan")
+    payload["resolved_exercises"] = [
+        {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        {"name": "Bench Press", "display_name": "Bench Press", "target": 5, "metric": "reps", "progression_metric": "kg"},
+    ]
 
     resp1 = await test_client.post(
         "/v1/commitments/import?dry_run=false",
@@ -513,6 +524,10 @@ async def test_plan_import_rejects_malformed_payload(test_client, api_key_header
 async def test_patch_plan_rejects_exercise_edits(test_client, api_key_headers) -> None:
     """PATCH on a plan commitment rejects changes other than status."""
     payload = _make_plan_payload(name="Uneditable Plan")
+    payload["resolved_exercises"] = [
+        {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        {"name": "Bench Press", "display_name": "Bench Press", "target": 5, "metric": "reps", "progression_metric": "kg"},
+    ]
     import_resp = await test_client.post(
         "/v1/commitments/import?dry_run=false",
         json=payload,
@@ -535,6 +550,10 @@ async def test_patch_plan_rejects_exercise_edits(test_client, api_key_headers) -
 async def test_patch_plan_allows_abandon(test_client, api_key_headers) -> None:
     """PATCH status=abandoned is allowed on plan commitments."""
     payload = _make_plan_payload(name="Abandonable Plan")
+    payload["resolved_exercises"] = [
+        {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        {"name": "Bench Press", "display_name": "Bench Press", "target": 5, "metric": "reps", "progression_metric": "kg"},
+    ]
     import_resp = await test_client.post(
         "/v1/commitments/import?dry_run=false",
         json=payload,
@@ -641,3 +660,80 @@ async def test_routine_kind_rejects_single_log_endpoint(test_client, api_key_hea
         headers=api_key_headers,
     )
     assert log_resp.status_code == 400
+
+
+# ── Exercise library detection ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dry_run_returns_unknown_exercises(test_client, api_key_headers):
+    """Dry run returns unknown_exercises for names not in the library."""
+    payload = _make_plan_payload()
+    resp = await test_client.post(
+        "/v1/commitments/import?dry_run=true", json=payload, headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Fresh DB has no exercises library entries, so both exercises are unknown
+    assert len(data["unknown_exercises"]) == 2
+    names = {e["name"] for e in data["unknown_exercises"]}
+    assert "Squat" in names
+    assert "Bench Press" in names
+
+
+@pytest.mark.asyncio
+async def test_dry_run_no_unknowns_when_library_seeded(test_client, api_key_headers, async_session):
+    """Dry run returns no unknowns when exercises already in library."""
+    from src.core.models import Exercise
+    squat = Exercise(name="squat", display_name="Squat")
+    bench = Exercise(name="bench press", display_name="Bench Press")
+    async_session.add_all([squat, bench])
+    await async_session.commit()
+
+    payload = _make_plan_payload()
+    resp = await test_client.post(
+        "/v1/commitments/import?dry_run=true", json=payload, headers=api_key_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["unknown_exercises"] == []
+
+
+@pytest.mark.asyncio
+async def test_commit_with_resolved_exercises_creates_library_entries(test_client, api_key_headers, async_session):
+    """Committing with resolved_exercises creates Exercise rows and entry_exercises."""
+    from sqlalchemy import select
+    from src.core.models import CommitmentEntryExercise, Exercise
+    from datetime import date
+    payload = _make_plan_payload()
+    payload["resolved_exercises"] = [
+        {"name": "Squat", "display_name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        {"name": "Bench Press", "display_name": "Bench Press", "target": 5, "metric": "reps", "progression_metric": "kg"},
+    ]
+    resp = await test_client.post(
+        "/v1/commitments/import?dry_run=false", json=payload, headers=api_key_headers
+    )
+    assert resp.status_code == 201
+    commitment_id = resp.json()["commitment_id"]
+
+    # Exercise library entries created
+    async_session.expire_all()
+    result = await async_session.execute(select(Exercise).where(Exercise.name == "squat"))
+    assert result.scalar_one_or_none() is not None
+
+    # entry_exercises created for workout days
+    result = await async_session.execute(
+        select(CommitmentEntryExercise).where(CommitmentEntryExercise.commitment_id == uuid.UUID(commitment_id))
+    )
+    rows = result.scalars().all()
+    assert len(rows) >= 2  # at least 2 exercises × 1 workout day
+
+
+@pytest.mark.asyncio
+async def test_commit_without_resolving_unknowns_returns_422(test_client, api_key_headers):
+    """Committing without resolved_exercises when unknowns exist returns 422."""
+    payload = _make_plan_payload()
+    # No resolved_exercises provided, fresh DB has no library entries
+    resp = await test_client.post(
+        "/v1/commitments/import?dry_run=false", json=payload, headers=api_key_headers
+    )
+    assert resp.status_code == 422
