@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.5
-**Date**: 2026-05-17
-**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** Modules: Foundation, Todo, Morning Pulse, Training, Learning.
+**Version**: 2.6
+**Date**: 2026-05-19
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** **Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD (Spec B).** Modules: Foundation, Todo, Morning Pulse, Training, Learning.
 
 ## Phase 6 Module System (complete)
 
@@ -242,7 +242,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**25 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
+**27 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -277,8 +277,10 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 ### Module: Training & Commitments
 - **commitments**: Challenge definitions with `kind` ("single"|"routine"|"plan"), `exercise` (nullable for multi-exercise kinds), `daily_target`, `metric`, `cadence` ("daily"|"aggregate"), date range, status (active/completed/abandoned). Aggregate has `targets`/`progress` JSONB. `import_hash` (SHA-256, indexed) used for plan import idempotency.
 - **commitment_entries**: One row per commitment per day, pre-generated on creation (daily cadence; plan kind: workout days only — rest days have no entry). `logged_count` incremented by log actions; status: pending→hit (auto when target/all-exercises met) or pending→miss (nightly cron)
-- **commitment_exercises** (migration 0017+0018): Per-exercise definition for routine/plan kinds. Columns: `name`, `sets` (nullable — target set count), `target`, `metric`, `progression_metric`, `position`. Unique on `(commitment_id, name, sets)` — same exercise with different set counts is a distinct row.
-- **commitment_exercise_logs** (migration 0017): Per-exercise log entry. Soft-deleted via `deleted_at`. Columns: `sets`, `reps`, `weight_kg`, `duration_minutes`, `notes`. A day is "hit" when every exercise has ≥1 active (non-deleted) log for that date.
+- **commitment_exercises** (migration 0017+0018): Per-exercise definition for routine/plan kinds. Columns: `name`, `sets` (nullable — target set count), `target`, `metric`, `progression_metric`, `position`. `exercise_id` FK → `exercises.id` (nullable, migration 0020). Unique on `(commitment_id, name, sets)`.
+- **commitment_exercise_logs** (migration 0017): Per-exercise log entry. Soft-deleted via `deleted_at`. Columns: `sets`, `reps`, `weight_kg`, `duration_minutes`, `notes`. A day is "hit" when every exercise has ≥1 active (non-deleted) log for that date. Plan kind: only exercises in `commitment_entry_exercises` for today's entry count.
+- **exercises** (migration 0020): Global exercise library. `name` is normalised (`strip().lower()`), UNIQUE. `display_name` preserves original casing (first-insert wins). Linked from `commitment_exercises.exercise_id` (nullable FK ON DELETE SET NULL).
+- **commitment_entry_exercises** (migration 0021): Junction table linking a specific `CommitmentEntry` (workout day) to the `CommitmentExercise` rows scheduled for it. Unique on `(entry_id, exercise_id)`. Indexed on `(commitment_id, entry_id)`. Created at import time; editable via PATCH schedule endpoints.
 - **commitment_activities**: Junction table linking aggregate commitments to Strava activities for dedup and audit; unique constraint on (commitment_id, strava_activity_id); progress recalculated from all linked activities on every change
 - **strava_activities**: Cached Strava activity data ingested via webhook; strava_id UNIQUE prevents duplicate inserts from retries; raw_data JSON stores full API response; TSS computed from NP and FTP on ingest
 - **strava_tokens**: Single-row OAuth token store; bootstrapped from env vars on first webhook; auto-refreshed via `_get_valid_access_token()` when expired

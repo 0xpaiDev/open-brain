@@ -4,6 +4,25 @@ Covering **2026-03-13 to 2026-05-18** | 6 phases + dashboard + training/commitme
 
 ---
 
+## Session — 2026-05-19 (Spec B: Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD)
+
+**What changed**:
+- `CommitmentEntryExercise` junction model + Alembic migration 0021 — links workout days to specific exercises (`src/core/models.py`, `alembic/versions/0021_commitment_entry_exercises.py`)
+- Import service rewritten: dry-run detects unknown exercises, commit upserts `Exercise` library rows + creates `CommitmentEntryExercise` per workout day (`src/api/services/commitment_import_service.py`)
+- New `schedule_service.py` with `get_schedule`, `swap_day`, `update_day_exercises`; new `exercises.py` route; 3 new endpoints on commitments (`GET /schedule`, `PATCH /entries/{date}`, `PATCH /entries/{entry_id}/exercises`)
+- Plan log validation: logging an exercise not in today's `commitment_entry_exercises` returns 400 (`src/api/routes/commitments.py`)
+- Frontend: `Exercise`, `ScheduleDay`, `ScheduleResponse`, `UnknownExercise`, `ResolvedExercise` types; `useExercises()` hook; `getSchedule`/`swapDay`/`updateDayExercises` on `useCommitments`; import page rewritten as 3-step wizard; new `/commitments/[id]/edit` plan editor
+
+**Files touched**: `src/core/models.py`, `alembic/versions/0021_commitment_entry_exercises.py` (new), `src/api/schemas/commitment_import.py`, `src/api/services/commitment_import_service.py`, `src/api/services/schedule_service.py` (new), `src/api/routes/exercises.py` (new), `src/api/routes/commitments.py`, `src/api/main.py`, `tests/test_commitment_import.py`, `tests/test_commitment_schedule.py` (new), `web/lib/types.ts`, `web/hooks/use-exercises.ts` (new), `web/hooks/use-commitments.ts`, `web/app/commitments/import/page.tsx`, `web/app/commitments/[id]/edit/page.tsx` (new), `web/app/commitments/[id]/page.tsx`
+
+**Decisions made**: Per-day exercise assignments stored in `commitment_entry_exercises` junction (not denormalized into `commitment_entries`); import service uses two-pass resolution (matched-to-existing first, then create-new) to avoid duplicate library inserts
+
+**Gotchas found**: `schedule_service.py` string commitment_id/entry_id params need explicit `uuid.UUID()` conversion before SQLAlchemy queries on SQLite; `async_session.expire_all()` (not `await`) needed in tests after cross-session commits
+
+**Test count**: 872 backend + 309 Vitest
+
+---
+
 ## Session — 2026-05-18 (Nav scroll-hide + memory card polish)
 
 **What changed**:
