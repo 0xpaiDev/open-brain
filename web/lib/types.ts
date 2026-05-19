@@ -374,6 +374,14 @@ export interface ExerciseProgression {
   points: ProgressionPoint[];
 }
 
+export interface UnknownExercise {
+  name: string;
+  sets: number | null;
+  target: number;
+  metric: string;
+  progression_metric: string;
+}
+
 export interface CommitmentImportResult {
   dry_run: boolean;
   commitment_id: string | null;
@@ -381,6 +389,7 @@ export interface CommitmentImportResult {
   workout_days: number;
   rest_days: number;
   exercise_count: number;
+  unknown_exercises: UnknownExercise[];
 }
 
 export interface CommitmentResponse {
@@ -426,4 +435,41 @@ export interface CommitmentCreate {
   }>;
   start_date: string;
   end_date: string;
+}
+
+export interface Exercise {
+  id: string;
+  name: string;
+  display_name: string;
+  created_at: string;
+}
+
+export interface ScheduleDayExercise {
+  exercise_id: string;
+  name: string;
+  sets: number | null;
+  target: number;
+  metric: string;
+}
+
+export interface ScheduleDay {
+  entry_id: string | null;
+  date: string;
+  status: "pending" | "hit" | "miss" | "rest";
+  exercises: ScheduleDayExercise[];
+}
+
+export interface ScheduleResponse {
+  commitment_id: string;
+  days: ScheduleDay[];
+}
+
+export interface ResolvedExercise {
+  name: string;
+  exercise_id?: string;
+  display_name?: string;
+  metric: string;
+  progression_metric: string;
+  target: number;
+  sets?: number | null;
 }

@@ -10,6 +10,7 @@ import type {
   CommitmentExerciseLog,
   ExerciseProgression,
   CommitmentImportResult,
+  ScheduleResponse,
 } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -169,5 +170,33 @@ export function useCommitments(statusFilter: "active" | "all" = "active") {
     [refresh],
   );
 
-  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment, logExercise, deleteExerciseLog, getProgression, fetchById, importPlan };
+  const getSchedule = useCallback(
+    async (commitmentId: string) => {
+      return api<ScheduleResponse>("GET", `/v1/commitments/${commitmentId}/schedule`);
+    },
+    [],
+  );
+
+  const swapDay = useCallback(
+    async (commitmentId: string, entryDate: string, action: "to_workout" | "to_rest", exerciseIds: string[]) => {
+      await api("PATCH", `/v1/commitments/${commitmentId}/entries/${entryDate}`, {
+        action,
+        exercise_ids: exerciseIds,
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const updateDayExercises = useCallback(
+    async (commitmentId: string, entryId: string, exerciseIds: string[]) => {
+      await api("PATCH", `/v1/commitments/${commitmentId}/entries/${entryId}/exercises`, {
+        exercise_ids: exerciseIds,
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return { commitments, loading, refresh, logCount, abandonCommitment, createCommitment, logExercise, deleteExerciseLog, getProgression, fetchById, importPlan, getSchedule, swapDay, updateDayExercises };
 }
