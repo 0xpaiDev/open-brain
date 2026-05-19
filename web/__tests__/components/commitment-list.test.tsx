@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { CommitmentList } from "@/components/dashboard/commitment-list";
-import type { CommitmentListResponse, CommitmentEntry } from "@/lib/types";
+import { CommitmentList, ExerciseRow } from "@/components/dashboard/commitment-list";
+import type { CommitmentListResponse, CommitmentEntry, CommitmentExercise } from "@/lib/types";
 import { setApiKey } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -286,5 +286,72 @@ describe("AggregateCommitmentCard", () => {
       expect(screen.getByText("Push-ups Challenge")).toBeTruthy();
       expect(screen.getByText("200km this month")).toBeTruthy();
     });
+  });
+});
+
+// ── ExerciseRow inline log form tests ────────────────────────────────────────
+
+const MOCK_EXERCISE: CommitmentExercise = {
+  id: "ex-1",
+  commitment_id: "c-1",
+  name: "Squat",
+  sets: 3,
+  target: 5,
+  metric: "reps",
+  progression_metric: "kg",
+  position: 0,
+  logged_today: false,
+  last_logged: null,
+};
+
+describe("ExerciseRow", () => {
+  test("expands form on Log click and shows reps field", () => {
+    const onLog = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ExerciseRow
+        exercise={MOCK_EXERCISE}
+        isLogged={false}
+        isRestDay={false}
+        onLog={onLog}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /log squat/i }));
+    expect(screen.getByLabelText(/reps/i)).toBeTruthy();
+  });
+
+  test("shows weight (kg) field for kg progression_metric", () => {
+    const onLog = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ExerciseRow
+        exercise={{ ...MOCK_EXERCISE, metric: "kg", progression_metric: "kg" }}
+        isLogged={false}
+        isRestDay={false}
+        onLog={onLog}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /log squat/i }));
+    expect(screen.getByLabelText(/weight/i)).toBeTruthy();
+  });
+
+  test("shows logged summary when already logged", () => {
+    render(
+      <ExerciseRow
+        exercise={{
+          ...MOCK_EXERCISE,
+          logged_today: true,
+          last_logged: {
+            reps: 5,
+            sets: 3,
+            weight_kg: 100,
+            duration_minutes: null,
+            log_date: "2026-05-18",
+          },
+        }}
+        isLogged={true}
+        isRestDay={false}
+        onLog={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/3 × 5 @ 100 kg/)).toBeTruthy();
   });
 });

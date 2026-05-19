@@ -272,7 +272,7 @@ export function AggregateCommitmentCard({ commitment }: { commitment: Commitment
 
 // ── Multi-exercise commitment card ────────────────────────────────────────────
 
-function ExerciseRow({
+export function ExerciseRow({
   exercise,
   isLogged,
   isRestDay,
@@ -281,44 +281,184 @@ function ExerciseRow({
   exercise: CommitmentExercise;
   isLogged: boolean;
   isRestDay: boolean;
-  onLog: (exerciseId: string) => Promise<void>;
+  onLog: (
+    exerciseId: string,
+    data: { reps?: number; sets?: number; weight_kg?: number; duration_minutes?: number },
+  ) => Promise<void>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
+  const [reps, setReps] = useState<number>(exercise.last_logged?.reps ?? exercise.target);
+  const [sets, setSets] = useState<number | null>(
+    exercise.last_logged?.sets ?? exercise.sets ?? null,
+  );
+  const [weightKg, setWeightKg] = useState<number | null>(exercise.last_logged?.weight_kg ?? null);
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(
+    exercise.last_logged?.duration_minutes ?? null,
+  );
 
-  const handleLog = async () => {
-    if (isLogged || isRestDay || pending) return;
+  const showReps = exercise.metric === "reps" || exercise.progression_metric === "reps";
+  const showKg = exercise.metric === "kg" || exercise.progression_metric === "kg";
+  const showMinutes = exercise.metric === "minutes" || exercise.progression_metric === "minutes";
+  const showSeconds = exercise.metric === "seconds" || exercise.progression_metric === "seconds";
+
+  const handleConfirm = async () => {
+    if (pending) return;
     setPending(true);
     try {
-      await onLog(exercise.id);
+      await onLog(exercise.id, {
+        reps: showReps ? reps : undefined,
+        sets: sets ?? undefined,
+        weight_kg: showKg ? (weightKg ?? undefined) : undefined,
+        duration_minutes:
+          showMinutes || showSeconds ? (durationMinutes ?? undefined) : undefined,
+      });
+      setExpanded(false);
+    } catch {
+      // toast shown by hook
     } finally {
       setPending(false);
     }
   };
 
+  const loggedSummary = () => {
+    if (!exercise.last_logged) return null;
+    const { reps: r, sets: s, weight_kg: w } = exercise.last_logged;
+    const parts: string[] = [];
+    if (s != null && r != null) parts.push(`${s} × ${r}`);
+    else if (r != null) parts.push(`${r} reps`);
+    if (w != null) parts.push(`@ ${w} kg`);
+    return parts.join(" ") || null;
+  };
+
   return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className="font-body text-sm text-on-surface">{exercise.name}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-on-surface-variant text-sm font-body">
-          {exercise.sets != null ? `${exercise.sets} × ` : ""}{exercise.target} {exercise.metric}
-        </span>
-        {isRestDay ? (
-          <span className="text-outline text-xs font-body">rest</span>
-        ) : isLogged ? (
-          <Check className="w-4 h-4 text-streak-hit" aria-label="Done" />
-        ) : (
-          <button
-            onClick={handleLog}
-            disabled={pending}
-            aria-label={`Log ${exercise.name}`}
-            className="bg-primary-container text-on-primary-container rounded-full px-3 h-8 text-base md:text-sm font-body
-              hover:bg-primary hover:text-on-primary active:scale-95 transition-all
-              disabled:opacity-50 cursor-pointer"
-          >
-            Done
-          </button>
-        )}
+    <div className="py-1.5 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="font-body text-sm text-on-surface">{exercise.name}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-on-surface-variant text-sm font-body">
+            {exercise.sets != null ? `${exercise.sets} × ` : ""}
+            {exercise.target} {exercise.metric}
+          </span>
+          {isRestDay ? (
+            <span className="text-outline text-xs font-body">rest</span>
+          ) : isLogged ? (
+            <div className="flex items-center gap-1">
+              <Check className="w-4 h-4 text-streak-hit" aria-label="Done" />
+              {loggedSummary() && (
+                <span className="text-xs text-on-surface-variant font-body">
+                  {loggedSummary()}
+                </span>
+              )}
+            </div>
+          ) : expanded ? (
+            <button
+              onClick={() => setExpanded(false)}
+              className="text-xs text-outline font-body cursor-pointer"
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              onClick={() => setExpanded(true)}
+              disabled={pending}
+              aria-label={`Log ${exercise.name}`}
+              className="bg-primary-container text-on-primary-container rounded-full px-3 h-8 text-base md:text-sm font-body
+                hover:bg-primary hover:text-on-primary active:scale-95 transition-all
+                disabled:opacity-50 cursor-pointer"
+            >
+              Log
+            </button>
+          )}
+        </div>
       </div>
+
+      {expanded && !isLogged && !isRestDay && (
+        <div className="bg-surface-container-high rounded-xl p-3 space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {showReps && (
+              <div>
+                <label
+                  className="text-xs text-on-surface-variant font-body block mb-1"
+                  htmlFor={`reps-${exercise.id}`}
+                >
+                  Reps
+                </label>
+                <input
+                  id={`reps-${exercise.id}`}
+                  type="number"
+                  min={0}
+                  value={reps}
+                  onChange={(e) => setReps(Number(e.target.value))}
+                  className="w-full bg-surface rounded-lg px-3 py-2 text-base md:text-sm text-on-surface border border-outline/20 focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
+            {showKg && (
+              <div>
+                <label
+                  className="text-xs text-on-surface-variant font-body block mb-1"
+                  htmlFor={`weight-${exercise.id}`}
+                >
+                  Weight (kg)
+                </label>
+                <input
+                  id={`weight-${exercise.id}`}
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={weightKg ?? ""}
+                  onChange={(e) => setWeightKg(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full bg-surface rounded-lg px-3 py-2 text-base md:text-sm text-on-surface border border-outline/20 focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
+            {(showMinutes || showSeconds) && (
+              <div>
+                <label
+                  className="text-xs text-on-surface-variant font-body block mb-1"
+                  htmlFor={`duration-${exercise.id}`}
+                >
+                  {showSeconds ? "Seconds" : "Minutes"}
+                </label>
+                <input
+                  id={`duration-${exercise.id}`}
+                  type="number"
+                  min={0}
+                  value={durationMinutes ?? ""}
+                  onChange={(e) =>
+                    setDurationMinutes(e.target.value ? Number(e.target.value) : null)
+                  }
+                  className="w-full bg-surface rounded-lg px-3 py-2 text-base md:text-sm text-on-surface border border-outline/20 focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
+            <div>
+              <label
+                className="text-xs text-on-surface-variant font-body block mb-1"
+                htmlFor={`sets-${exercise.id}`}
+              >
+                Sets (optional)
+              </label>
+              <input
+                id={`sets-${exercise.id}`}
+                type="number"
+                min={1}
+                value={sets ?? ""}
+                onChange={(e) => setSets(e.target.value ? Number(e.target.value) : null)}
+                className="w-full bg-surface rounded-lg px-3 py-2 text-base md:text-sm text-on-surface border border-outline/20 focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <button
+            onClick={handleConfirm}
+            disabled={pending}
+            className="w-full bg-primary text-on-primary rounded-lg py-2 text-base md:text-sm font-body disabled:opacity-40 hover:opacity-90 transition-opacity cursor-pointer"
+          >
+            {pending ? "Logging…" : "Confirm"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -328,7 +468,11 @@ export function MultiExerciseCommitmentCard({
   onLogExercise,
 }: {
   commitment: CommitmentResponse;
-  onLogExercise: (commitmentId: string, exerciseId: string) => Promise<void>;
+  onLogExercise: (
+    commitmentId: string,
+    exerciseId: string,
+    data: { reps?: number; sets?: number; weight_kg?: number; duration_minutes?: number },
+  ) => Promise<void>;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const todayEntry = commitment.entries.find((e) => e.entry_date === today);
@@ -380,7 +524,7 @@ export function MultiExerciseCommitmentCard({
             exercise={ex}
             isLogged={ex.logged_today || todayEntry?.status === "hit"}
             isRestDay={isRestDay}
-            onLog={(exerciseId) => onLogExercise(commitment.id, exerciseId)}
+            onLog={(exerciseId, data) => onLogExercise(commitment.id, exerciseId, data)}
           />
         ))}
       </div>
@@ -430,8 +574,8 @@ export function CommitmentList() {
             <MultiExerciseCommitmentCard
               key={c.id}
               commitment={c}
-              onLogExercise={async (commitmentId, exerciseId) => {
-                await logExercise(commitmentId, exerciseId, {});
+              onLogExercise={async (commitmentId, exerciseId, data) => {
+                await logExercise(commitmentId, exerciseId, data);
               }}
             />
           );
