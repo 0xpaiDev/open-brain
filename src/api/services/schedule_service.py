@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import HTTPException
@@ -24,7 +24,8 @@ async def get_schedule(
     Includes all days from start_date to end_date. Rest days have no entry_id
     and status="rest". Workout days include their assigned exercises.
     """
-    commitment = await session.get(Commitment, commitment_id)
+    cid = UUID(commitment_id) if isinstance(commitment_id, str) else commitment_id
+    commitment = await session.get(Commitment, cid)
     if commitment is None:
         raise HTTPException(status_code=404, detail="Commitment not found")
     if commitment.kind != "plan":
@@ -33,7 +34,7 @@ async def get_schedule(
     # Load all entries for this commitment
     entries_result = await session.execute(
         select(CommitmentEntry)
-        .where(CommitmentEntry.commitment_id == commitment_id)
+        .where(CommitmentEntry.commitment_id == cid)
         .order_by(CommitmentEntry.entry_date)
     )
     entries_by_date: dict[date, CommitmentEntry] = {
@@ -44,7 +45,7 @@ async def get_schedule(
     junction_result = await session.execute(
         select(CommitmentEntryExercise, CommitmentExercise)
         .join(CommitmentExercise, CommitmentEntryExercise.exercise_id == CommitmentExercise.id)
-        .where(CommitmentEntryExercise.commitment_id == commitment_id)
+        .where(CommitmentEntryExercise.commitment_id == cid)
     )
     exercises_by_entry: dict[str, list[dict]] = {}
     for junction, ex in junction_result.all():
@@ -94,7 +95,8 @@ async def swap_day(
     to_rest: deletes the CommitmentEntry (cascades to entry_exercises + pending logs).
              Refuses if entry status is hit or miss.
     """
-    commitment = await session.get(Commitment, commitment_id)
+    cid = UUID(commitment_id) if isinstance(commitment_id, str) else commitment_id
+    commitment = await session.get(Commitment, cid)
     if commitment is None:
         raise HTTPException(status_code=404, detail="Commitment not found")
     if commitment.kind != "plan":
@@ -105,7 +107,7 @@ async def swap_day(
     entry_result = await session.execute(
         select(CommitmentEntry).where(
             and_(
-                CommitmentEntry.commitment_id == commitment_id,
+                CommitmentEntry.commitment_id == cid,
                 CommitmentEntry.entry_date == target_date,
             )
         )
@@ -120,21 +122,22 @@ async def swap_day(
 
         new_entry = CommitmentEntry(
             id=uuid4(),
-            commitment_id=commitment_id,
+            commitment_id=cid,
             entry_date=target_date,
         )
         session.add(new_entry)
         await session.flush()
 
         for ex_id in exercise_ids:
-            ex = await session.get(CommitmentExercise, ex_id)
+            ex_uuid = UUID(ex_id) if isinstance(ex_id, str) else ex_id
+            ex = await session.get(CommitmentExercise, ex_uuid)
             if ex is None or str(ex.commitment_id) != str(commitment_id):
                 raise HTTPException(status_code=400, detail=f"Exercise {ex_id} not found in this commitment")
             junction = CommitmentEntryExercise(
                 id=uuid4(),
-                commitment_id=commitment_id,
+                commitment_id=cid,
                 entry_id=new_entry.id,
-                exercise_id=ex_id,
+                exercise_id=ex_uuid,
             )
             session.add(junction)
 
@@ -162,25 +165,28 @@ async def update_day_exercises(
     exercise_ids: list[str],
 ) -> None:
     """Replace all exercise assignments for an existing workout day."""
-    entry = await session.get(CommitmentEntry, entry_id)
+    cid = UUID(commitment_id) if isinstance(commitment_id, str) else commitment_id
+    eid = UUID(entry_id) if isinstance(entry_id, str) else entry_id
+    entry = await session.get(CommitmentEntry, eid)
     if entry is None or str(entry.commitment_id) != str(commitment_id):
         raise HTTPException(status_code=404, detail="Entry not found")
 
     # Delete existing junction rows for this entry
     await session.execute(
-        delete(CommitmentEntryExercise).where(CommitmentEntryExercise.entry_id == entry_id)
+        delete(CommitmentEntryExercise).where(CommitmentEntryExercise.entry_id == eid)
     )
 
     # Insert new ones
     for ex_id in exercise_ids:
-        ex = await session.get(CommitmentExercise, ex_id)
+        ex_uuid = UUID(ex_id) if isinstance(ex_id, str) else ex_id
+        ex = await session.get(CommitmentExercise, ex_uuid)
         if ex is None or str(ex.commitment_id) != str(commitment_id):
             raise HTTPException(status_code=400, detail=f"Exercise {ex_id} not found in this commitment")
         junction = CommitmentEntryExercise(
             id=uuid4(),
-            commitment_id=commitment_id,
-            entry_id=entry_id,
-            exercise_id=ex_id,
+            commitment_id=cid,
+            entry_id=eid,
+            exercise_id=ex_uuid,
         )
         session.add(junction)
 

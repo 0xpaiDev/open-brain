@@ -14,6 +14,7 @@ from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.api.routes.calendar_api import router as calendar_router
 from src.api.routes.chat import router as chat_router
 from src.api.routes.commitments import router as commitments_router
+from src.api.routes.exercises import router as exercises_router
 from src.api.routes.decisions import router as decisions_router
 from src.api.routes.entities import router as entities_router
 from src.api.routes.health import router as health_router
@@ -102,6 +103,7 @@ app.include_router(calendar_router, tags=["Calendar"])
 app.include_router(chat_router, tags=["Chat"])
 app.include_router(voice_router, tags=["Voice"])
 app.include_router(commitments_router, tags=["Commitments"])
+app.include_router(exercises_router, tags=["Exercises"])
 app.include_router(strava_router, tags=["Strava"])
 app.include_router(training_router, tags=["Training"])
 app.include_router(learning_router, tags=["Learning"])

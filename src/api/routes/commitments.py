@@ -23,6 +23,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import commitments_limit, limiter
+from src.api.services.schedule_service import get_schedule, swap_day, update_day_exercises
 from src.core.database import get_db
 from src.core.models import Commitment, CommitmentEntry, CommitmentExercise, CommitmentExerciseLog
 
@@ -194,6 +195,44 @@ class ExerciseProgressionResponse(BaseModel):
     exercise_id: str
     exercise_name: str
     points: list[ProgressionPoint]
+
+
+class ExerciseRef(BaseModel):
+    exercise_id: str
+    name: str
+    sets: int | None = None
+    target: int
+    metric: str
+
+
+class ScheduleDay(BaseModel):
+    entry_id: str | None
+    date: str
+    status: str
+    exercises: list[ExerciseRef] = []
+
+
+class ScheduleResponse(BaseModel):
+    commitment_id: str
+    days: list[ScheduleDay]
+
+
+class EntrySwapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str  # "to_workout" | "to_rest"
+    exercise_ids: list[str] = []
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ("to_workout", "to_rest"):
+            raise ValueError("action must be 'to_workout' or 'to_rest'")
+        return v
+
+
+class UpdateDayExercisesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    exercise_ids: list[str]
 
 
 class CommitmentResponse(BaseModel):
@@ -414,24 +453,7 @@ async def _check_and_flip_entry(
     today: date,
 ) -> None:
     """After a log insert, check if all exercises are done today and flip entry to hit."""
-    total_exercises_result = await session.execute(
-        select(CommitmentExercise).where(CommitmentExercise.commitment_id == commitment_id)
-    )
-    total_exercises = list(total_exercises_result.scalars().all())
-    if not total_exercises:
-        return
-
-    logged_today_result = await session.execute(
-        select(CommitmentExerciseLog.exercise_id).where(
-            and_(
-                CommitmentExerciseLog.commitment_id == commitment_id,
-                CommitmentExerciseLog.log_date == today,
-                CommitmentExerciseLog.deleted_at.is_(None),
-            )
-        ).distinct()
-    )
-    logged_exercise_ids = {str(row[0]) for row in logged_today_result.all()}
-    total_ids = {str(ex.id) for ex in total_exercises}
+    from src.core.models import CommitmentEntryExercise  # avoid circular at top level
 
     entry_result = await session.execute(
         select(CommitmentEntry).where(
@@ -444,6 +466,37 @@ async def _check_and_flip_entry(
     entry = entry_result.scalar_one_or_none()
     if entry is None:
         return
+
+    # For plan commitments, "all done" = all entry_exercises for today logged
+    commitment = await session.get(Commitment, commitment_id)
+    kind = (commitment.kind or "single") if commitment else "single"
+
+    if kind == "plan":
+        scheduled_result = await session.execute(
+            select(CommitmentEntryExercise.exercise_id).where(
+                CommitmentEntryExercise.entry_id == entry.id
+            )
+        )
+        total_ids = {str(row[0]) for row in scheduled_result.all()}
+    else:
+        total_exercises_result = await session.execute(
+            select(CommitmentExercise).where(CommitmentExercise.commitment_id == commitment_id)
+        )
+        total_ids = {str(ex.id) for ex in total_exercises_result.scalars().all()}
+
+    if not total_ids:
+        return
+
+    logged_today_result = await session.execute(
+        select(CommitmentExerciseLog.exercise_id).where(
+            and_(
+                CommitmentExerciseLog.commitment_id == commitment_id,
+                CommitmentExerciseLog.log_date == today,
+                CommitmentExerciseLog.deleted_at.is_(None),
+            )
+        ).distinct()
+    )
+    logged_exercise_ids = {str(row[0]) for row in logged_today_result.all()}
 
     if total_ids <= logged_exercise_ids:
         entry.status = "hit"
@@ -820,6 +873,23 @@ async def log_exercise(
     if entry.status == "miss":
         raise HTTPException(status_code=400, detail="Cannot log on a missed entry")
 
+    # For plan commitments: exercise must be scheduled for today's entry
+    if kind == "plan":
+        from src.core.models import CommitmentEntryExercise
+        junction_result = await session.execute(
+            select(CommitmentEntryExercise).where(
+                and_(
+                    CommitmentEntryExercise.entry_id == entry.id,
+                    CommitmentEntryExercise.exercise_id == exercise_id,
+                )
+            )
+        )
+        if junction_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Exercise not scheduled for today",
+            )
+
     log = CommitmentExerciseLog(
         commitment_id=commitment.id,
         exercise_id=exercise.id,
@@ -951,3 +1021,55 @@ async def get_progression(
         ))
 
     return result
+
+
+# ── GET /v1/commitments/{id}/schedule ────────────────────────────────────────
+
+
+@router.get("/v1/commitments/{commitment_id}/schedule", response_model=ScheduleResponse)
+@limiter.limit(commitments_limit)
+async def get_commitment_schedule(
+    request: Request,
+    commitment_id: _uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+) -> ScheduleResponse:
+    """Get full day-by-day schedule for a plan commitment."""
+    data = await get_schedule(session, str(commitment_id))
+    return ScheduleResponse(
+        commitment_id=data["commitment_id"],
+        days=[ScheduleDay(**d) for d in data["days"]],
+    )
+
+
+# ── PATCH /v1/commitments/{id}/entries/{date} ─────────────────────────────────
+
+
+@router.patch("/v1/commitments/{commitment_id}/entries/{entry_date}")
+@limiter.limit(commitments_limit)
+async def swap_commitment_day(
+    request: Request,
+    commitment_id: _uuid.UUID,
+    entry_date: date,
+    body: EntrySwapRequest,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Flip a day between rest and workout for a plan commitment."""
+    await swap_day(session, str(commitment_id), entry_date, body.action, body.exercise_ids)
+    return {"ok": True}
+
+
+# ── PATCH /v1/commitments/{id}/entries/{entry_id}/exercises ──────────────────
+
+
+@router.patch("/v1/commitments/{commitment_id}/entries/{entry_id}/exercises")
+@limiter.limit(commitments_limit)
+async def update_entry_exercises(
+    request: Request,
+    commitment_id: _uuid.UUID,
+    entry_id: _uuid.UUID,
+    body: UpdateDayExercisesRequest,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Replace the exercise assignments for a workout day."""
+    await update_day_exercises(session, str(commitment_id), str(entry_id), body.exercise_ids)
+    return {"ok": True}
