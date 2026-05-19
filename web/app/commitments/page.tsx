@@ -136,8 +136,8 @@ export default function CommitmentsPage() {
                   ) : c.kind === "routine" || c.kind === "plan" ? (
                     <MultiExerciseCommitmentCard
                       commitment={c}
-                      onLogExercise={async (commitmentId, exerciseId) => {
-                        await logExercise(commitmentId, exerciseId, {});
+                      onLogExercise={async (commitmentId, exerciseId, data) => {
+                        await logExercise(commitmentId, exerciseId, data);
                       }}
                     />
                   ) : (
