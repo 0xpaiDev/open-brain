@@ -517,6 +517,27 @@ class JobRun(Base):
 # ── Module: Training & Commitments ───────────────────────────────────────────
 
 
+class Exercise(Base):
+    """Global exercise library. Names are normalised (lowercase, stripped) for dedup.
+
+    display_name preserves the original casing from first insert.
+    Linked from CommitmentExercise.exercise_id (nullable FK).
+    """
+
+    __tablename__ = "exercises"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("name", name="uq_exercise_name"),)
+
+    commitment_exercises: Mapped[list["CommitmentExercise"]] = relationship(
+        "CommitmentExercise", back_populates="exercise_library", passive_deletes=True
+    )
+
+
 class Commitment(Base):
     """A commitment challenge with daily or aggregate targets and date range.
 
@@ -592,6 +613,40 @@ class CommitmentEntry(Base):
 
     # Relationships
     commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="entries")
+    entry_exercises: Mapped[list["CommitmentEntryExercise"]] = relationship(
+        "CommitmentEntryExercise", back_populates="entry", cascade="all, delete-orphan"
+    )
+
+
+class CommitmentEntryExercise(Base):
+    """Junction table: which exercises are scheduled for a specific CommitmentEntry (day).
+
+    Created at import time per workout day. Editable via CRUD editor.
+    """
+
+    __tablename__ = "commitment_entry_exercises"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    commitment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
+    )
+    entry_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitment_entries.id", ondelete="CASCADE"), nullable=False
+    )
+    exercise_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("commitment_exercises.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("entry_id", "exercise_id", name="uq_entry_exercise"),
+        Index("ix_entry_exercises_commitment_entry", "commitment_id", "entry_id"),
+    )
+
+    entry: Mapped["CommitmentEntry"] = relationship("CommitmentEntry", back_populates="entry_exercises")
+    commitment_exercise: Mapped["CommitmentExercise"] = relationship(
+        "CommitmentExercise", back_populates="entry_exercises"
+    )
 
 
 class StravaActivity(Base):
@@ -670,6 +725,9 @@ class CommitmentExercise(Base):
     commitment_id: Mapped[str] = mapped_column(
         UUID(as_uuid=True), ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False
     )
+    exercise_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exercises.id", ondelete="SET NULL"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -681,9 +739,16 @@ class CommitmentExercise(Base):
     __table_args__ = (
         UniqueConstraint("commitment_id", "name", "sets", name="uq_commitment_exercise_name_sets"),
         Index("ix_commitment_exercises_commitment", "commitment_id"),
+        Index("ix_commitment_exercises_exercise", "exercise_id"),
     )
 
     commitment: Mapped["Commitment"] = relationship("Commitment", back_populates="exercises")
+    exercise_library: Mapped["Exercise | None"] = relationship(
+        "Exercise", back_populates="commitment_exercises"
+    )
+    entry_exercises: Mapped[list["CommitmentEntryExercise"]] = relationship(
+        "CommitmentEntryExercise", back_populates="commitment_exercise", passive_deletes=True
+    )
     logs: Mapped[list["CommitmentExerciseLog"]] = relationship(
         "CommitmentExerciseLog", back_populates="exercise", cascade="all, delete-orphan"
     )
