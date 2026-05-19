@@ -4,6 +4,22 @@ Covering **2026-03-13 to 2026-05-18** | 6 phases + dashboard + training/commitme
 
 ---
 
+## Session — 2026-05-19 (Spec A: Inline Exercise Log Form)
+
+**What changed**:
+- Backend `LastLoggedValues` model + `last_logged` field on `ExerciseResponse`; `_fetch_last_logged_batch` helper uses a single subquery (max log_date per exercise_id) joined back to logs — no N+1 (`src/api/routes/commitments.py`)
+- Wired `last_logged_map` through `list_commitments` / `get_commitment` / `update_commitment` into `_commitment_to_response` → `_exercise_to_response`
+- `ExerciseRow` rewritten as exported component with inline expand form, metric-matched fields (reps/kg/minutes/seconds + optional sets), prefilled from `last_logged ?? target`; logged state shows compact `S × R @ W kg` summary instead of plain check (`web/components/dashboard/commitment-list.tsx`)
+- `MultiExerciseCommitmentCard` + `CommitmentList` threaded log payload through `onLogExercise`; `web/lib/types.ts` gained `LastLoggedValues` + `last_logged` field on `CommitmentExercise`
+- 3 commits (d48ae7f, c8cce64, 4ba5c37); spec archived to `done/`
+
+**Files touched**: src/api/routes/commitments.py, tests/test_commitments.py, web/lib/types.ts, web/components/dashboard/commitment-list.tsx, web/__tests__/components/commitment-list.test.tsx, docs/superpowers/specs/INDEX.md, docs/superpowers/specs/active/→done/2026-05-18-commitment-spec-a-log-form-day-swap.md
+**Decisions made**: none
+**Gotchas found**: `.in_()` against UUID columns on SQLite needs `_uuid.UUID(x)` cast on each id (already covered by existing "UUID + raw SQL on SQLite" footgun — no new entry needed)
+**Test count**: 1186 total (874 backend +2, 312 frontend +3)
+
+---
+
 ## Session — 2026-05-19 (Spec B: Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD)
 
 **What changed**:
