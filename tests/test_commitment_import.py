@@ -420,6 +420,28 @@ async def test_plan_import_rest_day_rejects_log(test_client, api_key_headers) ->
     assert "rest" in log_resp.json()["detail"].lower() or "no entry" in log_resp.json()["detail"].lower()
 
 
+def test_resolved_exercise_requires_id_or_display_name():
+    """ResolvedExercise must have either exercise_id or display_name."""
+    from pydantic import ValidationError
+    from src.api.schemas.commitment_import import ResolvedExercise
+    with pytest.raises(ValidationError):
+        ResolvedExercise(name="Squat", target=5)
+
+
+def test_resolved_exercise_with_display_name_is_valid():
+    from src.api.schemas.commitment_import import ResolvedExercise
+    r = ResolvedExercise(name="Squat", display_name="Squat", target=5)
+    assert r.display_name == "Squat"
+    assert r.exercise_id is None
+
+
+def test_resolved_exercise_with_exercise_id_is_valid():
+    from src.api.schemas.commitment_import import ResolvedExercise
+    r = ResolvedExercise(name="Squat", exercise_id="some-uuid", target=5)
+    assert r.exercise_id == "some-uuid"
+    assert r.display_name is None
+
+
 @pytest.mark.asyncio
 async def test_plan_import_idempotent_same_hash(test_client, api_key_headers) -> None:
     """Re-importing the same payload returns existing commitment_id, no new rows."""
