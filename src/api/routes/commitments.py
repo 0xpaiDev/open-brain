@@ -150,6 +150,14 @@ class ExerciseLogCreate(BaseModel):
     notes: str | None = Field(None, max_length=500)
 
 
+class LastLoggedValues(BaseModel):
+    reps: int | None
+    sets: int | None
+    weight_kg: float | None
+    duration_minutes: float | None
+    log_date: str
+
+
 class EntryResponse(BaseModel):
     id: str
     commitment_id: str
@@ -170,6 +178,7 @@ class ExerciseResponse(BaseModel):
     progression_metric: str
     position: int
     logged_today: bool = False
+    last_logged: LastLoggedValues | None = None
 
 
 class ExerciseLogResponse(BaseModel):
@@ -373,7 +382,11 @@ def _compute_goal_reached(
     return all(e.status == "hit" for e in in_range)
 
 
-def _exercise_to_response(ex: CommitmentExercise, logged_today: bool = False) -> ExerciseResponse:
+def _exercise_to_response(
+    ex: CommitmentExercise,
+    logged_today: bool = False,
+    last_logged: LastLoggedValues | None = None,
+) -> ExerciseResponse:
     return ExerciseResponse(
         id=str(ex.id),
         commitment_id=str(ex.commitment_id),
@@ -384,7 +397,61 @@ def _exercise_to_response(ex: CommitmentExercise, logged_today: bool = False) ->
         progression_metric=ex.progression_metric,
         position=ex.position,
         logged_today=logged_today,
+        last_logged=last_logged,
     )
+
+
+async def _fetch_last_logged_batch(
+    session: AsyncSession,
+    exercise_ids: list[str],
+) -> dict[str, LastLoggedValues]:
+    """Return the most recent active log per exercise_id (batch, no N+1)."""
+    if not exercise_ids:
+        return {}
+
+    from sqlalchemy import func as sqlfunc
+
+    uuid_ids = [_uuid.UUID(x) if isinstance(x, str) else x for x in exercise_ids]
+
+    sub = (
+        select(
+            CommitmentExerciseLog.exercise_id,
+            sqlfunc.max(CommitmentExerciseLog.log_date).label("max_date"),
+        )
+        .where(
+            and_(
+                CommitmentExerciseLog.exercise_id.in_(uuid_ids),
+                CommitmentExerciseLog.deleted_at.is_(None),
+            )
+        )
+        .group_by(CommitmentExerciseLog.exercise_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(CommitmentExerciseLog)
+        .join(
+            sub,
+            and_(
+                CommitmentExerciseLog.exercise_id == sub.c.exercise_id,
+                CommitmentExerciseLog.log_date == sub.c.max_date,
+            ),
+        )
+        .where(CommitmentExerciseLog.deleted_at.is_(None))
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+
+    out: dict[str, LastLoggedValues] = {}
+    for log in rows:
+        out[str(log.exercise_id)] = LastLoggedValues(
+            reps=log.reps,
+            sets=log.sets,
+            weight_kg=log.weight_kg,
+            duration_minutes=log.duration_minutes,
+            log_date=str(log.log_date),
+        )
+    return out
 
 
 def _log_to_response(log: CommitmentExerciseLog) -> ExerciseLogResponse:
@@ -408,11 +475,13 @@ def _commitment_to_response(
     today: date | None = None,
     exercises: list[CommitmentExercise] | None = None,
     logged_exercise_ids_today: set[str] | None = None,
+    last_logged_map: dict[str, LastLoggedValues] | None = None,
 ) -> CommitmentResponse:
     entry_list = entries or []
     t = today or _get_today()
     ex_list = exercises or []
     logged_ids = logged_exercise_ids_today or set()
+    ll_map = last_logged_map or {}
 
     pace = None
     if commitment.cadence == "aggregate":
@@ -440,7 +509,10 @@ def _commitment_to_response(
         current_streak=_compute_streak(entry_list, t) if commitment.cadence == "daily" else 0,
         goal_reached=_compute_goal_reached(commitment, entry_list, t),
         entries=[_entry_to_response(e) for e in entry_list],
-        exercises=[_exercise_to_response(ex, str(ex.id) in logged_ids) for ex in ex_list],
+        exercises=[
+            _exercise_to_response(ex, str(ex.id) in logged_ids, ll_map.get(str(ex.id)))
+            for ex in ex_list
+        ],
     )
 
 
@@ -646,7 +718,13 @@ async def list_commitments(
                 ).distinct()
             )
             logged_ids = {str(row[0]) for row in logs_result.all()}
-        responses.append(_commitment_to_response(c, entries, today, exercises, logged_ids))
+        last_logged_map: dict[str, LastLoggedValues] = {}
+        if exercises:
+            exercise_ids = [str(ex.id) for ex in exercises]
+            last_logged_map = await _fetch_last_logged_batch(session, exercise_ids)
+        responses.append(
+            _commitment_to_response(c, entries, today, exercises, logged_ids, last_logged_map)
+        )
 
     return CommitmentListResponse(commitments=responses, total=len(responses))
 
@@ -692,7 +770,14 @@ async def get_commitment(
         )
         logged_ids = {str(row[0]) for row in logs_result.all()}
 
-    return _commitment_to_response(commitment, entries, today, exercises, logged_ids)
+    last_logged_map: dict[str, LastLoggedValues] = {}
+    if exercises:
+        exercise_ids = [str(ex.id) for ex in exercises]
+        last_logged_map = await _fetch_last_logged_batch(session, exercise_ids)
+
+    return _commitment_to_response(
+        commitment, entries, today, exercises, logged_ids, last_logged_map
+    )
 
 
 # ── PATCH /v1/commitments/{id} ────────────────────────────────────────────────
@@ -743,8 +828,15 @@ async def update_commitment(
         )
         logged_ids = {str(row[0]) for row in logs_result.all()}
 
+    last_logged_map: dict[str, LastLoggedValues] = {}
+    if exercises:
+        exercise_ids = [str(ex.id) for ex in exercises]
+        last_logged_map = await _fetch_last_logged_batch(session, exercise_ids)
+
     logger.info("commitment_updated", commitment_id=str(commitment.id), status=commitment.status)
-    return _commitment_to_response(commitment, entries, today, exercises, logged_ids)
+    return _commitment_to_response(
+        commitment, entries, today, exercises, logged_ids, last_logged_map
+    )
 
 
 # ── POST /v1/commitments/{id}/log ─────────────────────────────────────────────

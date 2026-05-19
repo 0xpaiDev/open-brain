@@ -1047,3 +1047,63 @@ async def test_goal_reached_daily_with_miss(async_session) -> None:
 
     resp = _commitment_to_response(c, entries=entries, today=date.today())
     assert resp.goal_reached is False
+
+
+# ── last_logged on exercise responses ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_exercise_response_has_last_logged_null_when_no_logs(test_client, api_key_headers):
+    """last_logged is null on exercises with no logs."""
+    today = date.today()
+    payload = {
+        "name": "Morning Routine",
+        "kind": "routine",
+        "exercises": [
+            {"name": "Push-ups", "target": 20, "metric": "reps", "progression_metric": "reps"},
+        ],
+        "start_date": str(today),
+        "end_date": str(today + timedelta(days=6)),
+    }
+    resp = await test_client.post("/v1/commitments", json=payload, headers=api_key_headers)
+    assert resp.status_code == 201
+    commitment_id = resp.json()["id"]
+
+    detail = await test_client.get(f"/v1/commitments/{commitment_id}", headers=api_key_headers)
+    exercises = detail.json()["exercises"]
+    assert len(exercises) == 1
+    assert exercises[0]["last_logged"] is None
+
+
+@pytest.mark.asyncio
+async def test_exercise_response_has_last_logged_after_log(test_client, api_key_headers):
+    """last_logged is populated with most recent log values."""
+    today = date.today()
+    payload = {
+        "name": "Morning Routine",
+        "kind": "routine",
+        "exercises": [
+            {"name": "Squat", "target": 5, "metric": "reps", "progression_metric": "kg"},
+        ],
+        "start_date": str(today),
+        "end_date": str(today + timedelta(days=6)),
+    }
+    resp = await test_client.post("/v1/commitments", json=payload, headers=api_key_headers)
+    commitment_id = resp.json()["id"]
+    exercise_id = resp.json()["exercises"][0]["id"]
+
+    log_resp = await test_client.post(
+        f"/v1/commitments/{commitment_id}/exercises/{exercise_id}/log",
+        json={"reps": 5, "sets": 3, "weight_kg": 100.0},
+        headers=api_key_headers,
+    )
+    assert log_resp.status_code == 201
+
+    detail = await test_client.get(f"/v1/commitments/{commitment_id}", headers=api_key_headers)
+    exercises = detail.json()["exercises"]
+    last = exercises[0]["last_logged"]
+    assert last is not None
+    assert last["reps"] == 5
+    assert last["sets"] == 3
+    assert last["weight_kg"] == 100.0
+    assert last["log_date"] == str(today)
