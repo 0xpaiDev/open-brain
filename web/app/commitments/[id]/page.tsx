@@ -126,6 +126,14 @@ export default function CommitmentDetailPage({
             {commitment.start_date} → {commitment.end_date} ·{" "}
             <span className="capitalize">{commitment.kind}</span>
           </p>
+          {commitment.kind === "plan" && (
+            <Link
+              href={`/commitments/${id}/edit`}
+              className="text-sm text-primary font-body hover:underline"
+            >
+              Edit plan →
+            </Link>
+          )}
         </div>
 
         {isMultiExercise && progression.length > 0 && (
