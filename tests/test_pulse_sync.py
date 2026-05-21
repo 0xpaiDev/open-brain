@@ -30,7 +30,6 @@ def test_format_pulse_content_all_fields():
         sleep_quality=4,
         energy_level=3,
         wake_time="07:30",
-        notes="felt groggy after late dinner",
         ai_question="What's blocking your top priority?",
         ai_question_response="Need to focus on the API redesign",
         status="completed",
@@ -42,7 +41,6 @@ def test_format_pulse_content_all_fields():
     assert "Sleep quality 4/5" in content
     assert "energy level 3/5" in content
     assert "woke at 07:30" in content
-    assert "Notes: felt groggy after late dinner" in content
     assert "AI question: What's blocking your top priority?" in content
     assert "Response: Need to focus on the API redesign" in content
 
@@ -61,7 +59,7 @@ def test_format_pulse_content_minimal():
     assert "Sleep quality 3/5" in content
     assert "energy level" not in content
     assert "woke at" not in content
-    assert "Notes:" not in content
+    assert "Notes" not in content
     assert "AI question:" not in content
 
 
@@ -170,7 +168,6 @@ async def test_sync_creates_raw_memory_and_memory_item(async_session):
         sleep_quality=4,
         energy_level=3,
         wake_time="07:30",
-        notes="feeling good",
         status="completed",
     )
     async_session.add(pulse)
@@ -215,7 +212,6 @@ async def test_sync_supersedes_on_re_sync(async_session):
 
     # Update pulse and re-sync
     pulse.sleep_quality = 4
-    pulse.notes = "actually slept better than I thought"
     await async_session.commit()
 
     with patch("src.pipeline.pulse_sync.embed_text", new_callable=AsyncMock, return_value=[0.2] * 1024):
@@ -230,7 +226,6 @@ async def test_sync_supersedes_on_re_sync(async_session):
     assert items[0].is_superseded is True
     assert items[1].is_superseded is False
     assert "Sleep quality 4/5" in items[1].content
-    assert "actually slept better" in items[1].content
 
 
 @pytest.mark.asyncio

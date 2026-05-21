@@ -79,7 +79,6 @@ class PulseUpdate(BaseModel):
     wake_time: str | None = None
     parsed_data: dict | None = None
     ai_question_response: str | None = None
-    notes: str | None = None
     status: str | None = None
     clean_meal: bool | None = None
     alcohol: bool | None = None
@@ -109,7 +108,6 @@ class PulseResponse(BaseModel):
     parsed_data: dict | None
     ai_question: str | None
     ai_question_response: str | None
-    notes: str | None
     status: str
     clean_meal: bool | None
     alcohol: bool | None
@@ -137,7 +135,6 @@ def _pulse_to_response(pulse: DailyPulse) -> PulseResponse:
         parsed_data=pulse.parsed_data,
         ai_question=pulse.ai_question,
         ai_question_response=pulse.ai_question_response,
-        notes=pulse.notes,
         status=pulse.status,
         clean_meal=pulse.clean_meal,
         alcohol=pulse.alcohol,
@@ -449,8 +446,6 @@ async def update_today_pulse(
         pulse.parsed_data = body.parsed_data
     if body.ai_question_response is not None:
         pulse.ai_question_response = body.ai_question_response
-    if body.notes is not None:
-        pulse.notes = body.notes
     if body.status is not None:
         pulse.status = body.status
     if body.clean_meal is not None:

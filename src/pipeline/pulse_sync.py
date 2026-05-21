@@ -45,8 +45,6 @@ def _format_pulse_content(pulse: DailyPulse) -> str:
         parts.append(f"energy level {pulse.energy_level}/5,")
     if pulse.wake_time:
         parts.append(f"woke at {pulse.wake_time}.")
-    if pulse.notes:
-        parts.append(f"Notes: {pulse.notes}")
     if pulse.ai_question and pulse.ai_question_response:
         if is_question_shape:
             parts.append(

@@ -463,7 +463,6 @@ class DailyPulse(Base):
     status: "sent" | "replied" | "parsed" | "parse_failed" | "skipped" | "completed"
     parsed_data: full Haiku-parsed JSON blob (sleep_quality, energy_level, etc.)
     ai_question_response: user's answer to the AI-generated question (modal field 4)
-    notes: free-text mood / notes from the modal
     """
 
     __tablename__ = "daily_pulse"
@@ -479,7 +478,6 @@ class DailyPulse(Base):
     parsed_data: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
     ai_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_question_response: Mapped[str | None] = mapped_column(Text, nullable=True)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="sent")
     clean_meal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     alcohol: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

@@ -434,7 +434,6 @@ def test_pulse_sync_format_includes_nutrition() -> None:
     pulse.sleep_quality = 4
     pulse.energy_level = 3
     pulse.wake_time = "07:00"
-    pulse.notes = None
     pulse.ai_question = None
     pulse.ai_question_response = None
     pulse.clean_meal = True
@@ -457,7 +456,6 @@ def test_pulse_sync_format_skips_null_nutrition() -> None:
     pulse.sleep_quality = 4
     pulse.energy_level = None
     pulse.wake_time = None
-    pulse.notes = None
     pulse.ai_question = None
     pulse.ai_question_response = None
     pulse.clean_meal = None
