@@ -16,6 +16,7 @@ from src.integrations.weather import DayForecast, WeatherSnapshot
 from src.pulse_signals.context import MorningContext
 from src.pulse_signals.detectors import deadline as deadline_detector
 from src.pulse_signals.detectors import focus as focus_detector
+from src.pulse_signals.detectors import named_day as named_day_detector
 from src.pulse_signals.detectors import open as open_detector
 from src.pulse_signals.detectors import opportunity as opportunity_detector
 
@@ -299,3 +300,63 @@ class TestDeadlineDetector:
         assert signal is not None
         assert len(signal.payload["titles"]) == 3
         assert signal.payload["total_count"] == 5
+
+
+# ── named_day detector ────────────────────────────────────────────────────────
+
+
+def _all_day_event(title: str) -> CalendarEvent:
+    return CalendarEvent(
+        title=title,
+        start="2026-05-21",
+        end="2026-05-22",
+        location=None,
+        calendar="primary",
+        all_day=True,
+    )
+
+
+class TestNamedDayDetector:
+    def test_fires_on_all_day_event(self):
+        calendar = CalendarState(
+            fetched_at="2026-05-21T04:00:00Z",
+            date="2026-05-21",
+            events=[_all_day_event("Paulius's birthday")],
+            tomorrow_preview=[],
+        )
+        ctx = _ctx(calendar=calendar)
+        signal = named_day_detector.detect(ctx)
+        assert signal is not None
+        assert signal.signal_type == "named_day"
+        assert signal.urgency == 6.5
+        assert "Paulius's birthday" in signal.payload["titles"]
+
+    def test_does_not_fire_on_timed_events_only(self):
+        ctx = _ctx(
+            calendar=CalendarState(
+                fetched_at="2026-05-21T04:00:00Z",
+                date="2026-05-21",
+                events=[_event("1:1 with Tom")],
+                tomorrow_preview=[],
+            )
+        )
+        signal = named_day_detector.detect(ctx)
+        assert signal is None
+
+    def test_does_not_fire_with_no_events(self):
+        ctx = _ctx()
+        signal = named_day_detector.detect(ctx)
+        assert signal is None
+
+    def test_caps_at_three_titles(self):
+        events = [_all_day_event(f"Event {i}") for i in range(5)]
+        calendar = CalendarState(
+            fetched_at="2026-05-21T04:00:00Z",
+            date="2026-05-21",
+            events=events,
+            tomorrow_preview=[],
+        )
+        ctx = _ctx(calendar=calendar)
+        signal = named_day_detector.detect(ctx)
+        assert signal is not None
+        assert len(signal.payload["titles"]) == 3
