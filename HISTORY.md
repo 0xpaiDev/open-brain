@@ -1,6 +1,31 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-18** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1 + spec lifecycle management, 859 backend + ~303 Vitest
+Covering **2026-03-13 to 2026-05-21** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1 + spec lifecycle management + Morning Pulse Briefing Redesign, 905 backend + 315 Vitest
+
+---
+
+## Session — 2026-05-21 (Morning Pulse Briefing Redesign)
+
+**What changed**:
+- 3 new detectors: `deadline` (todos due today, urgency 8.0), `named_day` (all-day calendar events, 6.5), `commitment_pace` (aggregate behind <0.85 / ahead >1.2, 7.5) — `src/pulse_signals/detectors/`
+- `open` detector reworked: always fires (never None), template-only (no LLM), payload `{todo_count, event_count}` — `src/pulse_signals/detectors/open.py`
+- `run_detectors` made async, gains `session` param, dispatches all 6 detectors — `src/pulse_signals/ranker.py`
+- `select_signals` (plural) added: returns all above-threshold signals sorted by order — `src/pulse_signals/ranker.py`
+- `build_briefing()` assembles newline-separated `• ` bullets; template for deadline/named_day/open, LLM only for focus/opportunity/commitment_pace — `src/pulse_signals/render.py`
+- `commitment_pace_system_prompt` added; `open_system_prompt` removed — `src/pulse_signals/prompts.py`
+- Route uses `select_signals` + `build_briefing`, stores `signal_type="briefing"` — `src/api/routes/pulse.py`
+- Migration 0022: drops `notes` column from `daily_pulse`; ORM + schemas + pipeline cleaned — `alembic/versions/0022_drop_pulse_notes.py`, `src/core/models.py`, `src/pipeline/pulse_sync.py`
+- Frontend: `<ul><li>` bullet rendering in form + summary; notes textarea removed; `notes` field removed from types — `web/components/dashboard/morning-pulse.tsx`, `web/lib/types.ts`
+- Cron shifted 04:00 UTC (was 05:00) — `crontab`
+- Config default updated to `"deadline,commitment_pace,named_day,focus,opportunity,open"` — `src/core/config.py`
+
+**Files touched**: `src/pulse_signals/detectors/deadline.py` (new), `src/pulse_signals/detectors/named_day.py` (new), `src/pulse_signals/detectors/commitment_pace.py` (new), `src/pulse_signals/detectors/open.py`, `src/pulse_signals/ranker.py`, `src/pulse_signals/render.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/__init__.py`, `src/api/routes/pulse.py`, `src/core/config.py`, `src/core/models.py`, `src/pipeline/pulse_sync.py`, `alembic/versions/0022_drop_pulse_notes.py` (new), `web/components/dashboard/morning-pulse.tsx`, `web/hooks/use-pulse.ts`, `web/lib/types.ts`, `web/__tests__/components/morning-pulse-briefing.test.tsx` (new), `tests/test_pulse_signals_detectors.py`, `tests/test_pulse_signals_ranker.py`, `tests/test_pulse_briefing.py` (new), `tests/test_pulse_signals_prompts.py`, `crontab`, `docs/superpowers/specs/done/2026-05-21-morning-pulse-briefing-design.md`
+
+**Decisions made**: Multi-signal "all above threshold" model replaces single-winner; `signal_type="briefing"` stored for all new-format pulses (see DECISIONS.md)
+
+**Gotchas found**: Plan test `"Wednesday"` for 2026-05-21 was wrong — actual weekday is Thursday; always verify weekday assertions with `date.strftime("%A")`
+
+**Test count**: 905 backend (+31), 315 Vitest (+3)
 
 ---
 

@@ -7,6 +7,10 @@ do not touch this file.
 
 Read at session start as part of the tier-0 frozen snapshot.
 
+## 2026-05-21 — Morning Pulse: multi-signal briefing over single-winner
+
+Replaced the "pick the highest-urgency signal, render one LLM question" model with "run all detectors, collect all above threshold, assemble a bullet briefing." `select_signals` (plural) returns the full list; `build_briefing` iterates it — template for deadline/named_day/open, LLM only for focus/opportunity/commitment_pace. All new-format pulses store `signal_type="briefing"`. The `open` detector now always fires at urgency 5.0 to guarantee at least one bullet on quiet days. Migration 0022 drops the `notes` column; pulse cron shifted to 04:00 UTC.
+
 ## 2026-05-17 — Architecture Decisions Baseline
 
 Migrated from CLAUDE.md static bullets; code is source of truth for details.
