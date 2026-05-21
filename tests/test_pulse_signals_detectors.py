@@ -209,7 +209,7 @@ class TestOpenDetector:
         assert signal is not None
         assert signal.signal_type == "open"
         assert signal.urgency == pytest.approx(5.0)
-        assert len(signal.payload["top_todos"]) == 2
+        assert signal.payload["todo_count"] == 2
 
     def test_fires_when_calendar_has_event_even_without_todos(self):
         ctx = _ctx(
@@ -224,17 +224,20 @@ class TestOpenDetector:
         assert signal is not None
         assert signal.payload["event_count"] == 1
 
-    def test_no_fire_on_empty_context(self):
-        assert open_detector.detect(_ctx()) is None
+    def test_always_fires_on_empty_context(self):
+        signal = open_detector.detect(_ctx())
+        assert signal is not None
+        assert signal.payload["todo_count"] == 0
+        assert signal.payload["event_count"] == 0
 
-    def test_payload_caps_top_todos_at_three(self):
+    def test_payload_reflects_todo_count(self):
         todos = [{"description": f"todo {i}", "due_date": None} for i in range(10)]
         ctx = _ctx(open_todos=todos)
         signal = open_detector.detect(ctx)
         assert signal is not None
-        assert len(signal.payload["top_todos"]) == 3
+        assert signal.payload["todo_count"] == 10
 
-    def test_passes_yesterday_question(self):
+    def test_payload_has_no_yesterday_question(self):
         from src.core.models import DailyPulse
 
         yesterday = DailyPulse(
@@ -248,7 +251,41 @@ class TestOpenDetector:
         )
         signal = open_detector.detect(ctx)
         assert signal is not None
-        assert signal.payload["yesterday_question"] == "What drained you yesterday?"
+        assert "yesterday_question" not in signal.payload
+
+
+# ── open detector (reworked — always fires) ───────────────────────────────────
+
+
+class TestOpenDetectorReworked:
+    def test_fires_always_with_todos_and_events(self):
+        calendar = CalendarState(
+            fetched_at="2026-05-21T04:00:00Z",
+            date="2026-05-21",
+            events=[_event("Team standup")],
+            tomorrow_preview=[],
+        )
+        ctx = _ctx(
+            calendar=calendar,
+            open_todos=[{"description": "Write report", "due_date": None, "priority": "normal"}],
+        )
+        signal = open_detector.detect(ctx)
+        assert signal is not None
+        assert signal.payload["todo_count"] == 1
+        assert signal.payload["event_count"] == 1
+
+    def test_fires_with_no_todos_no_events(self):
+        ctx = _ctx()
+        signal = open_detector.detect(ctx)
+        assert signal is not None
+        assert signal.payload["todo_count"] == 0
+        assert signal.payload["event_count"] == 0
+
+    def test_payload_has_no_yesterday_question(self):
+        ctx = _ctx()
+        signal = open_detector.detect(ctx)
+        assert signal is not None
+        assert "yesterday_question" not in signal.payload
 
 
 # ── deadline detector ─────────────────────────────────────────────────────────
