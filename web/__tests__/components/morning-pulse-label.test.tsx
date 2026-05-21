@@ -17,10 +17,10 @@ const base: PulseResponse = {
   wake_time: null,
   sleep_quality: null,
   energy_level: null,
-  notes: null,
   parsed_data: null,
   clean_meal: null,
   alcohol: null,
+  signal_type: null,
   created_at: "2026-04-23T05:00:00Z",
   updated_at: "2026-04-23T05:00:00Z",
 };
@@ -32,23 +32,35 @@ function jsonResponse(body: unknown, status = 200): Response {
 beforeEach(() => setApiKey("test-key"));
 afterEach(() => vi.restoreAllMocks());
 
-describe("MorningPulse — answer label", () => {
-  test("question ending with ? renders 'Your answer' label", async () => {
-    const pulse = { ...base, ai_question: "What's blocking you?" };
+describe("MorningPulse — briefing bullet rendering", () => {
+  test("multi-line ai_question renders each bullet as a list item", async () => {
+    const pulse = {
+      ...base,
+      ai_question: "• Today: Paulius's birthday\n• Ride weather: wet rest of week",
+    };
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(pulse)));
     render(<MorningPulse />);
     await waitFor(() => {
-      expect(screen.getByText("Your answer")).toBeTruthy();
+      expect(screen.getByText("Today: Paulius's birthday")).toBeTruthy();
     });
+    expect(screen.getByText("Ride weather: wet rest of week")).toBeTruthy();
   });
 
-  test("remark (no question mark) renders 'Thoughts' label", async () => {
+  test("single-line ai_question without bullet prefix renders as-is", async () => {
     const pulse = { ...base, ai_question: "Ride weather today; wet rest of week." };
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(pulse)));
     render(<MorningPulse />);
     await waitFor(() => {
-      expect(screen.getByText("Thoughts")).toBeTruthy();
+      expect(screen.getByText("Ride weather today; wet rest of week.")).toBeTruthy();
     });
-    expect(screen.queryByText("Your answer")).toBeNull();
+  });
+
+  test("null ai_question renders no bullet list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(base)));
+    render(<MorningPulse />);
+    await waitFor(() => {
+      expect(screen.getByText("Log my morning")).toBeTruthy();
+    });
+    expect(screen.queryByRole("list")).toBeNull();
   });
 });

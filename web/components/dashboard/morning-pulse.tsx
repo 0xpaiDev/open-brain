@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { usePulse } from "@/hooks/use-pulse";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 
 const SLEEP_LABELS = ["terrible", "poor", "okay", "good", "excellent"];
@@ -145,8 +144,6 @@ function PulseForm({
     wake_time?: string;
     sleep_quality?: number;
     energy_level?: number;
-    ai_question_response?: string;
-    notes?: string;
     clean_meal?: boolean;
     alcohol?: boolean;
   }) => Promise<void>;
@@ -154,8 +151,6 @@ function PulseForm({
   const [wakeTime, setWakeTime] = useState("");
   const [sleepQuality, setSleepQuality] = useState(0);
   const [energyLevel, setEnergyLevel] = useState(0);
-  const [answer, setAnswer] = useState("");
-  const [notes, setNotes] = useState("");
   const [cleanMeal, setCleanMeal] = useState<boolean | null>(null);
   const [sober, setSober] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -168,8 +163,6 @@ function PulseForm({
         wake_time: wakeTime || undefined,
         sleep_quality: sleepQuality || undefined,
         energy_level: energyLevel || undefined,
-        ai_question_response: answer || undefined,
-        notes: notes || undefined,
         clean_meal: cleanMeal ?? undefined,
         alcohol: sober === null ? undefined : !sober,
       });
@@ -186,80 +179,53 @@ function PulseForm({
       </h2>
 
       {aiQuestion && (
-        <blockquote className="border-l-4 border-primary pl-4 py-2 italic text-on-surface-variant text-sm">
-          {aiQuestion}
-        </blockquote>
+        <ul className="space-y-1 mb-2">
+          {aiQuestion.split("\n").map((line, i) => (
+            <li key={i} className="text-sm text-on-surface-variant">
+              {line.startsWith("• ") ? line.slice(2) : line}
+            </li>
+          ))}
+        </ul>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Left column: question + notes */}
-        <div className="space-y-4">
-          {aiQuestion && (
-            <div>
-              <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-                {aiQuestion.trimEnd().endsWith("?") ? "Your answer" : "Thoughts"}
-              </label>
-              <Textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="What's on your mind..."
-                className="min-h-[100px]"
-              />
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-              Notes
-            </label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Anything else on your mind?"
-              className="min-h-[80px]"
-            />
-          </div>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-label text-on-surface-variant mb-1.5">
+            Wake-up time
+          </label>
+          <Input
+            type="time"
+            value={wakeTime}
+            onChange={(e) => setWakeTime(e.target.value)}
+            className="w-36"
+          />
         </div>
-
-        {/* Right column: metrics */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-              Wake-up time
-            </label>
-            <Input
-              type="time"
-              value={wakeTime}
-              onChange={(e) => setWakeTime(e.target.value)}
-              className="w-36"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-              Sleep quality
-            </label>
-            <RatingCircles
-              value={sleepQuality}
-              onChange={setSleepQuality}
-              icon="star"
-              filledIcon="star"
-              labels={SLEEP_LABELS}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-label text-on-surface-variant mb-1.5">
-              Energy level
-            </label>
-            <RatingCircles
-              value={energyLevel}
-              onChange={setEnergyLevel}
-              icon="bolt"
-              filledIcon="bolt"
-              labels={ENERGY_LABELS}
-            />
-          </div>
-          <SegmentedToggle label="Clean eating" value={cleanMeal} onChange={setCleanMeal} />
-          <SegmentedToggle label="Sober" value={sober} onChange={setSober} />
+        <div>
+          <label className="block text-sm font-label text-on-surface-variant mb-1.5">
+            Sleep quality
+          </label>
+          <RatingCircles
+            value={sleepQuality}
+            onChange={setSleepQuality}
+            icon="star"
+            filledIcon="star"
+            labels={SLEEP_LABELS}
+          />
         </div>
+        <div>
+          <label className="block text-sm font-label text-on-surface-variant mb-1.5">
+            Energy level
+          </label>
+          <RatingCircles
+            value={energyLevel}
+            onChange={setEnergyLevel}
+            icon="bolt"
+            filledIcon="bolt"
+            labels={ENERGY_LABELS}
+          />
+        </div>
+        <SegmentedToggle label="Clean eating" value={cleanMeal} onChange={setCleanMeal} />
+        <SegmentedToggle label="Sober" value={sober} onChange={setSober} />
       </div>
 
       <Button
@@ -356,15 +322,14 @@ function PulseSummary({ pulse }: { pulse: NonNullable<ReturnType<typeof usePulse
         )}
       </div>
 
-      {pulse.ai_question && pulse.ai_question_response && (
-        <div className="mt-3 text-sm">
-          <p className="text-on-surface-variant italic line-clamp-1">Q: {pulse.ai_question}</p>
-          <p className="text-on-surface line-clamp-2 mt-0.5">A: {pulse.ai_question_response}</p>
-        </div>
-      )}
-
-      {pulse.notes && (
-        <p className="mt-2 text-sm text-on-surface-variant line-clamp-2">{pulse.notes}</p>
+      {pulse.ai_question && (
+        <ul className="mt-3 space-y-0.5">
+          {pulse.ai_question.split("\n").map((line, i) => (
+            <li key={i} className="text-xs text-on-surface-variant">
+              {line.startsWith("• ") ? line.slice(2) : line}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

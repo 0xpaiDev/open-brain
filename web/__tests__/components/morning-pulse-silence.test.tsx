@@ -17,7 +17,6 @@ const SILENT_PULSE: PulseResponse & { signal_type: string | null } = {
   wake_time: null,
   sleep_quality: null,
   energy_level: null,
-  notes: null,
   parsed_data: { signal_trace: [] },
   clean_meal: null,
   alcohol: null,

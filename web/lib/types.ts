@@ -9,7 +9,6 @@ export interface PulseResponse {
   wake_time: string | null;
   sleep_quality: number | null;
   energy_level: number | null;
-  notes: string | null;
   parsed_data: Record<string, unknown> | null;
   clean_meal: boolean | null;
   alcohol: boolean | null;
@@ -145,7 +144,6 @@ export interface PulseUpdate {
   sleep_quality?: number;
   energy_level?: number;
   ai_question_response?: string;
-  notes?: string;
   status?: string;
   clean_meal?: boolean;
   alcohol?: boolean;

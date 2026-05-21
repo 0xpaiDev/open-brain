@@ -17,7 +17,6 @@ const SENT_PULSE: PulseResponse = {
   wake_time: null,
   sleep_quality: null,
   energy_level: null,
-  notes: null,
   parsed_data: null,
   clean_meal: null,
   alcohol: null,
