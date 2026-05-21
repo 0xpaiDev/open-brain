@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
+from datetime import date
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.pulse_signals.ranker import Signal
 from src.pulse_signals.render import build_briefing
-from datetime import date
 
 
 @pytest.fixture
