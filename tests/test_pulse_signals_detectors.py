@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from src.core.models import TodoItem
+from src.core.models import Commitment, TodoItem
 from src.integrations.calendar import CalendarEvent, CalendarState
 from src.integrations.weather import DayForecast, WeatherSnapshot
 from src.pulse_signals.context import MorningContext
@@ -360,3 +360,97 @@ class TestNamedDayDetector:
         signal = named_day_detector.detect(ctx)
         assert signal is not None
         assert len(signal.payload["titles"]) == 3
+
+
+# ── commitment_pace detector ───────────────────────────────────────────────────
+
+
+from src.pulse_signals.detectors import commitment_pace as pace_detector  # noqa: E402
+
+
+class TestCommitmentPaceDetector:
+    @pytest.mark.asyncio
+    async def test_fires_when_behind_pace(self, async_session):
+        today = date(2026, 5, 21)
+        c = Commitment(
+            name="Cycling May",
+            cadence="aggregate",
+            status="active",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            targets={"km": 300.0},
+            progress={"km": 30.0},  # ~10%, should be ~67% through month
+            daily_target=0,
+        )
+        async_session.add(c)
+        await async_session.commit()
+
+        ctx = _ctx(today=today)
+        signal = await pace_detector.detect(ctx, session=async_session)
+        assert signal is not None
+        assert signal.signal_type == "commitment_pace"
+        assert signal.urgency == 7.5
+        assert signal.payload["pace_overall"] < 0.85
+        assert "Cycling May" in signal.payload["name"]
+
+    @pytest.mark.asyncio
+    async def test_fires_when_well_ahead(self, async_session):
+        today = date(2026, 5, 21)
+        c = Commitment(
+            name="Cycling May",
+            cadence="aggregate",
+            status="active",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            targets={"km": 300.0},
+            progress={"km": 280.0},  # well ahead at day 21
+            daily_target=0,
+        )
+        async_session.add(c)
+        await async_session.commit()
+
+        ctx = _ctx(today=today)
+        signal = await pace_detector.detect(ctx, session=async_session)
+        assert signal is not None
+        assert signal.payload["pace_overall"] > 1.2
+
+    @pytest.mark.asyncio
+    async def test_does_not_fire_on_track(self, async_session):
+        today = date(2026, 5, 21)
+        # Day 21 of 31 = 67.7% elapsed; 200km of 300km = 66.7% → pace ~0.985 (on track)
+        c = Commitment(
+            name="Cycling May",
+            cadence="aggregate",
+            status="active",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            targets={"km": 300.0},
+            progress={"km": 200.0},
+            daily_target=0,
+        )
+        async_session.add(c)
+        await async_session.commit()
+
+        ctx = _ctx(today=today)
+        signal = await pace_detector.detect(ctx, session=async_session)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_does_not_fire_for_daily_cadence(self, async_session):
+        today = date(2026, 5, 21)
+        c = Commitment(
+            name="Push-ups",
+            cadence="daily",
+            status="active",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            targets=None,
+            progress=None,
+            daily_target=50,
+        )
+        async_session.add(c)
+        await async_session.commit()
+
+        ctx = _ctx(today=today)
+        signal = await pace_detector.detect(ctx, session=async_session)
+        assert signal is None
