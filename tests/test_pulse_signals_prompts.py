@@ -64,7 +64,8 @@ async def test_render_opportunity_uses_opportunity_prompt():
 
 
 @pytest.mark.asyncio
-async def test_render_open_uses_open_prompt():
+async def test_render_open_returns_template_without_llm_call():
+    """open is template-only — render_signal must return the fallback directly, no LLM."""
     signal = Signal(
         signal_type="open",
         urgency=5.0,
@@ -77,11 +78,8 @@ async def test_render_open_uses_open_prompt():
     llm = _mock_llm("What would make today feel like a win?")
     result = await render_signal(signal, llm=llm, today=date(2026, 4, 23))
 
-    assert result == "What would make today feel like a win?"
-    call = llm.complete.call_args
-    user_content = call.kwargs["user_content"]
-    assert "<user_input>" in user_content
-    assert "Ship API redesign" in user_content
+    assert result == "What's one thing you want to accomplish today?"
+    llm.complete.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -111,3 +109,19 @@ async def test_render_none_llm_falls_back():
     signal = Signal(signal_type="open", urgency=5.0, payload={"top_todos": [], "event_count": 0})
     result = await render_signal(signal, llm=None, today=date(2026, 4, 23))
     assert result == "What's one thing you want to accomplish today?"
+
+
+from src.pulse_signals.prompts import commitment_pace_system_prompt
+
+
+def test_commitment_pace_system_prompt_contains_guardrail():
+    from datetime import date
+    prompt = commitment_pace_system_prompt(date(2026, 5, 21))
+    assert "2026-05-21" in prompt
+    assert "Thursday" in prompt
+    assert "user_input" in prompt
+
+
+def test_open_system_prompt_no_longer_exported():
+    import src.pulse_signals.prompts as p
+    assert not hasattr(p, "open_system_prompt")

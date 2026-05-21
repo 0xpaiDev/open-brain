@@ -15,7 +15,6 @@ import structlog
 
 from src.pulse_signals.prompts import (
     focus_system_prompt,
-    open_system_prompt,
     opportunity_system_prompt,
 )
 from src.pulse_signals.ranker import Signal
@@ -28,7 +27,7 @@ _FALLBACK = "What's one thing you want to accomplish today?"
 _PROMPT_BUILDERS: dict[str, Any] = {
     "focus": focus_system_prompt,
     "opportunity": opportunity_system_prompt,
-    "open": open_system_prompt,
+    "open": None,  # open is template-only; no LLM call
 }
 
 
@@ -46,6 +45,10 @@ async def render_signal(signal: Signal, *, llm: Any | None, today: date) -> str:
         prompt_builder = _PROMPT_BUILDERS[signal.signal_type]
     except KeyError:
         raise
+
+    # Template-only signals (e.g. "open") skip the LLM entirely.
+    if prompt_builder is None:
+        return _FALLBACK
 
     if llm is None:
         return _FALLBACK
@@ -68,7 +71,4 @@ async def render_signal(signal: Signal, *, llm: Any | None, today: date) -> str:
     cleaned = (raw or "").strip().strip('"').strip("'")
     if not cleaned:
         return _FALLBACK
-    # For "open" we want a question; other signal types may end in "." as remarks.
-    if signal.signal_type == "open" and not cleaned.endswith("?"):
-        cleaned = cleaned.rstrip(".!") + "?"
     return cleaned

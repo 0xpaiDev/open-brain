@@ -39,14 +39,13 @@ _OPPORTUNITY_BODY = (
     "- Nudge the reader to take advantage of the dry window."
 )
 
-_OPEN_BODY = (
-    "You are generating one morning check-in question — an open signal (no"
-    " specific trigger).\n\n"
+_COMMITMENT_PACE_BODY = (
+    "You are writing a single morning nudge about a fitness commitment's progress.\n\n"
     "Rules:\n"
-    "- 20 words max.\n"
-    "- If yesterday's question was operational (about tasks), prefer a"
-    " reflective one today; if reflective, prefer operational.\n"
-    "- End with a question mark."
+    "- 20 words max, warm but direct.\n"
+    "- If behind (is_behind=true): state the gap plainly, no guilt.\n"
+    "- If well ahead (is_behind=false): suggest today is a good day to rest.\n"
+    "- No questions. No preamble."
 )
 
 
@@ -62,7 +61,7 @@ def opportunity_system_prompt(today: date) -> str:
     )
 
 
-def open_system_prompt(today: date) -> str:
-    return _OPEN_BODY + "\n\n" + _SHARED_GUARDRAIL.format(
+def commitment_pace_system_prompt(today: date) -> str:
+    return _COMMITMENT_PACE_BODY + "\n\n" + _SHARED_GUARDRAIL.format(
         today=today.isoformat(), weekday=today.strftime("%A")
     )
