@@ -211,10 +211,10 @@ async def start_pulse(
         import httpx
 
         from src.pulse_signals import (
+            build_briefing,
             build_morning_context,
-            render_signal,
             run_detectors,
-            select_signal,
+            select_signals,
         )
         from src.pulse_signals.ranker import trace as ranker_trace
 
@@ -224,10 +224,10 @@ async def start_pulse(
         signals = await run_detectors(ctx, settings, session=session)
         order = [p.strip() for p in detector_cfg.split(",") if p.strip()]
         threshold = float(getattr(settings, "pulse_silence_threshold", 5.0))
-        chosen = select_signal(signals, threshold=threshold, order=order)
+        active_signals = select_signals(signals, threshold=threshold, order=order)
         signal_trace = ranker_trace(signals, order)
 
-        if chosen is None:
+        if not active_signals:
             silent_payload: dict = {"signal_trace": signal_trace}
             if getattr(settings, "pulse_signal_debug_ui", False):
                 silent_payload["debug_ui"] = True
@@ -251,12 +251,12 @@ async def start_pulse(
             logger.info("start_pulse_silent", pulse_id=str(pulse.id))
             return _pulse_to_response(pulse)
 
-        ai_question = await render_signal(chosen, llm=llm, today=ctx.today)
+        ai_question = await build_briefing(active_signals, llm=llm, today=ctx.today)
         pulse = DailyPulse(
             pulse_date=today_start,
             status="sent",
             ai_question=ai_question,
-            signal_type=chosen.signal_type,
+            signal_type="briefing",
             parsed_data={"signal_trace": signal_trace},
         )
         session.add(pulse)
@@ -272,8 +272,8 @@ async def start_pulse(
         logger.info(
             "start_pulse_signal",
             pulse_id=str(pulse.id),
-            signal_type=chosen.signal_type,
-            urgency=chosen.urgency,
+            signal_type="briefing",
+            signal_count=len(active_signals),
             ai_question=ai_question[:60],
         )
         return _pulse_to_response(pulse)

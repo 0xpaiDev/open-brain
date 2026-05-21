@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     # ── Signal-driven Morning Pulse (Phase 1) ─────────────────────────────────
     # pulse_signal_detectors="" disables the pipeline — legacy _generate_ai_question fires.
     # Order here is also the tie-break order in the ranker.
-    pulse_signal_detectors: str = "focus,opportunity,open"
+    pulse_signal_detectors: str = "deadline,commitment_pace,named_day,focus,opportunity,open"
     pulse_silence_threshold: float = 5.0
     pulse_weather_enabled: bool = True
     pulse_weather_latitude: float = 54.8985   # Kaunas default
