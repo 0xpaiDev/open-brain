@@ -28,10 +28,15 @@ def _parse_order(raw: str) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
-def run_detectors(ctx: MorningContext, settings: Any) -> list[Signal]:
+async def run_detectors(
+    ctx: MorningContext, settings: Any, *, session: Any = None
+) -> list[Signal]:
     """Invoke each configured detector; return all non-None Signals in detector order."""
     # Local imports to avoid a cycle at module load.
+    from src.pulse_signals.detectors import commitment_pace as commitment_pace_detector
+    from src.pulse_signals.detectors import deadline as deadline_detector
     from src.pulse_signals.detectors import focus as focus_detector
+    from src.pulse_signals.detectors import named_day as named_day_detector
     from src.pulse_signals.detectors import open as open_detector
     from src.pulse_signals.detectors import opportunity as opportunity_detector
 
@@ -43,7 +48,19 @@ def run_detectors(ctx: MorningContext, settings: Any) -> list[Signal]:
 
     for name in order:
         try:
-            if name == focus_detector.NAME:
+            if name == deadline_detector.NAME:
+                if session is None:
+                    logger.warning("pulse_deadline_detector_skipped_no_session")
+                    continue
+                s = await deadline_detector.detect(ctx, session=session)
+            elif name == commitment_pace_detector.NAME:
+                if session is None:
+                    logger.warning("pulse_commitment_pace_detector_skipped_no_session")
+                    continue
+                s = await commitment_pace_detector.detect(ctx, session=session)
+            elif name == named_day_detector.NAME:
+                s = named_day_detector.detect(ctx)
+            elif name == focus_detector.NAME:
                 s = focus_detector.detect(ctx, keywords=keywords)
             elif name == opportunity_detector.NAME:
                 s = opportunity_detector.detect(ctx)

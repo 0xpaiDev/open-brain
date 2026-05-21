@@ -2,7 +2,7 @@
 
 Public entry points used by the pulse job/route:
   - build_morning_context(session, settings, http) -> MorningContext
-  - run_detectors(ctx, settings)                   -> list[Signal]
+  - run_detectors(ctx, settings, *, session=None)   -> list[Signal]  (async)
   - select_signal(signals, threshold, order)       -> Signal | None
   - render_signal(signal, llm, today)              -> str
 """

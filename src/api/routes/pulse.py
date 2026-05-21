@@ -221,7 +221,7 @@ async def start_pulse(
         async with httpx.AsyncClient(timeout=10.0) as http:
             ctx = await build_morning_context(session, settings, http)
 
-        signals = run_detectors(ctx, settings)
+        signals = await run_detectors(ctx, settings, session=session)
         order = [p.strip() for p in detector_cfg.split(",") if p.strip()]
         threshold = float(getattr(settings, "pulse_silence_threshold", 5.0))
         chosen = select_signal(signals, threshold=threshold, order=order)

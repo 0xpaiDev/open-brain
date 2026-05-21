@@ -104,3 +104,32 @@ def test_signal_is_immutable():
     s = _sig("focus", 7.0)
     with pytest.raises(FrozenInstanceError):
         s.urgency = 9.0  # type: ignore[misc]
+
+
+class TestRunDetectorsWithNewDetectors:
+    @pytest.mark.asyncio
+    async def test_deadline_detector_called_with_session(self):
+        from datetime import date
+
+        from unittest.mock import AsyncMock
+
+        from src.pulse_signals.context import MorningContext
+        from src.pulse_signals.ranker import run_detectors
+        from src.integrations.calendar import CalendarState
+
+        ctx = MorningContext(
+            today=date(2026, 5, 21),
+            calendar=CalendarState(fetched_at="", date="", events=[], tomorrow_preview=[]),
+            weather=None,
+            open_todos=[],
+            yesterday_pulse=None,
+        )
+        mock_session = AsyncMock()
+
+        class MockSettings:
+            pulse_signal_detectors = "deadline,open"
+            pulse_focus_keywords = ""
+
+        signals = await run_detectors(ctx, MockSettings(), session=mock_session)
+        # open detector always fires
+        assert any(s.signal_type == "open" for s in signals)
