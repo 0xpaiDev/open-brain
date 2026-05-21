@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.pulse_signals.ranker import Signal, select_signal
+from src.pulse_signals.ranker import Signal, select_signal, select_signals
 
 
 def _sig(name: str, urgency: float) -> Signal:
@@ -62,6 +62,40 @@ def test_select_signal_filters_none_entries():
 def test_select_signal_all_below_threshold_all_returned_none():
     signals = [_sig("open", 1.0), _sig("focus", 2.0)]
     assert select_signal(signals, threshold=5.0, order=["focus", "open"]) is None
+
+
+class TestSelectSignals:
+    def test_returns_all_above_threshold(self):
+        signals = [
+            Signal("deadline", 8.0, {}),
+            Signal("commitment_pace", 7.5, {}),
+            Signal("open", 5.0, {}),
+        ]
+        result = select_signals(signals, threshold=5.0, order=["deadline", "commitment_pace", "open"])
+        assert len(result) == 3
+
+    def test_excludes_below_threshold(self):
+        signals = [
+            Signal("deadline", 8.0, {}),
+            Signal("open", 4.9, {}),
+        ]
+        result = select_signals(signals, threshold=5.0, order=["deadline", "open"])
+        assert len(result) == 1
+        assert result[0].signal_type == "deadline"
+
+    def test_returns_empty_when_none_qualify(self):
+        signals = [Signal("open", 4.0, {})]
+        result = select_signals(signals, threshold=5.0, order=["open"])
+        assert result == []
+
+    def test_order_preserved(self):
+        signals = [
+            Signal("open", 5.0, {}),
+            Signal("deadline", 8.0, {}),
+        ]
+        result = select_signals(signals, threshold=5.0, order=["deadline", "open"])
+        assert result[0].signal_type == "deadline"
+        assert result[1].signal_type == "open"
 
 
 def test_signal_is_immutable():

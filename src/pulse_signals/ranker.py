@@ -85,6 +85,22 @@ def select_signal(
     return qualifying[0]
 
 
+def select_signals(
+    signals: list[Signal], threshold: float, order: list[str]
+) -> list[Signal]:
+    """Return all signals at or above `threshold`, sorted by detector order."""
+    qualifying = [s for s in signals if s is not None and s.urgency >= threshold]
+
+    def key(s: Signal) -> int:
+        try:
+            return order.index(s.signal_type)
+        except ValueError:
+            return len(order)
+
+    qualifying.sort(key=key)
+    return qualifying
+
+
 def trace(signals: list[Signal], order: list[str]) -> list[dict[str, Any]]:
     """Serialize Signals for DailyPulse.parsed_data['signal_trace']. Pure data."""
     out: list[dict[str, Any]] = []
