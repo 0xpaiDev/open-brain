@@ -37,10 +37,23 @@ fi
 
 PYTHON_BIN="${OB_SESSION_END_PYTHON:-python3}"
 
-# Pipe stdin (hook payload JSON) into the worker. The worker is responsible
-# for being fire-and-forget; we ignore its exit status.
-"$PYTHON_BIN" "$SCRIPT_DIR/session_end_ingest.py" >> "$LOG" 2>&1 || true
+# Buffer the hook payload (stdin JSON) into a tempfile so we can fully detach
+# the worker. A backgrounded child whose stdin came from the parent's pipe
+# sees EOF immediately when the parent exits, so we can't rely on the pipe
+# surviving — write to disk, redirect the detached child from the file.
+PAYLOAD_TMP="$(mktemp /tmp/ob-session-end-payload.XXXXXX.json)"
+cat > "$PAYLOAD_TMP" 2>/dev/null || true
 
-echo "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) session-end-ingest done ----" >> "$LOG"
+# Fully detach the worker. CC's hook executor times out around 60s, but
+# Haiku summarisation of a large transcript can take 60-120s. The detached
+# child owns its payload tempfile and cleans it up after writing the done
+# marker.
+nohup bash -c '
+  "$1" "$2" < "$3" >> "$4" 2>&1
+  echo "---- $(date -u +%Y-%m-%dT%H:%M:%SZ) session-end-ingest done ----" >> "$4"
+  rm -f "$3" 2>/dev/null || true
+' _ "$PYTHON_BIN" "$SCRIPT_DIR/session_end_ingest.py" "$PAYLOAD_TMP" "$LOG" \
+  >> "$LOG" 2>&1 &
+disown 2>/dev/null || true
 
 exit 0
