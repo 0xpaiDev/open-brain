@@ -10,9 +10,11 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from src.core.models import TodoItem
 from src.integrations.calendar import CalendarEvent, CalendarState
 from src.integrations.weather import DayForecast, WeatherSnapshot
 from src.pulse_signals.context import MorningContext
+from src.pulse_signals.detectors import deadline as deadline_detector
 from src.pulse_signals.detectors import focus as focus_detector
 from src.pulse_signals.detectors import open as open_detector
 from src.pulse_signals.detectors import opportunity as opportunity_detector
@@ -246,3 +248,54 @@ class TestOpenDetector:
         signal = open_detector.detect(ctx)
         assert signal is not None
         assert signal.payload["yesterday_question"] == "What drained you yesterday?"
+
+
+# ── deadline detector ─────────────────────────────────────────────────────────
+
+
+class TestDeadlineDetector:
+    @pytest.mark.asyncio
+    async def test_fires_when_todo_due_today(self, async_session):
+        today = date(2026, 5, 21)
+        due_dt = datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC)
+        todo = TodoItem(description="Call dentist", status="open", due_date=due_dt)
+        async_session.add(todo)
+        await async_session.commit()
+
+        ctx = _ctx(today=today)
+        signal = await deadline_detector.detect(ctx, session=async_session)
+        assert signal is not None
+        assert signal.signal_type == "deadline"
+        assert signal.urgency == 8.0
+        assert "Call dentist" in signal.payload["titles"]
+
+    @pytest.mark.asyncio
+    async def test_does_not_fire_when_no_todos_due(self, async_session):
+        today = date(2026, 5, 21)
+        ctx = _ctx(today=today)
+        signal = await deadline_detector.detect(ctx, session=async_session)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_does_not_fire_for_future_due_date(self, async_session):
+        future_dt = datetime(2026, 5, 22, 0, 0, 0, tzinfo=UTC)
+        todo = TodoItem(description="Future task", status="open", due_date=future_dt)
+        async_session.add(todo)
+        await async_session.commit()
+
+        ctx = _ctx(today=date(2026, 5, 21))
+        signal = await deadline_detector.detect(ctx, session=async_session)
+        assert signal is None
+
+    @pytest.mark.asyncio
+    async def test_caps_titles_at_three(self, async_session):
+        due_dt = datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC)
+        for i in range(5):
+            async_session.add(TodoItem(description=f"Task {i}", status="open", due_date=due_dt))
+        await async_session.commit()
+
+        ctx = _ctx(today=date(2026, 5, 21))
+        signal = await deadline_detector.detect(ctx, session=async_session)
+        assert signal is not None
+        assert len(signal.payload["titles"]) == 3
+        assert signal.payload["total_count"] == 5
