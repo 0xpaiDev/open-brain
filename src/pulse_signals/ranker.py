@@ -28,7 +28,7 @@ def _parse_order(raw: str) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
-async def run_detectors(
+async def run_detectors(  # noqa: C901
     ctx: MorningContext, settings: Any, *, session: Any = None
 ) -> list[Signal]:
     """Invoke each configured detector; return all non-None Signals in detector order."""
