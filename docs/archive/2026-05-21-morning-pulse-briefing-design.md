@@ -1,3 +1,9 @@
+---
+status: shipped
+created: 2026-05-21
+shipped: 2026-05-23
+---
+
 # Morning Pulse Briefing — Design Spec
 
 **Date:** 2026-05-21

@@ -1,3 +1,5 @@
+---\nstatus: shipped\ncreated: 2026-05-18\nshipped: 2026-05-18\n---
+
 # Nav Scroll-Hide + Memory Card Polish Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,9 @@
+---
+status: shipped
+created: 2026-05-17
+shipped: 2026-05-23
+---
+
 # Claude Code Memory Flywheel — Design
 
 **Date:** 2026-05-17

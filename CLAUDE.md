@@ -7,6 +7,7 @@ auto-loaded `~/.claude/projects/.../memory/MEMORY.md`:
 
 - `context/STATE.md` — active threads, current sprint, in-flight decisions
 - `context/DECISIONS.md` — architectural decisions (dated, append-only)
+- `docs/README.md` — spec convention (status gates, `docs/backlog/` + `docs/archive/` folders, override clause for superpowers artifact split)
 
 These three together form the **tier-0 frozen snapshot** (~3,000 tokens). Mid-session
 writes to any of them persist to disk but only take effect next session.
@@ -115,3 +116,11 @@ Check directory structure before creating new top-level modules or folders.
 - `HISTORY.md` — completed phases and session notes (read-only reference)
 - `ARCHITECTURE.md` — system architecture, module ownership, data flow
 - `context/DECISIONS.md` — architectural decisions log (why we chose X; append-only, newest first)
+
+## Superpowers Skills
+
+Active workflow: `subagent-driven-development`, `executing-plans`, `dispatching-parallel-agents`, `writing-plans`
+Well-tuned: `systematic-debugging`, `verification-before-completion`, `test-driven-development`, `requesting-code-review`, `receiving-code-review`
+Occasional: `writing-skills`
+Skip (solo, no PR flow): `using-git-worktrees`, `finishing-a-development-branch`
+Customize candidates (after trial): `brainstorming` (too heavy for quick ideation), `using-superpowers` (skill-check-before-every-response is noisy for trivial messages)

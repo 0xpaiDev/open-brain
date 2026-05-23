@@ -1,3 +1,9 @@
+---
+status: shipped
+created: 2026-05-18
+shipped: 2026-05-23
+---
+
 # Spec A: Inline Exercise Log Form + Day-Swap UI
 
 **Date:** 2026-05-18  
