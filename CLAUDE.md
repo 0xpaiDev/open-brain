@@ -7,6 +7,7 @@ auto-loaded `~/.claude/projects/.../memory/MEMORY.md`:
 
 - `context/STATE.md` — active threads, current sprint, in-flight decisions
 - `context/DECISIONS.md` — architectural decisions (dated, append-only)
+- `context/GLOSSARY.md` — canonical domain terms; update immediately when a term resolves
 - `docs/README.md` — spec convention (status gates, `docs/backlog/` + `docs/archive/` folders, override clause for superpowers artifact split)
 
 These three together form the **tier-0 frozen snapshot** (~3,000 tokens). Mid-session
@@ -116,6 +117,10 @@ Check directory structure before creating new top-level modules or folders.
 - `HISTORY.md` — completed phases and session notes (read-only reference)
 - `ARCHITECTURE.md` — system architecture, module ownership, data flow
 - `context/DECISIONS.md` — architectural decisions log (why we chose X; append-only, newest first)
+
+## Glossary — Live Updates
+
+When a term resolves in conversation — a name is chosen over alternatives, an ambiguous concept is clarified, or I use the wrong word and get corrected — update `context/GLOSSARY.md` immediately, mid-session. Do not wait for session end. Only add terms that are genuinely ambiguous; skip obvious nouns that the codebase already names clearly.
 
 ## Doc Placement — HARD RULE
 
