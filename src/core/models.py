@@ -944,3 +944,23 @@ class LearningMaterial(Base):
     __table_args__ = (UniqueConstraint("topic_id", name="uq_learning_materials_topic_id"),)
 
     topic: Mapped["LearningTopic"] = relationship("LearningTopic", back_populates="material")
+
+
+class ChatLog(Base):
+    """Transcript log for chat requests — tool-use traces and RAG synthesis."""
+
+    __tablename__ = "chat_logs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    user_message: Mapped[str] = mapped_column(Text, nullable=False)
+    tools_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    intent_tool: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    intent_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    llm_calls: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    tool_calls: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_used: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
