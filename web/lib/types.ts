@@ -247,6 +247,7 @@ export interface ChatRequest {
   history: ChatMessage[];
   model?: string | null;
   external_context?: string | null;
+  tools_enabled?: boolean;
 }
 
 export interface ChatResponse {

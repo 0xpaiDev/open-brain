@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types";
 
 const MODEL_STORAGE_KEY = "ob_chat_model";
+const TOOLS_STORAGE_KEY = "ob_chat_tools_enabled";
 const MAX_HISTORY = 20;
 
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
@@ -29,9 +30,15 @@ function getStoredModel(): string {
   return localStorage.getItem(MODEL_STORAGE_KEY) ?? HAIKU_MODEL;
 }
 
+function getStoredToolsEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(TOOLS_STORAGE_KEY) === "true";
+}
+
 interface UseChatReturn {
   messages: ChatDisplayMessage[];
   model: string;
+  toolsEnabled: boolean;
   externalContext: string;
   loading: boolean;
   error: string | null;
@@ -39,26 +46,36 @@ interface UseChatReturn {
   sendMessage: (text: string) => Promise<void>;
   resetChat: () => void;
   setModel: (model: string) => void;
+  setToolsEnabled: (enabled: boolean) => void;
   setExternalContext: (ctx: string) => void;
 }
 
 export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<ChatDisplayMessage[]>([]);
   const [model, setModelState] = useState<string>(HAIKU_MODEL);
+  const [toolsEnabled, setToolsEnabledState] = useState<boolean>(false);
   const [externalContext, setExternalContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef(false);
 
-  // Load model from localStorage on mount
+  // Load model and tools toggle from localStorage on mount
   useEffect(() => {
     setModelState(getStoredModel());
+    setToolsEnabledState(getStoredToolsEnabled());
   }, []);
 
   const setModel = useCallback((m: string) => {
     setModelState(m);
     if (typeof window !== "undefined") {
       localStorage.setItem(MODEL_STORAGE_KEY, m);
+    }
+  }, []);
+
+  const setToolsEnabled = useCallback((enabled: boolean) => {
+    setToolsEnabledState(enabled);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(TOOLS_STORAGE_KEY, String(enabled));
     }
   }, []);
 
@@ -92,6 +109,7 @@ export function useChat(): UseChatReturn {
           history: history.slice(0, -1), // exclude current message (it's in `message`)
           model,
           external_context: externalContext || undefined,
+          tools_enabled: toolsEnabled,
         };
 
         const res = await api<ChatResponse>("POST", "/v1/chat", body);
@@ -116,7 +134,7 @@ export function useChat(): UseChatReturn {
         if (!abortRef.current) setLoading(false);
       }
     },
-    [loading, messages, model, externalContext],
+    [loading, messages, model, toolsEnabled, externalContext],
   );
 
   const resetChat = useCallback(() => {
@@ -130,6 +148,7 @@ export function useChat(): UseChatReturn {
   return {
     messages,
     model,
+    toolsEnabled,
     externalContext,
     loading,
     error,
@@ -137,6 +156,7 @@ export function useChat(): UseChatReturn {
     sendMessage,
     resetChat,
     setModel,
+    setToolsEnabled,
     setExternalContext,
   };
 }
