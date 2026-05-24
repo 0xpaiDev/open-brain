@@ -536,3 +536,86 @@ async def test_chat_finds_synced_todo(client: AsyncClient, auth_headers: dict, m
     data = resp.json()
     assert "Deploy auth service" in data["response"]
     assert any(s["type"] == "todo" for s in data["sources"])
+
+
+# ── Tools-enabled routing tests ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_chat_tools_disabled_uses_rag_path(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """tools_enabled=False (default) must never call classify_intent."""
+    _patch_chat_deps(monkeypatch)
+    classify_calls = []
+
+    async def fake_classify(message):
+        classify_calls.append(message)
+        return None, "none"
+
+    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "mark my gym todo as done"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert classify_calls == []
+
+
+@pytest.mark.asyncio
+async def test_chat_tools_enabled_no_intent_uses_rag_path(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """When tools_enabled but classifier returns None, RAG path is used."""
+    _patch_chat_deps(monkeypatch)
+    loop_calls = []
+
+    async def fake_classify(message):
+        return None, "none"
+
+    async def fake_loop(**kwargs):
+        loop_calls.append(kwargs)
+        return "tool response"
+
+    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
+    monkeypatch.setattr("src.api.routes.chat.run_tool_loop", fake_loop)
+
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "what is the meaning of life?", "tools_enabled": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert loop_calls == []
+
+
+@pytest.mark.asyncio
+async def test_chat_tools_enabled_with_intent_calls_tool_loop(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """When tools_enabled and classifier returns intent, run_tool_loop is called."""
+    _patch_chat_deps(monkeypatch)
+
+    async def fake_classify(message):
+        return "list_todos", "regex"
+
+    loop_kwargs_captured = {}
+
+    async def fake_loop(**kwargs):
+        loop_kwargs_captured.update(kwargs)
+        return "You have 2 todos."
+
+    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
+    monkeypatch.setattr("src.api.routes.chat.run_tool_loop", fake_loop)
+
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "show my todos", "tools_enabled": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["response"] == "You have 2 todos."
+    assert loop_kwargs_captured["model"] == "claude-sonnet-4-6"
+    assert loop_kwargs_captured["intent_tool"] == "list_todos"

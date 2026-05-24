@@ -15,20 +15,25 @@ Pipeline:
   10. Return response with sources and metadata
 """
 
+import uuid as _uuid
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.rate_limit import chat_limit, limiter
+from src.api.services.chat_tools import ALL_TOOLS, dispatch
 from src.core.database import get_db
 from src.llm.client import AnthropicClient, ExtractionFailed, VoyageEmbeddingClient
+from src.llm.intent_classifier import classify_intent
 from src.llm.rag_prompts import (
     QUERY_FORMULATION_SYSTEM,
     build_query_formulation_content,
     build_rag_system_prompt,
     build_rag_user_message,
 )
+from src.llm.tool_agent import run_tool_loop
 from src.retrieval.context_builder import build_context
 from src.retrieval.search import SearchResult, hybrid_search
 
@@ -57,6 +62,7 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = Field(default_factory=list)
     model: str | None = None
     external_context: str | None = Field(default=None, max_length=_MAX_EXTERNAL_CONTEXT)
+    tools_enabled: bool = Field(default=False)
 
 
 class ChatSourceItem(BaseModel):
@@ -196,13 +202,35 @@ async def chat(
             messages_for_llm.append({"role": m.role, "content": m.content})
     messages_for_llm.append({"role": "user", "content": build_rag_user_message(body.message)})
 
-    # ── 9. Synthesize ────────────────────────────────────────────────────────
-    response_text = await anthropic.complete_with_history(
-        system_prompt=system_prompt,
-        messages=messages_for_llm,
-        model=resolved_model,
-        max_tokens=2048,
-    )
+    # ── 9. Synthesize (or run tool loop) ────────────────────────────────────
+    intent_tool: str | None = None
+    intent_method: str = "none"
+
+    if body.tools_enabled:
+        intent_tool, intent_method = await classify_intent(body.message)
+
+    if intent_tool is not None:
+        response_text = await run_tool_loop(
+            system_prompt=system_prompt,
+            messages=messages_for_llm,
+            tools=ALL_TOOLS,
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            session=session,
+            user_id=_uuid.UUID(int=0),
+            dispatch=dispatch,
+            user_message=body.message,
+            tools_enabled=body.tools_enabled,
+            intent_tool=intent_tool,
+            intent_method=intent_method,
+        )
+    else:
+        response_text = await anthropic.complete_with_history(
+            system_prompt=system_prompt,
+            messages=messages_for_llm,
+            model=resolved_model,
+            max_tokens=2048,
+        )
 
     # ── 10. Commit + respond ─────────────────────────────────────────────────
     await session.commit()
