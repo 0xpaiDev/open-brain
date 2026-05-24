@@ -2,6 +2,7 @@
 
 Wraps each scheduled job with:
 1. A JobRun record (started_at, finished_at, status, duration)
+2. An observability Trace (Execution Explorer Phase 2)
 
 Usage:
     from src.jobs.runner import run_tracked
@@ -21,8 +22,13 @@ import structlog
 from src.core.database import close_db, get_db_context, init_db
 from src.core.logging import configure_logging
 from src.core.models import JobRun
+from src.observability import start_trace
+from src.observability.rerun import register_rerun_handler
 
 logger = structlog.get_logger(__name__)
+
+# Registry mapping job_name → job_fn for rerun support
+_JOB_REGISTRY: dict[str, Callable] = {}
 
 
 async def run_tracked(
@@ -49,6 +55,9 @@ async def run_tracked(
     status = "success"
     error_msg: str | None = None
 
+    # Register for rerun support (last-write-wins; safe for repeated calls)
+    _JOB_REGISTRY[job_name] = job_fn
+
     try:
         # Record job start
         async with get_db_context() as session:
@@ -62,9 +71,14 @@ async def run_tracked(
             await session.commit()
             run_id = run.id
 
-        # Execute the actual job
+        # Execute the actual job, wrapped in an observability trace
         try:
-            await job_fn(*args, **kwargs)
+            async with start_trace(
+                trigger_type="cron",
+                trigger_name=job_name,
+                trigger_metadata={"job_name": job_name},
+            ):
+                await job_fn(*args, **kwargs)
         except Exception as exc:
             status = "failed"
             error_msg = f"{type(exc).__name__}: {exc}"
@@ -96,4 +110,20 @@ async def run_tracked(
 
     finally:
         await close_db()
+
+
+async def _handle_cron_rerun(trace: Any) -> None:
+    """Rerun handler for cron-triggered jobs.
+
+    Looks up the original job function from _JOB_REGISTRY by trigger_name
+    and re-invokes run_tracked. The dispatch_rerun wrapper already opens the
+    new Trace, so run_tracked will open a nested one — that's acceptable.
+    """
+    job_fn = _JOB_REGISTRY.get(trace.trigger_name)
+    if job_fn is None:
+        raise ValueError(f"No job registered for rerun: {trace.trigger_name!r}")
+    await run_tracked(trace.trigger_name, job_fn)
+
+
+register_rerun_handler("cron", _handle_cron_rerun)
 

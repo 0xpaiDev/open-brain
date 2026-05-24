@@ -9,6 +9,8 @@ For tests, mock instances can be injected directly.
 """
 
 import asyncio
+import hashlib
+from datetime import UTC, datetime
 
 import structlog
 from anthropic import Anthropic, APIError
@@ -20,6 +22,7 @@ from tenacity import (
 from voyageai import Client as VoyageClient
 
 from src.core.config import get_settings
+from src.observability.recording import record_llm_call
 
 logger = structlog.get_logger(__name__)
 
@@ -81,6 +84,7 @@ class AnthropicClient:
         Raises:
             ExtractionFailed: If the API call fails
         """
+        started_at = datetime.now(UTC)
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -95,22 +99,79 @@ class AnthropicClient:
             if not response.content:
                 raise ExtractionFailed("Anthropic returned empty content array")
             text = response.content[0].text
+            finished_at = datetime.now(UTC)
             logger.debug(
                 "anthropic_complete_success",
                 model=self.model,
                 response_len=len(text),
             )
+            await record_llm_call(
+                call_site="llm.complete",
+                model=self.model,
+                status="success",
+                usage=response.usage,
+                raw_request={
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_content}],
+                    "tools": [],
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                },
+                raw_response=response.model_dump(),
+                request_summary={
+                    "system_prompt_hash": hashlib.sha256(system_prompt.encode()).hexdigest()[:8],
+                    "message_count": 1,
+                    "tool_count": 0,
+                    "max_tokens": max_tokens,
+                },
+                response_summary={
+                    "output_text_truncated": text[:200],
+                    "tool_use_count": 0,
+                    "content_block_types": ["text"],
+                    "stop_reason": response.stop_reason,
+                },
+                started_at=started_at,
+                finished_at=finished_at,
+                stop_reason=response.stop_reason,
+            )
             return text
         except TimeoutError:
             logger.exception("anthropic_timeout", model=self.model, timeout=_LLM_TIMEOUT_SECONDS)
+            await record_llm_call(
+                call_site="llm.complete",
+                model=self.model,
+                status="failed",
+                error_message=f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s",
+                error_class="TimeoutError",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(
                 f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s"
             ) from None
         except APIError as e:
             logger.exception("anthropic_api_error", error=str(e))
+            await record_llm_call(
+                call_site="llm.complete",
+                model=self.model,
+                status="failed",
+                error_message=str(e),
+                error_class=type(e).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Anthropic API error: {e}") from e
         except Exception as e:
             logger.exception("anthropic_unexpected_error", error=str(e))
+            await record_llm_call(
+                call_site="llm.complete",
+                model=self.model,
+                status="failed",
+                error_message=str(e),
+                error_class=type(e).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Unexpected error calling Anthropic: {e}") from e
 
     async def _messages_create(
@@ -136,19 +197,80 @@ class AnthropicClient:
                 tools=tools if tools else [],
             )
 
+        started_at = datetime.now(UTC)
         try:
-            return await asyncio.wait_for(
+            response = await asyncio.wait_for(
                 asyncio.to_thread(_call),
                 timeout=_LLM_TIMEOUT_SECONDS,
             )
+            finished_at = datetime.now(UTC)
+            await record_llm_call(
+                call_site="llm.messages_create",
+                model=model,
+                status="success",
+                usage=response.usage,
+                raw_request={
+                    "system": system,
+                    "messages": messages,
+                    "tools": tools,
+                    "model": model,
+                    "max_tokens": max_tokens,
+                },
+                raw_response=response.model_dump(),
+                request_summary={
+                    "system_prompt_hash": hashlib.sha256(system.encode()).hexdigest()[:8],
+                    "message_count": len(messages),
+                    "tool_count": len(tools),
+                    "max_tokens": max_tokens,
+                },
+                response_summary={
+                    "output_text_truncated": next(
+                        (b.text for b in response.content if b.type == "text"), ""
+                    )[:200],
+                    "tool_use_count": sum(1 for b in response.content if b.type == "tool_use"),
+                    "content_block_types": list({b.type for b in response.content}),
+                    "stop_reason": response.stop_reason,
+                },
+                started_at=started_at,
+                finished_at=finished_at,
+                stop_reason=response.stop_reason,
+            )
+            return response
         except TimeoutError as exc:
             logger.error("_messages_create_timeout", model=model)
+            await record_llm_call(
+                call_site="llm.messages_create",
+                model=model,
+                status="failed",
+                error_message="LLM tool-use call timed out",
+                error_class="TimeoutError",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed("LLM tool-use call timed out") from exc
         except APIError as exc:
             logger.error("_messages_create_api_error", status=exc.status_code)
+            await record_llm_call(
+                call_site="llm.messages_create",
+                model=model,
+                status="failed",
+                error_message=f"Anthropic API error: {exc.status_code}",
+                error_class=type(exc).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Anthropic API error: {exc.status_code}") from exc
         except Exception as exc:
             logger.error("_messages_create_error", error=str(exc))
+            await record_llm_call(
+                call_site="llm.messages_create",
+                model=model,
+                status="failed",
+                error_message=str(exc),
+                error_class=type(exc).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Unexpected LLM error: {exc}") from exc
 
     async def complete_with_history(
@@ -173,6 +295,7 @@ class AnthropicClient:
             ExtractionFailed: If the API call fails
         """
         resolved_model = model or self.model
+        started_at = datetime.now(UTC)
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -187,25 +310,82 @@ class AnthropicClient:
             if not response.content:
                 raise ExtractionFailed("Anthropic returned empty content array")
             text = response.content[0].text
+            finished_at = datetime.now(UTC)
             logger.debug(
                 "anthropic_complete_with_history_success",
                 model=resolved_model,
                 response_len=len(text),
                 history_len=len(messages),
             )
+            await record_llm_call(
+                call_site="llm.complete_with_history",
+                model=resolved_model,
+                status="success",
+                usage=response.usage,
+                raw_request={
+                    "system": system_prompt,
+                    "messages": messages,
+                    "tools": [],
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                },
+                raw_response=response.model_dump(),
+                request_summary={
+                    "system_prompt_hash": hashlib.sha256(system_prompt.encode()).hexdigest()[:8],
+                    "message_count": len(messages),
+                    "tool_count": 0,
+                    "max_tokens": max_tokens,
+                },
+                response_summary={
+                    "output_text_truncated": text[:200],
+                    "tool_use_count": 0,
+                    "content_block_types": ["text"],
+                    "stop_reason": response.stop_reason,
+                },
+                started_at=started_at,
+                finished_at=finished_at,
+                stop_reason=response.stop_reason,
+            )
             return text
         except TimeoutError:
             logger.exception(
                 "anthropic_timeout", model=resolved_model, timeout=_LLM_TIMEOUT_SECONDS
+            )
+            await record_llm_call(
+                call_site="llm.complete_with_history",
+                model=resolved_model,
+                status="failed",
+                error_message=f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s",
+                error_class="TimeoutError",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
             )
             raise ExtractionFailed(
                 f"Anthropic API timed out after {_LLM_TIMEOUT_SECONDS}s"
             ) from None
         except APIError as e:
             logger.exception("anthropic_api_error", error=str(e))
+            await record_llm_call(
+                call_site="llm.complete_with_history",
+                model=resolved_model,
+                status="failed",
+                error_message=str(e),
+                error_class=type(e).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Anthropic API error: {e}") from e
         except Exception as e:
             logger.exception("anthropic_unexpected_error", error=str(e))
+            await record_llm_call(
+                call_site="llm.complete_with_history",
+                model=resolved_model,
+                status="failed",
+                error_message=str(e),
+                error_class=type(e).__name__,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
             raise ExtractionFailed(f"Unexpected error calling Anthropic: {e}") from e
 
 

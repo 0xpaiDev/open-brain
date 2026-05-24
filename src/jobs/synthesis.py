@@ -41,6 +41,7 @@ from src.core.config import get_settings
 from src.core.models import Entity, MemoryEntityLink, MemoryItem, RawMemory
 from src.llm.client import AnthropicClient, ExtractionFailed
 from src.llm.prompts import SYNTHESIS_SYSTEM_PROMPT, build_synthesis_user_message
+from src.observability import start_step
 
 logger = structlog.get_logger(__name__)
 
@@ -261,11 +262,12 @@ async def run_synthesis_job(
     date_from = cutoff.strftime("%Y-%m-%d")
     date_to = now.strftime("%Y-%m-%d")
 
-    memories = await _fetch_recent_memories(
-        session,
-        cutoff=cutoff,
-        limit=settings.synthesis_max_memories_per_report,
-    )
+    async with start_step("fetch_memories"):
+        memories = await _fetch_recent_memories(
+            session,
+            cutoff=cutoff,
+            limit=settings.synthesis_max_memories_per_report,
+        )
 
     logger.info("synthesis_job_start", memory_count=len(memories), days=days)
 
@@ -280,13 +282,19 @@ async def run_synthesis_job(
         }
 
     memory_ids = [m.id for m in memories]
-    entity_map = await _load_entity_map(session, memory_ids)
-    memory_dicts = _build_memory_dicts(memories, entity_map)
 
-    synthesis_result = await _call_synthesis_llm(client, memory_dicts, date_from, date_to)
+    async with start_step("load_entity_map"):
+        entity_map = await _load_entity_map(session, memory_ids)
 
-    memory_item = await _store_synthesis_report(session, synthesis_result, date_from, date_to)
-    await session.commit()
+    async with start_step("build_memory_dicts"):
+        memory_dicts = _build_memory_dicts(memories, entity_map)
+
+    async with start_step("call_llm"):
+        synthesis_result = await _call_synthesis_llm(client, memory_dicts, date_from, date_to)
+
+    async with start_step("store_report"):
+        memory_item = await _store_synthesis_report(session, synthesis_result, date_from, date_to)
+        await session.commit()
 
     duration = round((datetime.now(UTC) - now).total_seconds(), 2)
     logger.info(

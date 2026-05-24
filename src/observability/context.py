@@ -85,10 +85,27 @@ async def start_trace(
     trigger_type: str,
     trigger_name: str | None = None,
     trigger_metadata: dict | None = None,
+    causal_parent_trace_id: str | None = None,
 ) -> AsyncGenerator[TraceContext, None]:
-    """Open a new root trace. Commits independently of the caller's session."""
+    """Open a new root trace. Commits independently of the caller's session.
+
+    No-ops gracefully when the observability DB session is unavailable
+    (e.g. in unit tests that do not initialise the DB engine). In that case
+    the body still executes; trace recording is simply skipped.
+    """
+    from src.core import database as _db_mod
     from src.core.database import get_db_context
     from src.core.models import Trace
+
+    if _db_mod.AsyncSessionLocal is None:
+        # DB not initialised — run the body without recording.
+        yield TraceContext(
+            trace_id=str(uuid4()),
+            span_id=_short_id(),
+            session=None,  # type: ignore[arg-type]
+            started_at=_now(),
+        )
+        return
 
     trace_id = uuid4()
     span_id = _short_id()
@@ -100,6 +117,7 @@ async def start_trace(
             trigger_type=trigger_type,
             trigger_name=trigger_name,
             trigger_metadata=trigger_metadata,
+            causal_parent_trace_id=causal_parent_trace_id,
             status="running",
             started_at=started_at,
         )
@@ -135,6 +153,17 @@ async def start_trace(
             trace_row.duration_ms = duration_ms
             trace_row.error_message = error_msg
             trace_row.error_class = error_cls
+
+            totals = getattr(ctx, "_totals", {})
+            if totals:
+                trace_row.total_cost_usd = totals.get("cost_usd")
+                trace_row.total_input_tokens = totals.get("input_tokens")
+                trace_row.total_output_tokens = totals.get("output_tokens")
+                trace_row.total_cache_read_tokens = totals.get("cache_read")
+                trace_row.total_cache_creation_tokens = totals.get("cache_write")
+                trace_row.llm_call_count = totals.get("llm_call_count")
+                trace_row.tool_call_count = totals.get("tool_call_count")
+
             await session.commit()
 
             _current_trace.reset(token)

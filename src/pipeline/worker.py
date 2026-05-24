@@ -39,6 +39,8 @@ from src.llm.client import (
     anthropic_client,
     embedding_client,
 )
+from src.observability import start_trace
+from src.observability.rerun import register_rerun_handler
 from src.pipeline.constants import AUTO_CAPTURE_SOURCES, TASK_SKIP_SOURCES
 from src.pipeline.embedder import embed_text
 from src.pipeline.entity_resolver import resolve_entities
@@ -167,145 +169,161 @@ async def process_job(
                 logger.error("queue_row_not_found", queue_id=str(queue_id))
                 return
 
-            # Fetch the raw memory
-            raw = await session.get(RawMemory, queue_row.raw_id)
-            if not raw:
-                logger.error(
-                    "raw_memory_not_found",
-                    raw_id=str(queue_row.raw_id),
-                )
-                await move_to_dead_letter(
-                    session,
-                    queue_row,
-                    "Raw memory not found",
-                )
-                return
+            causal_trace_id = str(queue_row.trace_id) if queue_row.trace_id else None
 
-            # Step 1: Normalize
-            normalized_text = normalize(raw.raw_text)
-            logger.debug("process_job_normalize", raw_len=len(raw.raw_text))
-
-            # Step 2: Extract (with escalating retries)
-            try:
-                extraction = await extract(
-                    normalized_text,
-                    attempt=queue_row.attempts - 1,  # attempts is 1-indexed
-                    client=anthropic,
-                )
-                logger.debug("process_job_extract_success")
-
-                # Cap importance for auto-captured sessions — they represent resolved
-                # work noise, not intentional personal memory. Real memories ingested
-                # via Discord/CLI/MCP get their full Claude-assigned importance.
-                ceiling = get_settings().auto_capture_importance_ceiling
-                if raw.source in AUTO_CAPTURE_SOURCES and extraction.base_importance > ceiling:
-                    logger.debug(
-                        "process_job_importance_capped",
-                        source=raw.source,
-                        original=extraction.base_importance,
-                        ceiling=ceiling,
+            async with start_trace(
+                trigger_type="worker",
+                trigger_name="refinement",
+                trigger_metadata={"queue_id": str(queue_id), "raw_id": str(queue_row.raw_id)},
+                causal_parent_trace_id=causal_trace_id,
+            ):
+                # Fetch the raw memory
+                raw = await session.get(RawMemory, queue_row.raw_id)
+                if not raw:
+                    logger.error(
+                        "raw_memory_not_found",
+                        raw_id=str(queue_row.raw_id),
                     )
-                    extraction.base_importance = ceiling
-
-            except ExtractionFailed as e:
-                logger.warning(
-                    "process_job_extraction_failed",
-                    attempt=queue_row.attempts,
-                    error=str(e),
-                    queue_depth=queue_depth,
-                )
-                if queue_row.attempts < 3:
-                    # Reset to pending for retry with escalated prompt
-                    queue_row.status = "pending"
-                    await session.flush()
-                    await session.commit()
-                    logger.info(
-                        "process_job_reset_to_pending_for_retry",
-                        next_attempt=queue_row.attempts + 1,
-                    )
-                    return
-                else:
-                    # 3 attempts exhausted
                     await move_to_dead_letter(
                         session,
                         queue_row,
-                        f"Extraction failed after 3 attempts: {e}",
-                        last_output=str(e),
+                        "Raw memory not found",
                     )
                     return
 
-            # Step 3: Validate
-            try:
-                extraction = validate(extraction)
-                logger.debug("process_job_validate_success")
-            except ValidationFailed as e:
-                logger.error("process_job_validation_failed", error=str(e), queue_depth=queue_depth)
-                await move_to_dead_letter(
-                    session,
-                    queue_row,
-                    f"Validation failed: {e}",
-                )
-                return
+                # Step 1: Normalize
+                normalized_text = normalize(raw.raw_text)
+                logger.debug("process_job_normalize", raw_len=len(raw.raw_text))
 
-            # Step 4: Embed
-            try:
-                embedding = await embed_text(normalized_text, client=voyage)
-                logger.debug("process_job_embed_success")
-            except EmbeddingFailed as e:
-                logger.error("process_job_embedding_failed", error=str(e), queue_depth=queue_depth)
-                await move_to_dead_letter(
-                    session,
-                    queue_row,
-                    f"Embedding failed: {e}",
-                )
-                return
+                # Step 2: Extract (with escalating retries)
+                try:
+                    extraction = await extract(
+                        normalized_text,
+                        attempt=queue_row.attempts - 1,  # attempts is 1-indexed
+                        client=anthropic,
+                    )
+                    logger.debug("process_job_extract_success")
 
-            # Step 5: Resolve entities
-            try:
-                entities = await resolve_entities(session, extraction.entities)
-                logger.debug(
-                    "process_job_resolve_entities_success",
-                    entity_count=len(entities),
-                )
-            except Exception as e:
-                logger.exception(
-                    "process_job_resolve_entities_failed", error=str(e), queue_depth=queue_depth
-                )
-                await move_to_dead_letter(
-                    session,
-                    queue_row,
-                    f"Entity resolution failed: {e}",
-                )
-                return
+                    # Cap importance for auto-captured sessions — they represent resolved
+                    # work noise, not intentional personal memory. Real memories ingested
+                    # via Discord/CLI/MCP get their full Claude-assigned importance.
+                    ceiling = get_settings().auto_capture_importance_ceiling
+                    if raw.source in AUTO_CAPTURE_SOURCES and extraction.base_importance > ceiling:
+                        logger.debug(
+                            "process_job_importance_capped",
+                            source=raw.source,
+                            original=extraction.base_importance,
+                            ceiling=ceiling,
+                        )
+                        extraction.base_importance = ceiling
 
-            # Step 6: Store memory item
-            try:
-                t0 = time.monotonic()
-                await store_memory_item(
-                    session,
-                    raw,
-                    queue_row,
-                    extraction,
-                    embedding,
-                    entities,
-                )
-                await session.commit()
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                logger.info("process_job_success")
-                logger.info(
-                    "ingestion_complete",
-                    raw_id=str(queue_row.raw_id),
-                    attempts=queue_row.attempts,
-                    duration_ms=duration_ms,
-                )
-            except Exception as e:
-                logger.exception("process_job_store_failed", error=str(e), queue_depth=queue_depth)
-                await move_to_dead_letter(
-                    session,
-                    queue_row,
-                    f"Storage failed: {e}",
-                )
-                return
+                except ExtractionFailed as e:
+                    logger.warning(
+                        "process_job_extraction_failed",
+                        attempt=queue_row.attempts,
+                        error=str(e),
+                        queue_depth=queue_depth,
+                    )
+                    if queue_row.attempts < 3:
+                        # Reset to pending for retry with escalated prompt
+                        queue_row.status = "pending"
+                        await session.flush()
+                        await session.commit()
+                        logger.info(
+                            "process_job_reset_to_pending_for_retry",
+                            next_attempt=queue_row.attempts + 1,
+                        )
+                        return
+                    else:
+                        # 3 attempts exhausted
+                        await move_to_dead_letter(
+                            session,
+                            queue_row,
+                            f"Extraction failed after 3 attempts: {e}",
+                            last_output=str(e),
+                        )
+                        return
+
+                # Step 3: Validate
+                try:
+                    extraction = validate(extraction)
+                    logger.debug("process_job_validate_success")
+                except ValidationFailed as e:
+                    logger.error(
+                        "process_job_validation_failed", error=str(e), queue_depth=queue_depth
+                    )
+                    await move_to_dead_letter(
+                        session,
+                        queue_row,
+                        f"Validation failed: {e}",
+                    )
+                    return
+
+                # Step 4: Embed
+                try:
+                    embedding = await embed_text(normalized_text, client=voyage)
+                    logger.debug("process_job_embed_success")
+                except EmbeddingFailed as e:
+                    logger.error(
+                        "process_job_embedding_failed", error=str(e), queue_depth=queue_depth
+                    )
+                    await move_to_dead_letter(
+                        session,
+                        queue_row,
+                        f"Embedding failed: {e}",
+                    )
+                    return
+
+                # Step 5: Resolve entities
+                try:
+                    entities = await resolve_entities(session, extraction.entities)
+                    logger.debug(
+                        "process_job_resolve_entities_success",
+                        entity_count=len(entities),
+                    )
+                except Exception as e:
+                    logger.exception(
+                        "process_job_resolve_entities_failed",
+                        error=str(e),
+                        queue_depth=queue_depth,
+                    )
+                    await move_to_dead_letter(
+                        session,
+                        queue_row,
+                        f"Entity resolution failed: {e}",
+                    )
+                    return
+
+                # Step 6: Store memory item
+                try:
+                    t0 = time.monotonic()
+                    await store_memory_item(
+                        session,
+                        raw,
+                        queue_row,
+                        extraction,
+                        embedding,
+                        entities,
+                    )
+                    await session.commit()
+                    duration_ms = int((time.monotonic() - t0) * 1000)
+                    logger.info("process_job_success")
+                    logger.info(
+                        "ingestion_complete",
+                        raw_id=str(queue_row.raw_id),
+                        attempts=queue_row.attempts,
+                        duration_ms=duration_ms,
+                    )
+                except Exception as e:
+                    logger.exception(
+                        "process_job_store_failed", error=str(e), queue_depth=queue_depth
+                    )
+                    await move_to_dead_letter(
+                        session,
+                        queue_row,
+                        f"Storage failed: {e}",
+                    )
+                    return
 
         except Exception as e:
             logger.exception("process_job_unexpected_error", error=str(e), queue_depth=queue_depth)
@@ -565,6 +583,26 @@ async def main() -> None:
 
     await init_db()
     await run()
+
+
+async def _handle_worker_rerun(trace) -> str:
+    """Re-enqueue the original RefinementQueue row for reprocessing."""
+    meta = trace.trigger_metadata or {}
+    queue_id_str = meta.get("queue_id")
+    if not queue_id_str:
+        raise ValueError("Cannot rerun worker trace: queue_id missing from trigger_metadata")
+    queue_uuid = _uuid.UUID(queue_id_str)
+    async with get_db() as session:
+        row = await session.get(RefinementQueue, queue_uuid)
+        if row is None:
+            raise ValueError(f"RefinementQueue row {queue_id_str} not found for rerun")
+        row.status = "pending"
+        row.attempts = 0
+        await session.commit()
+    return str(queue_id_str)
+
+
+register_rerun_handler("worker", _handle_worker_rerun)
 
 
 if __name__ == "__main__":

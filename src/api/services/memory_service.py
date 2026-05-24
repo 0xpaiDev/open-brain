@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.models import MemoryItem, RawMemory, RefinementQueue
 from src.llm.client import embedding_client
+from src.observability import current_trace_id
 from src.retrieval.search import hybrid_search
 
 logger = structlog.get_logger(__name__)
@@ -161,6 +162,9 @@ async def ingest_memory(
         await session.flush()
 
     queue_entry = RefinementQueue(raw_id=raw.id)
+    _tid = current_trace_id()
+    if _tid:
+        queue_entry.trace_id = _tid
     session.add(queue_entry)
     await session.flush()
     await session.commit()
