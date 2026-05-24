@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     # Open Brain API URL (used by integrations to call the local API)
     open_brain_api_url: str = "http://localhost:8000"
 
+    # Observability — raw payload retention (days). 0 = purge immediately; failed traces exempt.
+    observability_raw_ttl_days: int = 90
+
     # ── Strava integration ────────────────────────────────────────────────────
     strava_client_id: str = ""
     strava_client_secret: SecretStr = SecretStr("")

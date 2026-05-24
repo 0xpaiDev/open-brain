@@ -333,6 +333,7 @@ class RefinementQueue(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    trace_id: Mapped[str | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # Relationships
     raw_memory = relationship("RawMemory", back_populates="refinement_queue_entries")
@@ -964,3 +965,157 @@ class ChatLog(Base):
     response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_used: Mapped[str | None] = mapped_column(String(64), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ── Execution Explorer (observability) ───────────────────────────────────────
+
+
+class Trace(Base):
+    """Root of every instrumented execution. One per trigger (cron tick, chat turn, HTTP request, worker pickup)."""
+
+    __tablename__ = "traces"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trigger_type: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trigger_metadata: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    total_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_cache_read_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_cache_creation_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_call_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tool_call_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    causal_parent_trace_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id"), nullable=True
+    )
+    rerun_of_trace_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id"), nullable=True
+    )
+    cost_alert_threshold_usd: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    cron_steps: Mapped[list["CronStep"]] = relationship("CronStep", back_populates="trace")
+    llm_call_spans: Mapped[list["LLMCall"]] = relationship("LLMCall", back_populates="trace")
+    tool_call_spans: Mapped[list["ToolCall"]] = relationship("ToolCall", back_populates="trace")
+    event_spans: Mapped[list["ObsEvent"]] = relationship("ObsEvent", back_populates="trace")
+
+
+class CronStep(Base):
+    """One named phase within a cron trace (e.g. 'load_inputs', 'run_llm')."""
+
+    __tablename__ = "cron_steps"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
+    )
+    span_id: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_span_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    step_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    step_metadata: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+
+    trace: Mapped["Trace"] = relationship("Trace", back_populates="cron_steps")
+
+
+class LLMCall(Base):
+    """One Anthropic API call. Hot fields queryable; raw_request/raw_response nulled by sweeper after 90d."""
+
+    __tablename__ = "llm_calls"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
+    )
+    span_id: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_span_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    call_site: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False, default="anthropic")
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_read_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_creation_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False, default=0)
+    pricing_version: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_request: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    raw_response: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    request_summary: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False)
+    response_summary: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    trace: Mapped["Trace"] = relationship("Trace", back_populates="llm_call_spans")
+
+
+class ToolCall(Base):
+    """One tool invocation within a chat tool-use loop."""
+
+    __tablename__ = "tool_calls"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
+    )
+    span_id: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_span_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    args: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    is_error: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    trace: Mapped["Trace"] = relationship("Trace", back_populates="tool_call_spans")
+
+
+class ObsEvent(Base):
+    """Untyped JSONB event — arbitrary side-effects, DB writes, queue enqueues, etc."""
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    trace_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False
+    )
+    span_id: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_span_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[str] = mapped_column(Text, nullable=False, default="info")
+    payload: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    trace: Mapped["Trace"] = relationship("Trace", back_populates="event_spans")

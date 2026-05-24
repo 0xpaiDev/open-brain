@@ -34,6 +34,7 @@ from src.api.routes.training import router as training_router
 from src.api.routes.voice import router as voice_router
 from src.core.config import get_settings
 from src.core.database import close_db, init_db
+from src.core.logging import configure_logging
 
 logger = structlog.get_logger(__name__)
 
@@ -41,6 +42,7 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and tear down the database connection pool."""
+    configure_logging(get_settings().log_level)
     await init_db()
     logger.info("database_initialized")
     yield

@@ -80,6 +80,7 @@ def main() -> int:
         "strava_client_secret",  # Strava OAuth (manual token refresh for MVP)
         "strava_refresh_token",  # Strava OAuth (manual token refresh for MVP)
         "module_training_enabled",  # Feature flag for training module (wired post-MVP)
+        "observability_raw_ttl_days",  # Wired in Phase 5 (observability_sweep.py); not yet created
     }
 
     dead_fields = []

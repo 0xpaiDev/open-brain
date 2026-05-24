@@ -19,6 +19,7 @@ from typing import Any
 import structlog
 
 from src.core.database import close_db, get_db_context, init_db
+from src.core.logging import configure_logging
 from src.core.models import JobRun
 
 logger = structlog.get_logger(__name__)
@@ -40,6 +41,9 @@ async def run_tracked(
         job_fn: The async function to execute.
         *args, **kwargs: Passed through to job_fn.
     """
+    from src.core.config import get_settings
+
+    configure_logging(get_settings().log_level)
     await init_db()
     started_at = datetime.now(UTC)
     status = "success"
