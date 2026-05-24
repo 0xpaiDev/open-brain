@@ -1,6 +1,25 @@
 # Open Brain — Project History
 
-Covering **2026-03-13 to 2026-05-21** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1 + spec lifecycle management + Morning Pulse Briefing Redesign, 905 backend + 315 Vitest
+Covering **2026-03-13 to 2026-05-24** | 6 phases + dashboard + training/commitments V1 + aggregate commitments + Strava live integration + training memory integration + HR TSS fallback + Learning Library V1 + commitment completion bugfix + bulk defer + signal-driven pulse Phase 1 + todo redesign (focus card + project groups) + UI polish sprint + Learning V2 fully shipped + Learning UI redesign + multi-exercise commitments + Commitments first-class tab + commitment plan import with per-exercise sets + Discord removal + Learning cron cross-day dedup + topic context on todos + Claude Code Memory Flywheel V1 + spec lifecycle management + Morning Pulse Briefing Redesign + Chat Tools Library, 955 backend + 315 Vitest
+
+---
+
+## Session — 2026-05-24 (Chat Tools Library — PR1 + PR2 + PR3)
+
+**What changed**:
+- PR1 (Foundation): `ChatLog` ORM model + migration 0023 (chat_logs + RLS); `_messages_create` raw method on `AnthropicClient`; hybrid intent classifier (7 regex patterns + Haiku fallback); `run_tool_loop()` (MAX_ITERATIONS=10); chat route wires `tools_enabled` + intent routing
+- PR2 (Domain tools): `search_memory_filtered()` + `list_todos()` service methods; `memory_tools.py` + `todo_tools.py` with 7 tool schemas + handlers; `chat_tools.py` dispatch table aggregating both
+- PR3 (Frontend): `ToolsToggle` component; `use-chat.ts` gains `toolsEnabled` state persisted to localStorage; `ChatRequest.tools_enabled` added to types; toggle rendered above `ChatInput` in chat page
+- Deleted `docs/backlog/2026-05-23-chat-tools-brief.md` (superseded); archived `docs/backlog/2026-05-23-chat-tools.md` → `docs/archive/`
+- +50 backend tests (24 classifier, 9 todo tools, 5 memory tools, 4 tool agent, 3 dispatch, 2 ChatLog model, 3 chat route integration)
+
+**Files touched**: `src/core/models.py`, `alembic/versions/0023_chat_logs.py` (new), `src/llm/client.py`, `src/llm/intent_classifier.py` (new), `src/llm/tool_agent.py` (new), `src/api/services/chat_tools.py` (new), `src/api/services/memory_tools.py` (new), `src/api/services/todo_tools.py` (new), `src/api/services/memory_service.py`, `src/api/services/todo_service.py`, `src/api/routes/chat.py`, `web/components/chat/tools-toggle.tsx` (new), `web/hooks/use-chat.ts`, `web/lib/types.ts`, `web/app/chat/page.tsx`, `tests/test_chat_logs_model.py` (new), `tests/test_tool_agent.py` (new), `tests/test_intent_classifier.py` (new), `tests/test_memory_tools.py` (new), `tests/test_todo_tools.py` (new), `tests/test_chat_tools_dispatch.py` (new), `tests/test_chat.py`
+
+**Decisions made**: Tool-use loop always uses `claude-sonnet-4-6` regardless of user's selected model (tool-use requires structured output reliability); `user_id` always from request session, never from LLM tool call args
+
+**Gotchas found**: `_DISPATCH_TABLE` captured at import time — patching the module attribute afterward doesn't affect it (tests must assert result, not mock call count); `AsyncMock` default return is `MagicMock` not `None` — must specify `return_value=None` explicitly; Alembic autogenerate produced phantom changes from prod/local schema drift — always hand-craft migrations for new tables
+
+**Test count**: 955 backend, 315 Vitest
 
 ---
 

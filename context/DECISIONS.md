@@ -7,6 +7,10 @@ do not touch this file.
 
 Read at session start as part of the tier-0 frozen snapshot.
 
+## 2026-05-24 — Tool-use loop always uses Sonnet, not user's selected model
+
+Chat tool-use (`run_tool_loop`) hardcodes `claude-sonnet-4-6` regardless of the model the user has selected (Haiku by default). Tool-use requires reliable structured output (JSON `tool_use` blocks) and multi-turn loop coherence. Haiku sometimes produces malformed tool calls under iteration; Sonnet is reliable. The user's model preference governs RAG-only responses; tool-dispatched responses always use Sonnet.
+
 ## 2026-05-24 — Hard rules that must survive skill invocations live in CLAUDE.md, not docs/
 
 The `docs/README.md` override clause (spec output → `docs/backlog/`) was ignored by the `writing-plans` skill because `docs/README.md` is only in the tier-0 "also read" list — it isn't in active context when a skill executes. Any rule that must hold during a skill invocation (model selection, file placement, naming) must be a direct section in CLAUDE.md, not a pointer to an external file.

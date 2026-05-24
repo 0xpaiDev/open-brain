@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.6
-**Date**: 2026-05-19
-**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** **Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD (Spec B).** Modules: Foundation, Todo, Morning Pulse, Training, Learning.
+**Version**: 2.7
+**Date**: 2026-05-24
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** **Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD (Spec B).** **Chat Tools Library — hybrid intent classifier, Anthropic tool-use loop, 7 domain tools, ChatLog audit table.** Modules: Foundation, Todo, Morning Pulse, Training, Learning, Chat.
 
 ## Phase 6 Module System (complete)
 
@@ -242,7 +242,7 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 
 ## Database Schema Design
 
-**27 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
+**28 tables**, all with UUID PKs (not BigInteger). Exception: `commitment_exercise_logs` uses soft-delete via `deleted_at` column.
 
 ### Append-only logs
 - **raw_memory**: Original input text, source, metadata, chunk indices
@@ -291,6 +291,16 @@ Rationale: Weekly rollup captures patterns without storing raw observations. Lon
 - **learning_items**: Leaf units with `status` (`pending`|`done`), `feedback` (free text; calibration signal for LLM selector), `notes` (personal reference), `completed_at`; FK to `learning_sections` with `ON DELETE CASCADE`
 - **learning_materials** (migration 0016): Source material stored one-to-one with a topic (unique constraint on `topic_id`, FK CASCADE). Columns: `content` TEXT (markdown body, unlimited), `source_type` VARCHAR(40), `source_url`, `source_title`, `metadata_json` JSONB. RLS enabled. Full material is NOT returned in the tree view — only `has_material: bool` flag. Bulk import at `POST /v1/learning/import` (schemas in `src/api/schemas/learning_import.py`). Material does NOT sync to `memory_items`.
 - **todo_items.learning_item_id**: FK column added by migration 0013 (`ON DELETE SET NULL`); distinguishes cron-generated learning todos from regular ones. Learning items DO NOT sync to `memory_items`; the derived todos DO, via existing `todo_sync.py`.
+
+### Module: Chat Tools
+- **chat_logs** (migration 0023): Audit log for every chat exchange. Columns: `user_message` TEXT, `tools_enabled` BOOL, `intent_tool` VARCHAR(64) (regex/haiku classified tool name, nullable), `intent_method` VARCHAR(16) ("regex"|"haiku"|"none"), `llm_calls` JSONB (raw Anthropic messages array), `tool_calls` JSONB (tool name + args per iteration), `response_text` TEXT, `model_used` VARCHAR(64), `duration_ms` INT. RLS enabled. Written by `run_tool_loop()` (`src/llm/tool_agent.py`).
+
+New LLM modules supporting chat tools:
+- `src/llm/intent_classifier.py` — hybrid classifier: 7 regex patterns (fast path) → Haiku LLM fallback → `(None, "none")` for RAG
+- `src/llm/tool_agent.py` — `run_tool_loop()` iterates up to `MAX_ITERATIONS=10` dispatching tool calls via `dispatch` callback; always uses `claude-sonnet-4-6`; writes `ChatLog` on completion
+- `src/api/services/chat_tools.py` — aggregates `MEMORY_TOOLS + TODO_TOOLS` into `ALL_TOOLS`; `_DISPATCH_TABLE` maps tool names to handlers; `dispatch()` entry point
+- `src/api/services/memory_tools.py` — `search_memory_filtered` + `expand_memory` tool schemas and handlers
+- `src/api/services/todo_tools.py` — `list_todos`, `create_todo`, `complete_todo`, `defer_todo`, `edit_todo` tool schemas and handlers
 
 ### Job monitoring
 - **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis, commitment_miss); used by `/v1/jobs/status`
