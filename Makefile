@@ -119,10 +119,10 @@ memory-state:
 	@python3 scripts/memory/state.py
 
 memory-distill:
-	@bash scripts/memory/run-distill.sh
+	@ANTHROPIC_API_KEY= bash scripts/memory/run-distill.sh
 
 memory-curate:
-	@bash scripts/memory/run-curate.sh
+	@ANTHROPIC_API_KEY= bash scripts/memory/run-curate.sh
 
 memory-logs:
 	@echo "==== distill (last 5) ===="

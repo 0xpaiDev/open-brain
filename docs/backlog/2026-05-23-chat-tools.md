@@ -1,18 +1,331 @@
-# Chat Tools Library Implementation Plan
+---
+status: ready
+created: 2026-05-23
+---
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+# Chat Tools Library
 
-**Goal:** Add tool-use to the web chat — natural language manipulation of todos and memory via 7 Anthropic tools, a hybrid intent classifier, and full transcript logging.
+## Context
 
-**Architecture:** A hybrid intent classifier (regex → Haiku fallback) gates tool-use per turn. When intent is detected, Sonnet runs a multi-turn tool-use loop (`src/llm/tool_agent.py`) and writes a full transcript to `chat_logs`. Regular chat turns use the existing RAG path unchanged. Three PRs: foundation + logging, domain tools, frontend toggle.
+The web chat at 0xpai.com is RAG + synthesis only (`src/api/routes/chat.py`). No tool-use loop, no multi-step agent behavior. The user wants the chat to manipulate data via natural language: mark todos done, create tasks, defer memories, query by structured filters, etc.
 
-**Tech Stack:** Anthropic SDK tool-use API, FastAPI, SQLAlchemy async, Alembic, pytest-asyncio, Pydantic v2.
-
-**Spec:** `docs/superpowers/specs/2026-05-23-chat-tools-design.md`
+This spec defines the v1 implementation: 7 tools (full todo domain + memory reads), a hybrid intent classifier, an agentic tool-use loop powered by Sonnet, full transcript logging, and a frontend toggle.
 
 ---
 
-## File Map
+## Decisions
+
+| Axis | Decision |
+|---|---|
+| Tool surface | Narrow typed tools (one tool per action) |
+| v1 scope | Full todo domain (5 tools) + memory reads (2 tools) |
+| Memory writes | Deferred to v2 |
+| Intent routing | Hybrid: regex fast path → Haiku fallback |
+| Tool-use model | Always Sonnet (`claude-sonnet-4-6`), regardless of user's selected model |
+| Regular chat model | User's selected model (unchanged) |
+| SQL access | Constrained DSL only (filter objects, not raw SQL) |
+| Auth | `user_id` from request session, never from model args |
+| Tool discovery | All tools every turn (v1); revisit at 10+ tools |
+| Confirmation gates | None needed in v1 (all writes are reversible by another tool call) |
+| Module structure | Domain split: `memory_tools.py` + `todo_tools.py` + thin `chat_tools.py` aggregator |
+| Observability | `chat_logs` DB table per turn (full JSONB transcript) |
+| Frontend toggle | `tools_enabled` request param; frontend toggle near model select; persisted in localStorage |
+| Toggle test | Backend unit test only (no Vitest frontend test) |
+
+---
+
+## V1 Tool List (7 tools)
+
+### Memory reads
+
+**`search_memory_filtered`**
+```
+Input:  query: str (required)
+        type?: str           # learning | decision | todo | daily_pulse | ...
+        date_from?: str      # ISO date
+        date_to?: str        # ISO date
+        project?: str
+        importance_min?: float
+Output: list[{id, content, type, created_at, importance_score}]
+Wraps:  new memory_service.search_memory_filtered() → src/retrieval/search.py
+```
+
+**`expand_memory`**
+```
+Input:  memory_id: str (UUID)
+Output: {content, raw_text, neighbors[], metadata}
+Wraps:  existing memory_service.expand_memory()
+Note:   plain DB lookup by ID — no vector search. Intended as follow-up to search_memory_filtered.
+```
+
+### Todo reads
+
+**`list_todos`**
+```
+Input:  status?: str         # open | done | cancelled
+        due_before?: str     # ISO date
+        project?: str
+Output: list[{id, description, status, priority, due_date, project}]
+Wraps:  new todo_service.list_todos()
+```
+
+### Todo writes (all reversible by another tool call)
+
+**`create_todo`**
+```
+Input:  description: str (required)
+        priority?: str       # high | normal | low (default: normal)
+        due_date?: str       # ISO date
+        project?: str
+Output: {id, description}
+Wraps:  todo_service.create_todo()
+```
+
+**`complete_todo`**
+```
+Input:  todo_id: str (UUID)
+        reason?: str
+Output: confirmation text with todo description
+Wraps:  todo_service.update_todo(todo, status="done", reason=reason)
+```
+
+**`defer_todo`**
+```
+Input:  todo_id: str (UUID)
+        until_date: str (ISO date, required)
+        reason?: str
+Output: confirmation text
+Wraps:  todo_service.update_todo(todo, due_date=until_date, reason=reason)
+```
+
+**`edit_todo`**
+```
+Input:  todo_id: str (UUID)
+        description?: str
+        priority?: str
+        project?: str
+Output: confirmation with changed fields
+Wraps:  todo_service.update_todo(todo, ...)
+```
+
+---
+
+## Architecture
+
+Three PRs in sequence:
+
+### PR 1 — Foundation + Logging (no tools yet)
+
+**New files:**
+- `src/llm/intent_classifier.py` — hybrid classifier (regex → Haiku fallback)
+- `src/llm/tool_agent.py` — Sonnet tool-use loop
+- `src/api/services/chat_tools.py` — thin aggregator: `ALL_TOOLS` list + dispatch table
+- `alembic/versions/<next>_chat_logs.py` — migration for `chat_logs` table (check `ls alembic/versions/` for latest number before creating)
+
+**Modified files:**
+- `src/llm/client.py` — add `_messages_create(messages, tools, model, max_tokens)` raw method used by the loop (does not modify `complete_with_history`)
+- `src/api/routes/chat.py` — insert intent classification + tool routing; add `tools_enabled` param
+
+### PR 2 — Domain tools
+
+**New files:**
+- `src/api/services/memory_tools.py` — tool handlers + Anthropic tool schemas for memory tools
+- `src/api/services/todo_tools.py` — tool handlers + schemas for todo tools
+
+**Modified files:**
+- `src/api/services/memory_service.py` — add `search_memory_filtered(session, *, query, type?, date_from?, date_to?, project?, importance_min?)`
+- `src/api/services/todo_service.py` — add `list_todos(session, *, status?, due_before?, project?)`
+- `src/api/services/chat_tools.py` — wire domain tool modules in; complete dispatch table
+
+### PR 3 — Frontend toggle
+
+**Modified files:**
+- `web/` — tools on/off toggle near model select in chat UI; persists in localStorage; sends `tools_enabled` param on every chat request
+
+---
+
+## Data Flow
+
+```
+Request arrives
+  ↓
+tools_enabled check (from request param)
+  │
+  NO → complete_with_history, user's selected model (unchanged RAG path)
+  │
+  YES
+  ↓
+[Regex classifier]
+  Pattern examples:
+    complete_todo:  /mark.*(done|complete)|finish|check\s*off/i
+    list_todos:     /show.*(todos|tasks)|what.*(on my list|open tasks)/i
+    create_todo:    /create|add.*(task|todo)|remind me to/i
+    defer_todo:     /defer|snooze|push back|postpone/i
+    edit_todo:      /rename|change.*todo|update.*task/i
+    search_memory:  /search.*mem|find.*learn|look up.*decision/i
+    expand_memory:  /expand|show full|more detail.*memory/i
+  │
+  MATCH → intent = tool_name
+  │
+  NO MATCH
+    ↓
+  [Haiku classifier]
+    System prompt: intent→tool table (full list)
+    Output: {"tool": "complete_todo"} | {"tool": null}
+  │
+  MATCH → intent = tool_name
+  │
+  null → no tool detected → RAG path with user's selected model
+  │
+TOOL PATH: intent != null
+  ↓
+run_tool_loop(
+  model="claude-sonnet-4-6",
+  system_prompt=<existing RAG system prompt>,
+  messages=messages_for_llm,
+  tools=ALL_TOOLS,
+  max_tokens=2048,
+  session=db,
+  user_id=current_user.id,
+)
+  Loop (max 10 iterations):
+    client._messages_create(tools=ALL_TOOLS, ...)
+    if stop_reason == "end_turn": break
+    dispatch each tool_use block:
+      handler(session, user_id, **model_args) → result | ToolError
+    append assistant(tool_use blocks) + user(tool_result blocks) to local messages
+  if iteration_cap reached: return "I wasn't able to complete that in one turn"
+  ↓
+Write chat_logs row (full transcript)
+  ↓
+Return final text
+```
+
+---
+
+## Error Handling
+
+| Scenario | Behavior |
+|---|---|
+| Tool handler raises (invalid UUID, not found, validation error) | Caught at dispatch, returned as `tool_result {is_error: true, content: "..."}`. Model surfaces to user naturally. |
+| LLM call fails (timeout, APIError) | Propagates as `ExtractionFailed`, same as today. Route returns 500. |
+| Iteration cap (10) reached | Graceful text response: "I wasn't able to complete that in one turn." |
+| Tool A succeeds, tool B fails (parallel tool calls) | Both results returned; model decides response. No rollback — each handler commits its own transaction. |
+| Intent classifier Haiku call fails | Log warning, fall back to RAG path (no tool-use). |
+
+---
+
+## Auth / Scoping Checklist
+
+Every tool handler receives `user_id: uuid.UUID` from the request session — never from the model's tool call args. Handlers for mutating tools (`complete_todo`, `defer_todo`, `edit_todo`) fetch the target record with a `WHERE id = :id` check; if not found, raise `ToolError("not found")`.
+
+(The app is currently single-user; `user_id` is passed for future-proofing. The service layer is the security boundary, not the LLM.)
+
+---
+
+## chat_logs Table
+
+```sql
+CREATE TABLE chat_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  user_message TEXT NOT NULL,
+  tools_enabled BOOLEAN NOT NULL,
+  intent_tool VARCHAR(64),          -- null if no tool intent detected
+  intent_method VARCHAR(16),        -- "regex" | "haiku" | "none"
+  llm_calls JSONB,                  -- [{model, turn_index, input_messages, response, stop_reason, duration_ms}]
+  tool_calls JSONB,                 -- [{tool_name, args, result, duration_ms, is_error}]
+  response_text TEXT,
+  model_used VARCHAR(64),
+  duration_ms INTEGER
+);
+ALTER TABLE chat_logs ENABLE ROW LEVEL SECURITY;
+```
+
+Future log page: `GET /v1/chat/logs?limit=50&offset=0` — rows ordered by `created_at DESC`.
+
+---
+
+## New Service Methods
+
+**`memory_service.search_memory_filtered`**
+```python
+async def search_memory_filtered(
+    session: AsyncSession,
+    *,
+    query: str,
+    type: str | None = None,
+    date_from: str | None = None,   # ISO date string
+    date_to: str | None = None,
+    project: str | None = None,
+    importance_min: float | None = None,
+    limit: int = 10,
+) -> list[MemoryItem]: ...
+```
+Calls `src/retrieval/search.py` hybrid search, then applies post-filters for type/date/project/importance_min.
+
+**`todo_service.list_todos`**
+```python
+async def list_todos(
+    session: AsyncSession,
+    *,
+    status: str | None = None,
+    due_before: str | None = None,  # ISO date string
+    project: str | None = None,
+) -> list[TodoItem]: ...
+```
+
+---
+
+## Testing Plan
+
+| Area | Approach |
+|---|---|
+| Intent classifier — regex | Unit tests: sample phrases per tool, assert correct tool name (or None) |
+| Intent classifier — Haiku | Unit tests with mocked Haiku response; real-API integration test marked `@pytest.mark.slow` |
+| Tool handlers (memory + todo) | Integration tests against real Postgres (per CLAUDE.md footgun rules); call handler directly with real session; assert DB state |
+| Tool dispatch loop | Unit tests: mock `_messages_create` to return canned tool_use → tool_result sequences; assert final text and iteration count |
+| Chat route | Integration test: POST `/v1/chat` with `tools_enabled=true`; mock Anthropic; assert handler invoked with correct args and `chat_logs` row written |
+| `tools_enabled` param | Backend unit test: route with `tools_enabled=false` never calls intent classifier |
+
+Frontend toggle: covered by the backend param unit test above; no Vitest test.
+
+All DB-touching tests use real Postgres (not SQLite) per project policy.
+
+---
+
+## Files Reference
+
+| File | Role |
+|---|---|
+| `src/api/routes/chat.py` | Route: add `tools_enabled` param, intent routing, model guard |
+| `src/llm/client.py` | Add `_messages_create` raw method |
+| `src/llm/intent_classifier.py` | NEW: regex + Haiku hybrid classifier |
+| `src/llm/tool_agent.py` | NEW: Sonnet tool-use loop |
+| `src/api/services/chat_tools.py` | NEW: aggregator + dispatch table |
+| `src/api/services/memory_tools.py` | NEW: memory tool handlers + schemas |
+| `src/api/services/todo_tools.py` | NEW: todo tool handlers + schemas |
+| `src/api/services/memory_service.py` | Add `search_memory_filtered` |
+| `src/api/services/todo_service.py` | Add `list_todos` |
+| `alembic/versions/<next>_chat_logs.py` | NEW: migration for chat_logs table (verify latest revision first) |
+| `src/llm/prompts.py` | Add intent classifier system prompt (intent→tool table) |
+| `web/` | PR 3: frontend tools toggle |
+
+---
+
+## Out of Scope (v1)
+
+- Memory writes (defer_memory, adjust_importance, supersede_memory) — v2
+- Pulse tools (get_morning_pulse, mark_pulse_item_done) — v2
+- Log page UI in the dashboard — future PR after logging is in prod
+- Server-side agent runtime (Hermes-style) — separate workstream
+- Undo system — separate workstream
+
+---
+
+## Plan
+
+### File Map
 
 **PR 1 — Foundation + Logging**
 | File | Action | Purpose |
@@ -47,13 +360,9 @@
 
 ---
 
-## PR 1: Foundation + Logging
-
 ### Task 1: ChatLog model + migration
 
-**Files:**
-- Modify: `src/core/models.py`
-- Create: `alembic/versions/0023_chat_logs.py`
+**Files:** `src/core/models.py`, `alembic/versions/0023_chat_logs.py`
 
 - [ ] **Step 1.1: Verify the latest migration number**
 
@@ -68,15 +377,11 @@ Expected: `0022_drop_pulse_notes.py` is the latest. Use `0023` for the new migra
 Find the end of the models file (before or after `TodoHistory`). Add:
 
 ```python
-import uuid as _uuid_module  # add to top-of-file imports if not present
-
 class ChatLog(Base):
-    """One row per chat turn — full transcript for observability."""
-
     __tablename__ = "chat_logs"
 
-    id: Mapped[_uuid_module.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=_uuid_module.uuid4
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -106,7 +411,7 @@ alembic revision --autogenerate -m "add_chat_logs_table"
 
 Then rename the generated file to `0023_chat_logs.py`. Open it and verify the `upgrade()` function includes:
 - `CREATE TABLE chat_logs` with all columns
-- `ALTER TABLE chat_logs ENABLE ROW LEVEL SECURITY` — add this manually as the autogenerate won't include it
+- `ALTER TABLE chat_logs ENABLE ROW LEVEL SECURITY` — add this manually
 
 The final `upgrade()` should end with:
 ```python
@@ -118,20 +423,19 @@ And `downgrade()`:
 op.drop_table("chat_logs")
 ```
 
-Then apply the migration:
+Then apply:
 ```bash
 alembic upgrade head
 ```
 
 Expected: `Running upgrade ... -> 0023...`
 
-- [ ] **Step 1.4: Write a test that verifies the ChatLog table can be written and queried**
+- [ ] **Step 1.4: Write a test that verifies ChatLog can be written and queried**
 
 In `tests/test_chat_logs_model.py`:
 
 ```python
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
 from src.core.models import ChatLog
 
@@ -158,13 +462,11 @@ async def test_chat_log_can_be_created(async_session):
     assert fetched.llm_calls[0]["stop_reason"] == "end_turn"
 ```
 
-- [ ] **Step 1.5: Run the test**
+- [ ] **Step 1.5: Run the test** — Expected: PASS
 
 ```bash
 pytest tests/test_chat_logs_model.py -v
 ```
-
-Expected: PASS. If it fails with a missing column type, check that `JSONB().with_variant(JSON, "sqlite")` is applied correctly.
 
 - [ ] **Step 1.6: Commit**
 
@@ -177,21 +479,16 @@ git commit -m "feat(chat): add ChatLog model and migration for transcript loggin
 
 ### Task 2: `client._messages_create()` raw method
 
-**Files:**
-- Modify: `src/llm/client.py`
+**Files:** `src/llm/client.py`
 
-- [ ] **Step 2.1: Write a failing test**
-
-In `tests/test_tool_agent.py` (create this file):
+- [ ] **Step 2.1: Write a failing test** — In `tests/test_tool_agent.py`:
 
 ```python
-import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 @pytest.mark.asyncio
 async def test_messages_create_returns_message_object(set_test_env):
-    """_messages_create returns raw Anthropic Message (not just text)."""
     from src.llm.client import AnthropicClient
 
     fake_response = MagicMock()
@@ -215,17 +512,9 @@ async def test_messages_create_returns_message_object(set_test_env):
     assert result.content[0].text == "Hello"
 ```
 
-- [ ] **Step 2.2: Run to verify it fails**
+- [ ] **Step 2.2: Run to verify it fails** — Expected: `AnthropicClient has no attribute '_messages_create'`
 
-```bash
-pytest tests/test_tool_agent.py::test_messages_create_returns_message_object -v
-```
-
-Expected: FAIL — `AnthropicClient has no attribute '_messages_create'`
-
-- [ ] **Step 2.3: Add `_messages_create` to `src/llm/client.py`**
-
-Open `src/llm/client.py`. After `complete_with_history()`, add:
+- [ ] **Step 2.3: Add `_messages_create` to `src/llm/client.py`** — After `complete_with_history()`:
 
 ```python
 async def _messages_create(
@@ -237,11 +526,6 @@ async def _messages_create(
     model: str,
     max_tokens: int = 2048,
 ):
-    """Raw messages.create call returning the full Anthropic Message object.
-
-    Used by tool_agent.py — callers inspect stop_reason and content blocks
-    directly. Unlike complete_with_history(), this does NOT extract text.
-    """
     import anthropic as _anthropic
 
     def _call():
@@ -269,15 +553,9 @@ async def _messages_create(
         raise ExtractionFailed(f"Unexpected LLM error: {exc}") from exc
 ```
 
-`_LLM_TIMEOUT_SECONDS` is already defined at module level. `asyncio`, `logger`, `ExtractionFailed` are already available in the file.
+`_LLM_TIMEOUT_SECONDS`, `asyncio`, `logger`, `ExtractionFailed` are already available in the file.
 
-- [ ] **Step 2.4: Run the test again**
-
-```bash
-pytest tests/test_tool_agent.py::test_messages_create_returns_message_object -v
-```
-
-Expected: PASS
+- [ ] **Step 2.4: Run the test again** — Expected: PASS
 
 - [ ] **Step 2.5: Commit**
 
@@ -290,19 +568,13 @@ git commit -m "feat(llm): add _messages_create raw method for tool-use loop"
 
 ### Task 3: Intent classifier — regex fast path
 
-**Files:**
-- Create: `src/llm/intent_classifier.py`
-- Create: `tests/test_intent_classifier.py`
+**Files:** `src/llm/intent_classifier.py`, `tests/test_intent_classifier.py`
 
-- [ ] **Step 3.1: Write failing tests**
-
-Create `tests/test_intent_classifier.py`:
+- [ ] **Step 3.1: Write failing tests** — Create `tests/test_intent_classifier.py`:
 
 ```python
 import pytest
 from unittest.mock import AsyncMock, patch
-
-# ── Regex fast-path tests ────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("message,expected_tool", [
     ("mark that task as done", "complete_todo"),
@@ -323,7 +595,6 @@ from unittest.mock import AsyncMock, patch
     ("find learnings from last week", "search_memory_filtered"),
     ("expand that memory item", "expand_memory"),
     ("show full content of the memory", "expand_memory"),
-    # No-tool cases
     ("what is the meaning of life?", None),
     ("summarize my week", None),
     ("how are you?", None),
@@ -339,15 +610,9 @@ async def test_classify_intent_regex(message, expected_tool):
         mock_haiku.assert_not_called()
 ```
 
-- [ ] **Step 3.2: Run to verify it fails**
+- [ ] **Step 3.2: Run to verify it fails** — Expected: `ModuleNotFoundError: No module named 'src.llm.intent_classifier'`
 
-```bash
-pytest tests/test_intent_classifier.py -v 2>&1 | head -30
-```
-
-Expected: FAIL — `ModuleNotFoundError: No module named 'src.llm.intent_classifier'`
-
-- [ ] **Step 3.3: Create `src/llm/intent_classifier.py` with regex fast path**
+- [ ] **Step 3.3: Create `src/llm/intent_classifier.py`**
 
 ```python
 """Hybrid intent classifier for chat tool routing.
@@ -364,7 +629,6 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Maps tool name → compiled regex pattern
 _TOOL_PATTERNS: dict[str, re.Pattern] = {
     "complete_todo": re.compile(
         r"mark.*(done|complete|finished)|check\s*off|finish(ed)?.*(task|todo|it)|i finished",
@@ -414,7 +678,6 @@ Respond with JSON only. Examples:
 
 
 async def _haiku_classify(message: str) -> str | None:
-    """Call Haiku to classify intent. Returns tool name or None."""
     from src.llm.client import anthropic_client
 
     if anthropic_client is None:
@@ -435,17 +698,10 @@ async def _haiku_classify(message: str) -> str | None:
 
 
 async def classify_intent(message: str) -> tuple[str | None, str]:
-    """Return (tool_name | None, method) for the given user message.
-
-    method is "regex" if pattern matched, "haiku" if Haiku classified,
-    "none" if no tool detected.
-    """
-    # Fast path
     for tool_name, pattern in _TOOL_PATTERNS.items():
         if pattern.search(message):
             return tool_name, "regex"
 
-    # Slow path
     tool = await _haiku_classify(message)
     if tool is not None:
         return tool, "haiku"
@@ -453,13 +709,11 @@ async def classify_intent(message: str) -> tuple[str | None, str]:
     return None, "none"
 ```
 
-- [ ] **Step 3.4: Run the tests**
+- [ ] **Step 3.4: Run the tests** — Expected: All parametrized tests PASS
 
 ```bash
 pytest tests/test_intent_classifier.py -v
 ```
-
-Expected: All parametrized tests PASS. If a regex test fails, adjust the pattern for that case.
 
 - [ ] **Step 3.5: Commit**
 
@@ -472,17 +726,13 @@ git commit -m "feat(llm): add hybrid intent classifier (regex + Haiku fallback)"
 
 ### Task 4: Intent classifier — Haiku fallback tests
 
-**Files:**
-- Modify: `tests/test_intent_classifier.py`
+**Files:** `tests/test_intent_classifier.py`
 
-- [ ] **Step 4.1: Add Haiku fallback tests**
-
-Append to `tests/test_intent_classifier.py`:
+- [ ] **Step 4.1: Append Haiku fallback tests to `tests/test_intent_classifier.py`**
 
 ```python
 @pytest.mark.asyncio
 async def test_classify_intent_haiku_fallback_detects_tool():
-    """When regex misses, Haiku classifies the intent."""
     from src.llm.intent_classifier import classify_intent
 
     with patch("src.llm.intent_classifier._haiku_classify", new=AsyncMock(return_value="list_todos")) as mock:
@@ -495,7 +745,6 @@ async def test_classify_intent_haiku_fallback_detects_tool():
 
 @pytest.mark.asyncio
 async def test_classify_intent_haiku_fallback_returns_none():
-    """When Haiku returns null, no tool is detected."""
     from src.llm.intent_classifier import classify_intent
 
     with patch("src.llm.intent_classifier._haiku_classify", new=AsyncMock(return_value=None)):
@@ -507,24 +756,15 @@ async def test_classify_intent_haiku_fallback_returns_none():
 
 @pytest.mark.asyncio
 async def test_classify_intent_haiku_failure_falls_through():
-    """If Haiku call raises, classify_intent returns (None, 'none') gracefully."""
     from src.llm.intent_classifier import classify_intent
 
     with patch("src.llm.intent_classifier._haiku_classify", new=AsyncMock(side_effect=Exception("API error"))):
-        # _haiku_classify already catches and returns None — so this tests the outer path
         result, method = await classify_intent("do the thing")
 
-    # No regex match, Haiku returned None (or raised and was caught inside _haiku_classify)
     assert result is None
 ```
 
-- [ ] **Step 4.2: Run the new tests**
-
-```bash
-pytest tests/test_intent_classifier.py -v
-```
-
-Expected: All PASS.
+- [ ] **Step 4.2: Run** — Expected: All PASS
 
 - [ ] **Step 4.3: Commit**
 
@@ -537,13 +777,9 @@ git commit -m "test(llm): add Haiku fallback tests for intent classifier"
 
 ### Task 5: Tool-use loop (`tool_agent.py`) + stub `chat_tools.py`
 
-**Files:**
-- Create: `src/llm/tool_agent.py`
-- Create: `src/api/services/chat_tools.py`
+**Files:** `src/llm/tool_agent.py`, `src/api/services/chat_tools.py`
 
-- [ ] **Step 5.1: Write failing tests for the tool loop**
-
-Append to `tests/test_tool_agent.py`:
+- [ ] **Step 5.1: Write failing tests for the tool loop** — Append to `tests/test_tool_agent.py`:
 
 ```python
 import uuid
@@ -551,7 +787,6 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 @pytest.mark.asyncio
 async def test_tool_loop_end_turn_on_first_call(async_session, set_test_env):
-    """Loop exits immediately when stop_reason is end_turn."""
     from src.llm.tool_agent import run_tool_loop, ToolError
 
     text_block = MagicMock()
@@ -587,7 +822,6 @@ async def test_tool_loop_end_turn_on_first_call(async_session, set_test_env):
 
 @pytest.mark.asyncio
 async def test_tool_loop_dispatches_tool_call(async_session, set_test_env):
-    """Loop dispatches a tool call and continues to end_turn."""
     from src.llm.tool_agent import run_tool_loop
 
     tool_use_block = MagicMock()
@@ -637,7 +871,6 @@ async def test_tool_loop_dispatches_tool_call(async_session, set_test_env):
 
 @pytest.mark.asyncio
 async def test_tool_loop_cap(async_session, set_test_env):
-    """Loop returns cap message after MAX_ITERATIONS."""
     from src.llm.tool_agent import run_tool_loop, MAX_ITERATIONS
 
     tool_use_block = MagicMock()
@@ -674,25 +907,12 @@ async def test_tool_loop_cap(async_session, set_test_env):
     assert mock_client._messages_create.call_count == MAX_ITERATIONS
 ```
 
-- [ ] **Step 5.2: Run to verify they fail**
-
-```bash
-pytest tests/test_tool_agent.py -v 2>&1 | head -30
-```
-
-Expected: FAIL — `ModuleNotFoundError: No module named 'src.llm.tool_agent'`
+- [ ] **Step 5.2: Run to verify they fail** — Expected: `ModuleNotFoundError: No module named 'src.llm.tool_agent'`
 
 - [ ] **Step 5.3: Create `src/llm/tool_agent.py`**
 
 ```python
-"""Agentic tool-use loop for chat.
-
-Runs Anthropic's multi-turn tool-use protocol:
-  model → tool_use blocks → dispatch handlers → tool_result blocks → repeat
-  until stop_reason == "end_turn" or MAX_ITERATIONS reached.
-
-Writes one ChatLog row per turn.
-"""
+"""Agentic tool-use loop for chat."""
 from __future__ import annotations
 
 import time
@@ -728,7 +948,6 @@ async def run_tool_loop(
     intent_tool: str | None,
     intent_method: str | None,
 ) -> str:
-    """Run the Anthropic tool-use loop, returning the final text response."""
     start_ms = int(time.time() * 1000)
     loop_messages = list(messages)
     llm_calls: list[dict] = []
@@ -766,7 +985,6 @@ async def run_tool_loop(
             )
             return text
 
-        # Dispatch all tool_use blocks in this response
         tool_use_blocks = [b for b in raw.content if b.type == "tool_use"]
         tool_result_content: list[dict] = []
 
@@ -829,7 +1047,6 @@ async def _write_log(
     model_used: str,
     duration_ms: int,
 ) -> None:
-    """Write one ChatLog row. Best-effort — never raises."""
     try:
         from src.core.models import ChatLog
 
@@ -853,20 +1070,14 @@ async def _write_log(
 - [ ] **Step 5.4: Create the stub `src/api/services/chat_tools.py`**
 
 ```python
-"""Chat tool registry — aggregates tool schemas and dispatches calls.
-
-PR1: Empty tool list. PR2 wires in memory_tools and todo_tools.
-"""
+"""Chat tool registry — aggregates tool schemas and dispatches calls."""
 from __future__ import annotations
 
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm.tool_agent import ToolError
 
-# Populated in PR2 when domain tool modules are wired in
 ALL_TOOLS: list[dict] = []
-
-# Populated in PR2
 _DISPATCH_TABLE: dict = {}
 
 
@@ -876,20 +1087,17 @@ async def dispatch(
     session: AsyncSession,
     user_id: uuid.UUID,
 ) -> str:
-    """Route a tool call to the appropriate handler."""
     handler = _DISPATCH_TABLE.get(tool_name)
     if handler is None:
         raise ToolError(f"Unknown tool: {tool_name}")
     return await handler(tool_name, args, session, user_id)
 ```
 
-- [ ] **Step 5.5: Run the tool agent tests**
+- [ ] **Step 5.5: Run all tool agent tests** — Expected: All 4 PASS
 
 ```bash
 pytest tests/test_tool_agent.py -v
 ```
-
-Expected: All 4 tests PASS (`test_messages_create_returns_message_object` + the 3 new loop tests).
 
 - [ ] **Step 5.6: Commit**
 
@@ -902,21 +1110,15 @@ git commit -m "feat(llm): add tool-use loop and chat_tools stub"
 
 ### Task 6: Wire chat route with `tools_enabled`
 
-**Files:**
-- Modify: `src/api/routes/chat.py`
+**Files:** `src/api/routes/chat.py`
 
-- [ ] **Step 6.1: Write failing tests**
-
-Add to `tests/test_chat.py` (find the existing test file and append these tests after the existing ones).
-
-First check the calling convention for `_patch_chat_deps` in the existing tests — it takes `monkeypatch` and returns a tuple `(mock_anthropic, mock_voyage, mock_search)` (not a context manager):
+- [ ] **Step 6.1: Write failing tests** — Add to `tests/test_chat.py`:
 
 ```python
-# ── Tool routing tests ────────────────────────────────────────────────────────
+# Check the calling convention for _patch_chat_deps in existing tests first.
 
 @pytest.mark.asyncio
 async def test_chat_tools_disabled_uses_rag_path(client, api_key_headers, monkeypatch):
-    """tools_enabled=false (default) never calls the intent classifier."""
     _patch_chat_deps(monkeypatch)
     with patch("src.api.routes.chat.classify_intent") as mock_classify:
         resp = await client.post(
@@ -930,7 +1132,6 @@ async def test_chat_tools_disabled_uses_rag_path(client, api_key_headers, monkey
 
 @pytest.mark.asyncio
 async def test_chat_tools_enabled_no_intent_uses_rag_path(client, api_key_headers, monkeypatch):
-    """tools_enabled=true but no intent detected → falls through to RAG."""
     _patch_chat_deps(monkeypatch)
     with patch("src.api.routes.chat.classify_intent", new=AsyncMock(return_value=(None, "none"))):
         with patch("src.api.routes.chat.run_tool_loop") as mock_loop:
@@ -945,7 +1146,6 @@ async def test_chat_tools_enabled_no_intent_uses_rag_path(client, api_key_header
 
 @pytest.mark.asyncio
 async def test_chat_tools_enabled_with_intent_calls_tool_loop(client, api_key_headers, monkeypatch):
-    """tools_enabled=true with detected intent → calls run_tool_loop with Sonnet."""
     _patch_chat_deps(monkeypatch)
     with patch("src.api.routes.chat.classify_intent", new=AsyncMock(return_value=("list_todos", "regex"))):
         with patch("src.api.routes.chat.run_tool_loop", new=AsyncMock(return_value="You have 2 todos.")) as mock_loop:
@@ -963,49 +1163,22 @@ async def test_chat_tools_enabled_with_intent_calls_tool_loop(client, api_key_he
     assert call_kwargs["intent_tool"] == "list_todos"
 ```
 
-`from unittest.mock import AsyncMock, patch` should already be imported in `test_chat.py`. Add it if not present.
-
-- [ ] **Step 6.2: Run to verify they fail**
-
-```bash
-pytest tests/test_chat.py::test_chat_tools_disabled_uses_rag_path \
-       tests/test_chat.py::test_chat_tools_enabled_no_intent_uses_rag_path \
-       tests/test_chat.py::test_chat_tools_enabled_with_intent_calls_tool_loop \
-       -v 2>&1 | head -40
-```
-
-Expected: FAIL — `422` or `ImportError` (ChatRequest has no `tools_enabled` field yet).
+- [ ] **Step 6.2: Run to verify they fail** — Expected: `422` or `ImportError`
 
 - [ ] **Step 6.3: Update `ChatRequest` in `src/api/routes/chat.py`**
 
-Add the field to `ChatRequest`:
-
-```python
-class ChatRequest(BaseModel):
-    """Request body for POST /v1/chat."""
-
-    message: str = Field(..., min_length=1, max_length=10_000)
-    history: list[ChatMessage] = Field(default_factory=list)
-    model: str | None = None
-    external_context: str | None = Field(default=None, max_length=_MAX_EXTERNAL_CONTEXT)
-    tools_enabled: bool = Field(default=False)
-```
+Add `tools_enabled: bool = Field(default=False)` to `ChatRequest`.
 
 - [ ] **Step 6.4: Add imports to `src/api/routes/chat.py`**
 
-Add at the top of the imports section:
-
 ```python
 import uuid as _uuid
-
 from src.llm.intent_classifier import classify_intent
 from src.llm.tool_agent import run_tool_loop
 from src.api.services.chat_tools import ALL_TOOLS, dispatch
 ```
 
-- [ ] **Step 6.5: Replace the synthesis step in `src/api/routes/chat.py`**
-
-Find step `# ── 9. Synthesize ──` and replace it:
+- [ ] **Step 6.5: Replace step 9 (Synthesize) in `src/api/routes/chat.py`**
 
 ```python
     # ── 9. Synthesize (or run tool loop) ────────────────────────────────────
@@ -1023,7 +1196,7 @@ Find step `# ── 9. Synthesize ──` and replace it:
             model="claude-sonnet-4-6",
             max_tokens=2048,
             session=session,
-            user_id=_uuid.UUID(int=0),  # single-user placeholder
+            user_id=_uuid.UUID(int=0),
             dispatch=dispatch,
             user_message=body.message,
             tools_enabled=body.tools_enabled,
@@ -1039,21 +1212,17 @@ Find step `# ── 9. Synthesize ──` and replace it:
         )
 ```
 
-- [ ] **Step 6.6: Run the new tests**
+- [ ] **Step 6.6: Run tool routing tests** — Expected: All 3 PASS
 
 ```bash
 pytest tests/test_chat.py -v -k "tools"
 ```
 
-Expected: All 3 new tests PASS.
-
-- [ ] **Step 6.7: Run the full test suite to check for regressions**
+- [ ] **Step 6.7: Run full test suite for regressions**
 
 ```bash
 pytest tests/test_chat.py -v
 ```
-
-Expected: All existing tests still PASS.
 
 - [ ] **Step 6.8: Commit**
 
@@ -1062,29 +1231,17 @@ git add src/api/routes/chat.py tests/test_chat.py
 git commit -m "feat(chat): wire tools_enabled param and intent routing"
 ```
 
----
-
-**PR 1 complete.** At this point: the infrastructure is in place, the route responds correctly to `tools_enabled`, and all tests pass. The tool list is empty — no tools exist yet.
+**PR 1 complete.** Infrastructure in place. Tool list is empty — no domain tools yet.
 
 ---
-
-## PR 2: Domain Tools
 
 ### Task 7: `memory_service.search_memory_filtered()`
 
-**Files:**
-- Modify: `src/api/services/memory_service.py`
+**Files:** `src/api/services/memory_service.py`
 
-- [ ] **Step 7.1: Write a failing test**
-
-Create `tests/test_memory_tools.py`:
+- [ ] **Step 7.1: Write failing tests** — Create `tests/test_memory_tools.py`:
 
 ```python
-"""Tests for memory tool handlers and search_memory_filtered service method.
-
-These tests mock hybrid_search (which needs the vector DB) and test the
-filtering logic + handler return format.
-"""
 import pytest
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -1094,35 +1251,27 @@ def _make_search_result(id="abc", content="test content", type="learning",
                          importance_score=0.7, project=None):
     from src.retrieval.search import SearchResult
     return SearchResult(
-        id=id,
-        content=content,
-        summary="summary",
-        type=type,
-        importance_score=importance_score,
-        combined_score=0.8,
-        created_at=datetime(2026, 5, 1, tzinfo=UTC),
-        project=project,
+        id=id, content=content, summary="summary", type=type,
+        importance_score=importance_score, combined_score=0.8,
+        created_at=datetime(2026, 5, 1, tzinfo=UTC), project=project,
     )
 
 
 @pytest.mark.asyncio
 async def test_search_memory_filtered_no_filters(async_session):
-    """search_memory_filtered with only query calls hybrid_search and returns results."""
     from src.api.services.memory_service import search_memory_filtered
 
     results = [_make_search_result(), _make_search_result(id="def", content="other")]
-    with patch("src.api.services.memory_service.hybrid_search", new=AsyncMock(return_value=results)) as mock_search:
+    with patch("src.api.services.memory_service.hybrid_search", new=AsyncMock(return_value=results)):
         with patch("src.api.services.memory_service.embedding_client") as mock_embed:
             mock_embed.embed = AsyncMock(return_value=[0.1] * 1024)
             out = await search_memory_filtered(async_session, query="test")
 
     assert len(out) == 2
-    mock_search.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_search_memory_filtered_by_type(async_session):
-    """type filter is passed to hybrid_search as type_filter."""
     from src.api.services.memory_service import search_memory_filtered
 
     with patch("src.api.services.memory_service.hybrid_search", new=AsyncMock(return_value=[])) as mock_search:
@@ -1130,13 +1279,11 @@ async def test_search_memory_filtered_by_type(async_session):
             mock_embed.embed = AsyncMock(return_value=[0.1] * 1024)
             await search_memory_filtered(async_session, query="test", type="learning")
 
-    call_kwargs = mock_search.call_args.kwargs
-    assert call_kwargs["type_filter"] == "learning"
+    assert mock_search.call_args.kwargs["type_filter"] == "learning"
 
 
 @pytest.mark.asyncio
 async def test_search_memory_filtered_importance_min(async_session):
-    """importance_min filters results below threshold."""
     from src.api.services.memory_service import search_memory_filtered
 
     results = [
@@ -1152,17 +1299,9 @@ async def test_search_memory_filtered_importance_min(async_session):
     assert out[0].id == "high"
 ```
 
-- [ ] **Step 7.2: Run to verify it fails**
+- [ ] **Step 7.2: Run to verify it fails** — Expected: `cannot import name 'search_memory_filtered'`
 
-```bash
-pytest tests/test_memory_tools.py -v 2>&1 | head -20
-```
-
-Expected: FAIL — `cannot import name 'search_memory_filtered'`
-
-- [ ] **Step 7.3: Add `search_memory_filtered` to `src/api/services/memory_service.py`**
-
-Add at the end of the file (after `expand_memory`):
+- [ ] **Step 7.3: Add `search_memory_filtered` to `src/api/services/memory_service.py`** — At end of file:
 
 ```python
 async def search_memory_filtered(
@@ -1176,27 +1315,8 @@ async def search_memory_filtered(
     importance_min: float | None = None,
     limit: int = 10,
 ):
-    """Search memory items with optional filters.
-
-    Embeds the query, calls hybrid_search with structured filters, then
-    applies importance_min post-filter in Python.
-
-    Args:
-        session: Async DB session.
-        query: Natural language search query (required).
-        type: Optional memory type filter (e.g. "learning", "decision", "todo").
-        date_from: Optional ISO date string lower bound (inclusive).
-        date_to: Optional ISO date string upper bound (inclusive).
-        project: Optional project tag filter.
-        importance_min: Optional minimum importance_score (0.0–1.0).
-        limit: Max results to return (default 10).
-
-    Returns:
-        list[SearchResult] from src.retrieval.search.
-    """
-    from datetime import date as _date
     from src.llm.client import embedding_client
-    from src.retrieval.search import SearchResult, hybrid_search
+    from src.retrieval.search import hybrid_search
 
     if embedding_client is None:
         logger.warning("search_memory_filtered_no_embedding_client")
@@ -1204,14 +1324,10 @@ async def search_memory_filtered(
 
     query_embedding = await embedding_client.embed(query)
 
-    date_from_dt = None
-    date_to_dt = None
-    if date_from:
-        date_from_dt = datetime.fromisoformat(date_from).replace(tzinfo=UTC)
-    if date_to:
-        date_to_dt = datetime.fromisoformat(date_to).replace(tzinfo=UTC)
+    date_from_dt = datetime.fromisoformat(date_from).replace(tzinfo=UTC) if date_from else None
+    date_to_dt = datetime.fromisoformat(date_to).replace(tzinfo=UTC) if date_to else None
 
-    results: list[SearchResult] = await hybrid_search(
+    results = await hybrid_search(
         session=session,
         query_text=query,
         query_embedding=query_embedding,
@@ -1225,24 +1341,13 @@ async def search_memory_filtered(
     if importance_min is not None:
         results = [r for r in results if r.importance_score >= importance_min]
 
-    logger.info(
-        "search_memory_filtered",
-        query=query[:80],
-        type=type,
-        result_count=len(results),
-    )
+    logger.info("search_memory_filtered", query=query[:80], type=type, result_count=len(results))
     return results
 ```
 
-You'll need `UTC` in the imports at the top of `memory_service.py` — it's already imported (`from datetime import UTC, datetime, timedelta`).
+`UTC` and `datetime` are already imported in `memory_service.py`.
 
-- [ ] **Step 7.4: Run the tests**
-
-```bash
-pytest tests/test_memory_tools.py -v
-```
-
-Expected: All 3 PASS.
+- [ ] **Step 7.4: Run the tests** — Expected: All 3 PASS
 
 - [ ] **Step 7.5: Commit**
 
@@ -1255,23 +1360,17 @@ git commit -m "feat(memory): add search_memory_filtered service method"
 
 ### Task 8: `todo_service.list_todos()`
 
-**Files:**
-- Modify: `src/api/services/todo_service.py`
-- Create: `tests/test_todo_tools.py`
+**Files:** `src/api/services/todo_service.py`, `tests/test_todo_tools.py`
 
-- [ ] **Step 8.1: Write a failing test**
-
-Create `tests/test_todo_tools.py`:
+- [ ] **Step 8.1: Write failing tests** — Create `tests/test_todo_tools.py`:
 
 ```python
-"""Tests for todo tool handlers and list_todos service method."""
 import pytest
 from datetime import datetime, UTC
 
 
 @pytest.mark.asyncio
 async def test_list_todos_returns_all(async_session):
-    """list_todos with no filters returns all open todos."""
     from src.api.services.todo_service import create_todo, list_todos
 
     await create_todo(async_session, description="Buy milk")
@@ -1285,7 +1384,6 @@ async def test_list_todos_returns_all(async_session):
 
 @pytest.mark.asyncio
 async def test_list_todos_filter_status(async_session):
-    """list_todos with status filter returns only matching todos."""
     from src.api.services.todo_service import create_todo, list_todos, update_todo
 
     t1 = await create_todo(async_session, description="Open task")
@@ -1300,7 +1398,6 @@ async def test_list_todos_filter_status(async_session):
 
 @pytest.mark.asyncio
 async def test_list_todos_filter_project(async_session):
-    """list_todos with project filter returns only matching todos."""
     from src.api.services.todo_service import create_todo, list_todos
 
     await create_todo(async_session, description="Proj A task", project="proj-a")
@@ -1311,17 +1408,9 @@ async def test_list_todos_filter_project(async_session):
     assert len(results) >= 1
 ```
 
-- [ ] **Step 8.2: Run to verify they fail**
+- [ ] **Step 8.2: Run to verify they fail** — Expected: `cannot import name 'list_todos'`
 
-```bash
-pytest tests/test_todo_tools.py -v 2>&1 | head -20
-```
-
-Expected: FAIL — `cannot import name 'list_todos'`
-
-- [ ] **Step 8.3: Add `list_todos` to `src/api/services/todo_service.py`**
-
-Add at the end of the file:
+- [ ] **Step 8.3: Add `list_todos` to `src/api/services/todo_service.py`** — At end of file:
 
 ```python
 async def list_todos(
@@ -1331,46 +1420,6 @@ async def list_todos(
     due_before: str | None = None,
     project: str | None = None,
 ) -> list[TodoItem]:
-    """Return TodoItems matching the given filters.
-
-    Args:
-        session: Async DB session.
-        status: Optional status filter ("open" | "done" | "cancelled").
-        due_before: Optional ISO date string — only todos with due_date <= this.
-        project: Optional project tag filter.
-
-    Returns:
-        List of matching TodoItems, ordered by created_at descending.
-    """
-    from datetime import datetime as _dt
-    from sqlalchemy import select
-
-    stmt = select(TodoItem).where(TodoItem.is_superseded == False)  # noqa: E712 — SQLAlchemy comparison
-
-    if status is not None:
-        stmt = stmt.where(TodoItem.status == status)
-    if project is not None:
-        stmt = stmt.where(TodoItem.project == project)
-    if due_before is not None:
-        due_dt = _dt.fromisoformat(due_before)
-        stmt = stmt.where(TodoItem.due_date <= due_dt)
-
-    stmt = stmt.order_by(TodoItem.created_at.desc())
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
-```
-
-Wait — `TodoItem` doesn't have `is_superseded`. Remove that filter. The correct version:
-
-```python
-async def list_todos(
-    session: AsyncSession,
-    *,
-    status: str | None = None,
-    due_before: str | None = None,
-    project: str | None = None,
-) -> list[TodoItem]:
-    """Return TodoItems matching the given filters, ordered newest first."""
     from sqlalchemy import select
 
     stmt = select(TodoItem)
@@ -1391,15 +1440,7 @@ async def list_todos(
     return todos
 ```
 
-The `from sqlalchemy import select` is likely already imported at the top — check and add if missing.
-
-- [ ] **Step 8.4: Run the tests**
-
-```bash
-pytest tests/test_todo_tools.py -v
-```
-
-Expected: All 3 PASS.
+- [ ] **Step 8.4: Run the tests** — Expected: All 3 PASS
 
 - [ ] **Step 8.5: Commit**
 
@@ -1412,46 +1453,32 @@ git commit -m "feat(todo): add list_todos service method"
 
 ### Task 9: Memory tool handlers (`memory_tools.py`)
 
-**Files:**
-- Create: `src/api/services/memory_tools.py`
+**Files:** `src/api/services/memory_tools.py`
 
-- [ ] **Step 9.1: Write failing tests**
-
-Append to `tests/test_memory_tools.py`:
+- [ ] **Step 9.1: Write failing tests** — Append to `tests/test_memory_tools.py`:
 
 ```python
-# ── Memory tool handler tests ─────────────────────────────────────────────────
-
 @pytest.mark.asyncio
 async def test_handle_search_memory_filtered(async_session):
-    """search_memory_filtered handler returns JSON string of results."""
     from src.api.services.memory_tools import handle_search_memory_filtered
-    import json
-    import uuid
+    import json, uuid
 
     results = [_make_search_result(id="abc", content="I learned about async")]
     with patch("src.api.services.memory_tools.search_memory_filtered", new=AsyncMock(return_value=results)):
         out = await handle_search_memory_filtered(
-            "search_memory_filtered",
-            {"query": "async patterns"},
-            async_session,
-            uuid.UUID(int=0),
+            "search_memory_filtered", {"query": "async patterns"}, async_session, uuid.UUID(int=0),
         )
 
     data = json.loads(out)
     assert len(data) == 1
     assert data[0]["id"] == "abc"
-    assert data[0]["content"] == "I learned about async"
 
 
 @pytest.mark.asyncio
 async def test_handle_expand_memory(async_session):
-    """expand_memory handler returns JSON string with full content."""
     from src.api.services.memory_tools import handle_expand_memory
-    import json
-    import uuid
-    from src.api.services.memory_service import ExpandResult, NeighborEntry
-    from datetime import datetime, UTC
+    from src.api.services.memory_service import ExpandResult
+    import json, uuid
 
     expand_result = ExpandResult(
         memory_id="abc-123",
@@ -1462,10 +1489,7 @@ async def test_handle_expand_memory(async_session):
     )
     with patch("src.api.services.memory_tools.expand_memory", new=AsyncMock(return_value=expand_result)):
         out = await handle_expand_memory(
-            "expand_memory",
-            {"memory_id": "abc-123"},
-            async_session,
-            uuid.UUID(int=0),
+            "expand_memory", {"memory_id": "abc-123"}, async_session, uuid.UUID(int=0),
         )
 
     data = json.loads(out)
@@ -1473,21 +1497,12 @@ async def test_handle_expand_memory(async_session):
     assert data["content"] == "Full content here"
 ```
 
-- [ ] **Step 9.2: Run to verify they fail**
-
-```bash
-pytest tests/test_memory_tools.py -k "handle_" -v 2>&1 | head -20
-```
-
-Expected: FAIL — `ModuleNotFoundError: No module named 'src.api.services.memory_tools'`
+- [ ] **Step 9.2: Run to verify they fail** — Expected: `ModuleNotFoundError: No module named 'src.api.services.memory_tools'`
 
 - [ ] **Step 9.3: Create `src/api/services/memory_tools.py`**
 
 ```python
-"""Memory tool schemas and handlers for chat tool-use.
-
-Each handler takes (tool_name, args, session, user_id) and returns a JSON string.
-"""
+"""Memory tool schemas and handlers for chat tool-use."""
 from __future__ import annotations
 
 import json
@@ -1497,50 +1512,32 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.services.memory_service import (
-    MemoryItemNotFound,
-    SupersedesInvalidUUID,
-    expand_memory,
-    search_memory_filtered,
+    MemoryItemNotFound, SupersedesInvalidUUID, expand_memory, search_memory_filtered,
 )
 from src.llm.tool_agent import ToolError
 
 logger = structlog.get_logger(__name__)
 
-# ── Anthropic tool schemas ────────────────────────────────────────────────────
-
 MEMORY_TOOLS: list[dict] = [
     {
         "name": "search_memory_filtered",
-        "description": (
-            "Search your personal memory store with optional filters. "
-            "Returns a list of matching memory items with their IDs, content, type, "
-            "importance score, and project."
-        ),
+        "description": "Search your personal memory store with optional filters. Returns matching items with IDs, content, type, importance score, and project.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural language search query"},
-                "type": {
-                    "type": "string",
-                    "description": "Filter by memory type: learning, decision, todo, daily_pulse, etc.",
-                },
+                "type": {"type": "string", "description": "Filter by memory type: learning, decision, todo, daily_pulse, etc."},
                 "date_from": {"type": "string", "description": "ISO date lower bound, e.g. 2026-05-01"},
                 "date_to": {"type": "string", "description": "ISO date upper bound, e.g. 2026-05-31"},
                 "project": {"type": "string", "description": "Filter by project tag"},
-                "importance_min": {
-                    "type": "number",
-                    "description": "Minimum importance score (0.0 to 1.0)",
-                },
+                "importance_min": {"type": "number", "description": "Minimum importance score (0.0 to 1.0)"},
             },
             "required": ["query"],
         },
     },
     {
         "name": "expand_memory",
-        "description": (
-            "Get the full content, raw source text, and neighboring items for a specific memory. "
-            "Use after search_memory_filtered when you need the complete details of one result."
-        ),
+        "description": "Get the full content, raw source text, and neighboring items for a specific memory. Use after search_memory_filtered when you need complete details.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -1551,37 +1548,24 @@ MEMORY_TOOLS: list[dict] = [
     },
 ]
 
-# ── Handlers ──────────────────────────────────────────────────────────────────
-
-MEMORY_HANDLERS: dict = {}
-
 
 async def handle_search_memory_filtered(
-    tool_name: str,
-    args: dict,
-    session: AsyncSession,
-    user_id: uuid.UUID,
+    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID,
 ) -> str:
     query = args.get("query")
     if not query:
         raise ToolError("search_memory_filtered requires a 'query' argument")
 
     results = await search_memory_filtered(
-        session,
-        query=query,
-        type=args.get("type"),
-        date_from=args.get("date_from"),
-        date_to=args.get("date_to"),
-        project=args.get("project"),
+        session, query=query,
+        type=args.get("type"), date_from=args.get("date_from"),
+        date_to=args.get("date_to"), project=args.get("project"),
         importance_min=args.get("importance_min"),
     )
     return json.dumps([
         {
-            "id": r.id,
-            "content": r.content,
-            "type": r.type,
-            "importance_score": r.importance_score,
-            "project": r.project,
+            "id": r.id, "content": r.content, "type": r.type,
+            "importance_score": r.importance_score, "project": r.project,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in results
@@ -1589,10 +1573,7 @@ async def handle_search_memory_filtered(
 
 
 async def handle_expand_memory(
-    tool_name: str,
-    args: dict,
-    session: AsyncSession,
-    user_id: uuid.UUID,
+    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID,
 ) -> str:
     memory_id = args.get("memory_id")
     if not memory_id:
@@ -1608,11 +1589,8 @@ async def handle_expand_memory(
         "content": result.content,
         "raw_text": result.raw_text,
         "neighbors": [
-            {
-                "memory_id": n.memory_id,
-                "content": n.content,
-                "created_at": n.created_at.isoformat() if n.created_at else None,
-            }
+            {"memory_id": n.memory_id, "content": n.content,
+             "created_at": n.created_at.isoformat() if n.created_at else None}
             for n in result.neighbors
         ],
         "metadata": result.metadata,
@@ -1625,13 +1603,11 @@ MEMORY_HANDLERS = {
 }
 ```
 
-- [ ] **Step 9.4: Run the tests**
+- [ ] **Step 9.4: Run the tests** — Expected: All 5 PASS
 
 ```bash
 pytest tests/test_memory_tools.py -v
 ```
-
-Expected: All 5 tests PASS.
 
 - [ ] **Step 9.5: Commit**
 
@@ -1644,19 +1620,13 @@ git commit -m "feat(chat): add memory tool schemas and handlers"
 
 ### Task 10: Todo tool handlers (`todo_tools.py`)
 
-**Files:**
-- Create: `src/api/services/todo_tools.py`
+**Files:** `src/api/services/todo_tools.py`
 
-- [ ] **Step 10.1: Write failing tests**
-
-Append to `tests/test_todo_tools.py`:
+- [ ] **Step 10.1: Write failing tests** — Append to `tests/test_todo_tools.py`:
 
 ```python
-import uuid
-import json
+import uuid, json
 from unittest.mock import patch, AsyncMock
-
-# ── Todo tool handler tests ───────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_handle_list_todos(async_session):
@@ -1664,11 +1634,9 @@ async def test_handle_list_todos(async_session):
     from src.api.services.todo_tools import handle_list_todos
 
     await create_todo(async_session, description="Feed the cat")
-
     out = await handle_list_todos("list_todos", {}, async_session, uuid.UUID(int=0))
     data = json.loads(out)
-    descriptions = [t["description"] for t in data]
-    assert "Feed the cat" in descriptions
+    assert any(t["description"] == "Feed the cat" for t in data)
 
 
 @pytest.mark.asyncio
@@ -1676,10 +1644,8 @@ async def test_handle_create_todo(async_session):
     from src.api.services.todo_tools import handle_create_todo
 
     out = await handle_create_todo(
-        "create_todo",
-        {"description": "Write unit tests", "priority": "high"},
-        async_session,
-        uuid.UUID(int=0),
+        "create_todo", {"description": "Write unit tests", "priority": "high"},
+        async_session, uuid.UUID(int=0),
     )
     data = json.loads(out)
     assert data["description"] == "Write unit tests"
@@ -1692,15 +1658,10 @@ async def test_handle_complete_todo(async_session):
     from src.api.services.todo_tools import handle_complete_todo
 
     todo = await create_todo(async_session, description="Finish report")
-
     out = await handle_complete_todo(
-        "complete_todo",
-        {"todo_id": str(todo.id)},
-        async_session,
-        uuid.UUID(int=0),
+        "complete_todo", {"todo_id": str(todo.id)}, async_session, uuid.UUID(int=0),
     )
-    assert "Finish report" in out
-    assert "done" in out.lower()
+    assert "Finish report" in out and "done" in out.lower()
 
 
 @pytest.mark.asyncio
@@ -1710,10 +1671,7 @@ async def test_handle_complete_todo_not_found(async_session):
 
     with pytest.raises(ToolError, match="not found"):
         await handle_complete_todo(
-            "complete_todo",
-            {"todo_id": str(uuid.uuid4())},
-            async_session,
-            uuid.UUID(int=0),
+            "complete_todo", {"todo_id": str(uuid.uuid4())}, async_session, uuid.UUID(int=0),
         )
 
 
@@ -1723,12 +1681,9 @@ async def test_handle_defer_todo(async_session):
     from src.api.services.todo_tools import handle_defer_todo
 
     todo = await create_todo(async_session, description="Submit taxes")
-
     out = await handle_defer_todo(
-        "defer_todo",
-        {"todo_id": str(todo.id), "until_date": "2026-06-01"},
-        async_session,
-        uuid.UUID(int=0),
+        "defer_todo", {"todo_id": str(todo.id), "until_date": "2026-06-01"},
+        async_session, uuid.UUID(int=0),
     )
     assert "Submit taxes" in out or "deferred" in out.lower()
 
@@ -1739,23 +1694,14 @@ async def test_handle_edit_todo(async_session):
     from src.api.services.todo_tools import handle_edit_todo
 
     todo = await create_todo(async_session, description="Old description")
-
     out = await handle_edit_todo(
-        "edit_todo",
-        {"todo_id": str(todo.id), "description": "New description"},
-        async_session,
-        uuid.UUID(int=0),
+        "edit_todo", {"todo_id": str(todo.id), "description": "New description"},
+        async_session, uuid.UUID(int=0),
     )
     assert "New description" in out or "updated" in out.lower()
 ```
 
-- [ ] **Step 10.2: Run to verify they fail**
-
-```bash
-pytest tests/test_todo_tools.py -k "handle_" -v 2>&1 | head -20
-```
-
-Expected: FAIL — `ModuleNotFoundError: No module named 'src.api.services.todo_tools'`
+- [ ] **Step 10.2: Run to verify they fail** — Expected: `ModuleNotFoundError: No module named 'src.api.services.todo_tools'`
 
 - [ ] **Step 10.3: Create `src/api/services/todo_tools.py`**
 
@@ -1768,7 +1714,6 @@ import uuid
 from datetime import datetime
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.services.todo_service import create_todo, list_todos, update_todo
@@ -1776,8 +1721,6 @@ from src.core.models import TodoItem
 from src.llm.tool_agent import ToolError
 
 logger = structlog.get_logger(__name__)
-
-# ── Anthropic tool schemas ────────────────────────────────────────────────────
 
 TODO_TOOLS: list[dict] = [
     {
@@ -1847,11 +1790,8 @@ TODO_TOOLS: list[dict] = [
     },
 ]
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 
 async def _get_todo(session: AsyncSession, todo_id: str) -> TodoItem:
-    """Fetch a TodoItem by UUID string. Raises ToolError if not found."""
     try:
         uid = uuid.UUID(todo_id)
     except ValueError as exc:
@@ -1863,83 +1803,44 @@ async def _get_todo(session: AsyncSession, todo_id: str) -> TodoItem:
     return todo
 
 
-# ── Handlers ─────────────────────────────────────────────────────────────────
-
-
-async def handle_list_todos(
-    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID
-) -> str:
-    todos = await list_todos(
-        session,
-        status=args.get("status"),
-        due_before=args.get("due_before"),
-        project=args.get("project"),
-    )
+async def handle_list_todos(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
+    todos = await list_todos(session, status=args.get("status"), due_before=args.get("due_before"), project=args.get("project"))
     return json.dumps([
-        {
-            "id": str(t.id),
-            "description": t.description,
-            "status": t.status,
-            "priority": t.priority,
-            "due_date": t.due_date.isoformat() if t.due_date else None,
-            "project": t.project,
-        }
+        {"id": str(t.id), "description": t.description, "status": t.status,
+         "priority": t.priority, "due_date": t.due_date.isoformat() if t.due_date else None, "project": t.project}
         for t in todos
     ])
 
 
-async def handle_create_todo(
-    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID
-) -> str:
+async def handle_create_todo(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
     description = args.get("description")
     if not description:
         raise ToolError("create_todo requires a 'description' argument")
 
-    due_date = None
-    if args.get("due_date"):
-        due_date = datetime.fromisoformat(args["due_date"])
-
-    todo = await create_todo(
-        session,
-        description=description,
-        priority=args.get("priority", "normal"),
-        due_date=due_date,
-        project=args.get("project"),
-    )
+    due_date = datetime.fromisoformat(args["due_date"]) if args.get("due_date") else None
+    todo = await create_todo(session, description=description, priority=args.get("priority", "normal"),
+                              due_date=due_date, project=args.get("project"))
     return json.dumps({"id": str(todo.id), "description": todo.description})
 
 
-async def handle_complete_todo(
-    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID
-) -> str:
+async def handle_complete_todo(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
     todo = await _get_todo(session, args.get("todo_id", ""))
     await update_todo(session, todo, status="done", reason=args.get("reason"))
     return f"Marked '{todo.description}' as done."
 
 
-async def handle_defer_todo(
-    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID
-) -> str:
+async def handle_defer_todo(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
     todo = await _get_todo(session, args.get("todo_id", ""))
     until_date_str = args.get("until_date")
     if not until_date_str:
         raise ToolError("defer_todo requires an 'until_date' argument")
-    until_dt = datetime.fromisoformat(until_date_str)
-    await update_todo(session, todo, due_date=until_dt, reason=args.get("reason"))
+    await update_todo(session, todo, due_date=datetime.fromisoformat(until_date_str), reason=args.get("reason"))
     return f"Deferred '{todo.description}' to {until_date_str}."
 
 
-async def handle_edit_todo(
-    tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID
-) -> str:
+async def handle_edit_todo(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
     todo = await _get_todo(session, args.get("todo_id", ""))
-    fields: dict = {}
-    if "description" in args:
-        fields["description"] = args["description"]
-    if "priority" in args:
-        fields["priority"] = args["priority"]
-    if "project" in args:
-        fields["project"] = args["project"]
+    fields = {k: args[k] for k in ("description", "priority", "project") if k in args}
     if not fields:
         raise ToolError("edit_todo requires at least one field to update")
     await update_todo(session, todo, **fields)
@@ -1956,13 +1857,11 @@ TODO_HANDLERS: dict = {
 }
 ```
 
-- [ ] **Step 10.4: Run the tests**
+- [ ] **Step 10.4: Run the tests** — Expected: All PASS
 
 ```bash
 pytest tests/test_todo_tools.py -v
 ```
-
-Expected: All tests PASS. If `handle_complete_todo` returns a different string format, adjust the assertions.
 
 - [ ] **Step 10.5: Commit**
 
@@ -1975,12 +1874,9 @@ git commit -m "feat(chat): add todo tool schemas and handlers"
 
 ### Task 11: Wire `chat_tools.py` dispatch table
 
-**Files:**
-- Modify: `src/api/services/chat_tools.py`
+**Files:** `src/api/services/chat_tools.py`
 
-- [ ] **Step 11.1: Write a failing test**
-
-Create `tests/test_chat_tools_dispatch.py`:
+- [ ] **Step 11.1: Write failing tests** — Create `tests/test_chat_tools_dispatch.py`:
 
 ```python
 import pytest
@@ -1990,7 +1886,6 @@ from unittest.mock import AsyncMock, patch
 
 @pytest.mark.asyncio
 async def test_dispatch_known_tool(async_session):
-    """dispatch routes to the correct handler."""
     from src.api.services.chat_tools import dispatch
 
     with patch("src.api.services.todo_tools.handle_list_todos", new=AsyncMock(return_value='[]')) as mock:
@@ -2002,7 +1897,6 @@ async def test_dispatch_known_tool(async_session):
 
 @pytest.mark.asyncio
 async def test_dispatch_unknown_tool_raises(async_session):
-    """dispatch raises ToolError for unknown tool names."""
     from src.api.services.chat_tools import dispatch
     from src.llm.tool_agent import ToolError
 
@@ -2011,7 +1905,6 @@ async def test_dispatch_unknown_tool_raises(async_session):
 
 
 def test_all_tools_list_has_seven_entries():
-    """ALL_TOOLS should contain all 7 v1 tools."""
     from src.api.services.chat_tools import ALL_TOOLS
     names = {t["name"] for t in ALL_TOOLS}
     assert names == {
@@ -2020,17 +1913,9 @@ def test_all_tools_list_has_seven_entries():
     }
 ```
 
-- [ ] **Step 11.2: Run to verify they fail**
+- [ ] **Step 11.2: Run to verify they fail** — Expected: `ALL_TOOLS` is empty, dispatch raises.
 
-```bash
-pytest tests/test_chat_tools_dispatch.py -v 2>&1 | head -20
-```
-
-Expected: FAIL — `ALL_TOOLS` is empty, `dispatch` always raises "Unknown tool".
-
-- [ ] **Step 11.3: Update `src/api/services/chat_tools.py`**
-
-Replace the entire file with:
+- [ ] **Step 11.3: Replace `src/api/services/chat_tools.py`**
 
 ```python
 """Chat tool registry — aggregates all tool schemas and dispatches calls."""
@@ -2044,73 +1929,47 @@ from src.api.services.todo_tools import TODO_HANDLERS, TODO_TOOLS
 from src.llm.tool_agent import ToolError
 
 ALL_TOOLS: list[dict] = MEMORY_TOOLS + TODO_TOOLS
-
 _DISPATCH_TABLE: dict = {**MEMORY_HANDLERS, **TODO_HANDLERS}
 
 
-async def dispatch(
-    tool_name: str,
-    args: dict,
-    session: AsyncSession,
-    user_id: uuid.UUID,
-) -> str:
-    """Route a tool call to the appropriate handler. Raises ToolError if unknown."""
+async def dispatch(tool_name: str, args: dict, session: AsyncSession, user_id: uuid.UUID) -> str:
     handler = _DISPATCH_TABLE.get(tool_name)
     if handler is None:
         raise ToolError(f"Unknown tool: {tool_name}")
     return await handler(tool_name, args, session, user_id)
 ```
 
-- [ ] **Step 11.4: Run the dispatch tests**
+- [ ] **Step 11.4: Run dispatch tests** — Expected: All 3 PASS
 
-```bash
-pytest tests/test_chat_tools_dispatch.py -v
-```
-
-Expected: All 3 PASS.
-
-- [ ] **Step 11.5: Run the full backend test suite**
+- [ ] **Step 11.5: Run full backend test suite**
 
 ```bash
 pytest tests/ -v --timeout=60 2>&1 | tail -30
 ```
 
-Expected: All tests PASS. Note any failures and fix before committing.
-
 - [ ] **Step 11.6: Commit PR2**
 
 ```bash
-git add src/api/services/chat_tools.py \
-        src/api/services/memory_tools.py \
-        src/api/services/todo_tools.py \
-        src/api/services/memory_service.py \
-        src/api/services/todo_service.py \
-        tests/test_chat_tools_dispatch.py \
-        tests/test_memory_tools.py \
-        tests/test_todo_tools.py
+git add src/api/services/chat_tools.py src/api/services/memory_tools.py \
+        src/api/services/todo_tools.py src/api/services/memory_service.py \
+        src/api/services/todo_service.py tests/test_chat_tools_dispatch.py \
+        tests/test_memory_tools.py tests/test_todo_tools.py
 git commit -m "feat(chat): wire 7 domain tools into chat dispatch table"
 ```
 
-**PR 2 complete.** Tools are wired, tests pass. The chat endpoint now routes tool-use turns through Sonnet with the 7 domain tools.
+**PR 2 complete.** Tools are wired, tests pass.
 
 ---
 
-## PR 3: Frontend Toggle
-
 ### Task 12: Frontend tools toggle
 
-**Files:**
-- Create: `web/components/chat/ToolsToggle.tsx`
-- Modify: `web/app/chat/page.tsx` (or wherever the chat UI lives — find the component that renders the model selector)
+**Files:** `web/components/chat/ToolsToggle.tsx`, `web/app/chat/page.tsx`
 
 - [ ] **Step 12.1: Find the chat page component**
 
 ```bash
 find web/app -name "*.tsx" | xargs grep -l "model" | head -5
-grep -r "model" web/components/chat/ --include="*.tsx" -l 2>/dev/null || true
 ```
-
-Identify the file that renders the model selector. The toggle goes next to it.
 
 - [ ] **Step 12.2: Create `web/components/chat/ToolsToggle.tsx`**
 
@@ -2139,12 +1998,9 @@ export function ToolsToggle({ enabled, onToggle }: ToolsToggleProps) {
 
 - [ ] **Step 12.3: Add `toolsEnabled` state to the chat page**
 
-In the chat page component, add:
-
 ```tsx
 import { ToolsToggle } from "@/components/chat/ToolsToggle";
 
-// In the component:
 const [toolsEnabled, setToolsEnabled] = React.useState<boolean>(() => {
   if (typeof window === "undefined") return false;
   return localStorage.getItem("chat_tools_enabled") === "true";
@@ -2158,44 +2014,28 @@ const handleToolsToggle = (enabled: boolean) => {
 
 - [ ] **Step 12.4: Render the toggle near the model selector**
 
-Find where the model selector is rendered. Add the toggle next to it:
-
 ```tsx
 <ToolsToggle enabled={toolsEnabled} onToggle={handleToolsToggle} />
 ```
 
 - [ ] **Step 12.5: Add `tools_enabled` to the chat request body**
 
-Find where the `/v1/chat` POST is made in the component. Add `tools_enabled: toolsEnabled` to the request JSON:
-
 ```tsx
-const response = await fetch("/v1/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
-  body: JSON.stringify({
-    message,
-    history,
-    model: selectedModel,
-    tools_enabled: toolsEnabled,  // add this
-  }),
-});
+body: JSON.stringify({
+  message,
+  history,
+  model: selectedModel,
+  tools_enabled: toolsEnabled,
+}),
 ```
 
-- [ ] **Step 12.6: Run the frontend type checker**
+- [ ] **Step 12.6: Run frontend type checker**
 
 ```bash
 cd web && npx tsc --noEmit
 ```
 
-Expected: No type errors.
-
-- [ ] **Step 12.7: Run existing Vitest tests**
-
-```bash
-cd web && npm test
-```
-
-Expected: All existing tests pass.
+- [ ] **Step 12.7: Run Vitest** — Expected: All existing tests pass
 
 - [ ] **Step 12.8: Commit PR3**
 
@@ -2208,38 +2048,34 @@ git commit -m "feat(web): add tools toggle to chat UI"
 
 ## Verification
 
-**Backend — end-to-end manual test:**
+**Backend end-to-end:**
 
 ```bash
 make start
-# Wait for API to be ready, then:
 curl -s -X POST http://localhost:8000/v1/chat \
   -H "Content-Type: application/json" \
   -H "X-API-Key: <your-key>" \
   -d '{"message": "show my open todos", "tools_enabled": true}' | jq .response
 ```
 
-Expected: Response text mentions todos (or "no open todos").
+Expected: Response mentions todos (or "no open todos").
 
-**Verify chat_logs table gets written:**
+**Verify chat_logs row written:**
 
-```bash
-# Connect to DB and run:
+```sql
 SELECT intent_tool, intent_method, model_used, duration_ms
-FROM chat_logs
-ORDER BY created_at DESC
-LIMIT 1;
+FROM chat_logs ORDER BY created_at DESC LIMIT 1;
 ```
 
-Expected: Row with `intent_tool = 'list_todos'`, `intent_method = 'regex'` or `'haiku'`.
+Expected: `intent_tool = 'list_todos'`, `intent_method = 'regex'` or `'haiku'`.
 
-**Frontend — manual test:**
+**Frontend manual test:**
 
-1. Open `0xpai.com/chat` (or localhost)
-2. Check the Tools toggle appears next to the model selector
-3. Enable it, send "show my todos" → should get tool-driven response
-4. Disable it, send "show my todos" → should get RAG response (no tool trace in DB)
-5. Reload the page → toggle state persists from localStorage
+1. Open `0xpai.com/chat`
+2. Tools toggle appears next to model selector
+3. Enable → send "show my todos" → tool-driven response
+4. Disable → send "show my todos" → RAG response (no tool trace in DB)
+5. Reload → toggle persists from localStorage
 
 **Full test suite:**
 
@@ -2247,5 +2083,3 @@ Expected: Row with `intent_tool = 'list_todos'`, `intent_method = 'regex'` or `'
 pytest tests/ -v --timeout=60
 cd web && npm test
 ```
-
-Expected: All pass.

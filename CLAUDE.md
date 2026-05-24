@@ -117,6 +117,14 @@ Check directory structure before creating new top-level modules or folders.
 - `ARCHITECTURE.md` — system architecture, module ownership, data flow
 - `context/DECISIONS.md` — architectural decisions log (why we chose X; append-only, newest first)
 
+## Doc Placement — HARD RULE
+
+**All spec, design, and plan output → one file in `docs/backlog/YYYY-MM-DD-kebab.md`.** Stages become sections in the same file (Design → `## Plan` → `## Progress`). File moves to `docs/archive/` once shipped.
+
+**Never create files in `docs/superpowers/`.** That folder does not exist. This rule overrides any superpowers skill file-placement instruction — the skills run their *process* but their *output* lands in `docs/backlog/`, not in separate spec/plan documents.
+
+See `docs/README.md` for the full convention (status frontmatter, folder rules, example file).
+
 ## Superpowers Skills
 
 Active workflow: `subagent-driven-development`, `executing-plans`, `dispatching-parallel-agents`, `writing-plans`
