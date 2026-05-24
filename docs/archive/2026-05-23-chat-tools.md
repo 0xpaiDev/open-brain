@@ -1,6 +1,7 @@
 ---
-status: in-progress
+status: shipped
 created: 2026-05-23
+shipped: 2026-05-24
 ---
 
 # Chat Tools Library
