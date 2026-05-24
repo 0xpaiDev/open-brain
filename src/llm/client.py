@@ -113,6 +113,44 @@ class AnthropicClient:
             logger.exception("anthropic_unexpected_error", error=str(e))
             raise ExtractionFailed(f"Unexpected error calling Anthropic: {e}") from e
 
+    async def _messages_create(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict],
+        model: str,
+        max_tokens: int = 2048,
+    ):
+        """Raw messages.create call used by the tool-use loop.
+
+        Does not modify complete_with_history — this is a separate path that
+        supports tool schemas and returns the raw Message object.
+        """
+        def _call():
+            return self.client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                tools=tools if tools else [],
+            )
+
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_call),
+                timeout=_LLM_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            logger.error("_messages_create_timeout", model=model)
+            raise ExtractionFailed("LLM tool-use call timed out") from exc
+        except APIError as exc:
+            logger.error("_messages_create_api_error", status=exc.status_code)
+            raise ExtractionFailed(f"Anthropic API error: {exc.status_code}") from exc
+        except Exception as exc:
+            logger.error("_messages_create_error", error=str(exc))
+            raise ExtractionFailed(f"Unexpected LLM error: {exc}") from exc
+
     async def complete_with_history(
         self,
         system_prompt: str,
