@@ -229,3 +229,29 @@ async def update_todo(
     await _try_sync(session, todo, event_type, content_dirty=content_dirty)
     await _try_cascade_learning_item(session, todo, event_type, learning_feedback, learning_notes)
     return todo
+
+
+async def list_todos(
+    session: AsyncSession,
+    *,
+    status: str | None = None,
+    due_before: str | None = None,
+    project: str | None = None,
+) -> list[TodoItem]:
+    from sqlalchemy import select as _select
+
+    stmt = _select(TodoItem)
+
+    if status is not None:
+        stmt = stmt.where(TodoItem.status == status)
+    if project is not None:
+        stmt = stmt.where(TodoItem.project == project)
+    if due_before is not None:
+        due_dt = datetime.fromisoformat(due_before)
+        stmt = stmt.where(TodoItem.due_date <= due_dt)
+
+    stmt = stmt.order_by(TodoItem.created_at.desc())
+    result = await session.execute(stmt)
+    todos = list(result.scalars().all())
+    logger.info("list_todos", count=len(todos), status=status, project=project)
+    return todos

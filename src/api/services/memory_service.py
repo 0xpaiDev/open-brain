@@ -18,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.models import MemoryItem, RawMemory, RefinementQueue
+from src.llm.client import embedding_client
+from src.retrieval.search import hybrid_search
 
 logger = structlog.get_logger(__name__)
 
@@ -291,3 +293,41 @@ async def expand_memory(
         neighbors=neighbors,
         metadata=metadata,
     )
+
+
+async def search_memory_filtered(
+    session: AsyncSession,
+    *,
+    query: str,
+    type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    project: str | None = None,
+    importance_min: float | None = None,
+    limit: int = 10,
+):
+    if embedding_client is None:
+        logger.warning("search_memory_filtered_no_embedding_client")
+        return []
+
+    query_embedding = await embedding_client.embed(query)
+
+    date_from_dt = datetime.fromisoformat(date_from).replace(tzinfo=UTC) if date_from else None
+    date_to_dt = datetime.fromisoformat(date_to).replace(tzinfo=UTC) if date_to else None
+
+    results = await hybrid_search(
+        session=session,
+        query_text=query,
+        query_embedding=query_embedding,
+        limit=limit,
+        type_filter=type,
+        date_from=date_from_dt,
+        date_to=date_to_dt,
+        project_filter=project,
+    )
+
+    if importance_min is not None:
+        results = [r for r in results if r.importance_score >= importance_min]
+
+    logger.info("search_memory_filtered", query=query[:80], type=type, result_count=len(results))
+    return results
