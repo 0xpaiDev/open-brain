@@ -95,10 +95,9 @@ docker-compose.override.yml
 # Alembic
 alembic/versions/__pycache__/
 
-# Generated files
-.claude/
-.claude/plans/
-.claude/projects/
+# Generated files — ignore all CC config except project skills
+.claude/*
+!.claude/skills/
 
 # Node
 node_modules/
