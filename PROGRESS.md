@@ -54,6 +54,11 @@
 
 ---
 
+## Context Files
+
+- `context/GLOSSARY.md` — canonical domain terms, lazy-populated mid-session when terms resolve
+- `context/SERVICES.md` — external API calls map (Anthropic, Voyage, Strava, Google Calendar, Supabase); update when adding integrations
+
 ## Next Up
 
 - **Deploy** all pending changes (migrations 0016–0022 + Learning V2 + Commitments tab + plan import sets + Discord removal + Learning cron cross-day dedup + topic context on TodoResponse + **memory_expand endpoint + `claude-code-session` source in `AUTO_CAPTURE_SOURCES`** + **exercise library + per-day schedule + import wizard + plan CRUD** + **inline log form + last_logged on ExerciseResponse** + **Morning Pulse Briefing: 3 new detectors, build_briefing, migration 0022 drop notes, cron 04:00 UTC** — `src/pulse_signals/`, `src/api/routes/pulse.py`, `src/core/config.py`, `src/core/models.py`, `src/pipeline/pulse_sync.py`, `web/components/dashboard/morning-pulse.tsx`, `web/lib/types.ts`, `alembic/versions/0022_drop_pulse_notes.py`, `crontab`) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart services; remove `discord-bot` container if running (`docker rm -f openbrain-discord`)

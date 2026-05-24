@@ -4,6 +4,24 @@ Covering **2026-03-13 to 2026-05-21** | 6 phases + dashboard + training/commitme
 
 ---
 
+## Session — 2026-05-24 (Docs hygiene + project infrastructure)
+
+**What changed**:
+- Merged split chat-tools spec+plan (`docs/superpowers/specs/` + `docs/superpowers/plans/`) into single `docs/backlog/2026-05-23-chat-tools.md`; deleted `docs/superpowers/` entirely
+- Hardened CLAUDE.md with explicit `## Doc Placement — HARD RULE` block — override clause in `docs/README.md` was not in skill context; rule now lives directly in CLAUDE.md
+- Added `context/GLOSSARY.md` with 5 seed terms (raw_memory, memory_item, ingest, distill, importance_score); wired into CLAUDE.md tier-0 + live-update rule
+- Added `context/SERVICES.md` — external API call map (Anthropic models/triggers, Voyage, Strava, Google Calendar, Supabase); Opus 4.6 synthesis charge identified as expected prod behavior
+
+**Files touched**: `docs/backlog/2026-05-23-chat-tools.md` (new, merged), `docs/superpowers/` (deleted), `CLAUDE.md`, `context/GLOSSARY.md` (new), `context/SERVICES.md` (new), `context/DECISIONS.md`, `PROGRESS.md`, `HISTORY.md`
+
+**Decisions made**: Hard rules must live in CLAUDE.md directly (not pointer files) to survive skill invocations; glossary uses lazy population — terms added only when they resolve in conversation
+
+**Gotchas found**: Superpowers skill file-placement instructions override a rule that only lives in a "also read" file; the rule must be a CLAUDE.md section to hold
+
+**Test count**: 905 backend, 315 Vitest (unchanged)
+
+---
+
 ## Session — 2026-05-21 (Morning Pulse Briefing Redesign)
 
 **What changed**:

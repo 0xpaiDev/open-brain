@@ -7,6 +7,14 @@ do not touch this file.
 
 Read at session start as part of the tier-0 frozen snapshot.
 
+## 2026-05-24 — Hard rules that must survive skill invocations live in CLAUDE.md, not docs/
+
+The `docs/README.md` override clause (spec output → `docs/backlog/`) was ignored by the `writing-plans` skill because `docs/README.md` is only in the tier-0 "also read" list — it isn't in active context when a skill executes. Any rule that must hold during a skill invocation (model selection, file placement, naming) must be a direct section in CLAUDE.md, not a pointer to an external file.
+
+## 2026-05-24 — Domain glossary: lazy population triggered by term resolution
+
+Added `context/GLOSSARY.md` seeded with 5 known-resolved terms. Decided against upfront filling — terms are added only when they resolve in conversation (a name chosen, an ambiguous concept clarified, or a correction made), not in bulk. Instruction in CLAUDE.md triggers the update immediately mid-session, not at session end. Format: canonical term + 1-2 sentence definition + Avoid list of drift-back aliases.
+
 ## 2026-05-21 — Morning Pulse: multi-signal briefing over single-winner
 
 Replaced the "pick the highest-urgency signal, render one LLM question" model with "run all detectors, collect all above threshold, assemble a bullet briefing." `select_signals` (plural) returns the full list; `build_briefing` iterates it — template for deadline/named_day/open, LLM only for focus/opportunity/commitment_pace. All new-format pulses store `signal_type="briefing"`. The `open` detector now always fires at urgency 5.0 to guarantee at least one bullet on quiet days. Migration 0022 drops the `notes` column; pulse cron shifted to 04:00 UTC.
