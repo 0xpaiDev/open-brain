@@ -481,3 +481,117 @@ export interface ResolvedExercise {
   target: number;
   sets?: number | null;
 }
+
+/* ── Observability / Execution Explorer types ────────────────────────── */
+
+export interface TraceListItem {
+  id: string;
+  trigger_type: string;
+  trigger_name: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  total_cost_usd: string | null;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  llm_call_count: number;
+  tool_call_count: number;
+  error_message: string | null;
+  error_class: string | null;
+  causal_parent_trace_id: string | null;
+  rerun_of_trace_id: string | null;
+}
+
+export interface CronStepSpan {
+  id: string;
+  span_id: string;
+  parent_span_id: string | null;
+  step_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  error_message: string | null;
+  error_class: string | null;
+  step_metadata: Record<string, unknown>;
+}
+
+export interface LLMCallSpan {
+  id: string;
+  span_id: string;
+  parent_span_id: string;
+  call_site: string;
+  model: string;
+  provider: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  stop_reason: string;
+  cost_usd: string | null;
+  pricing_version: string;
+  request_summary: Record<string, unknown>;
+  response_summary: Record<string, unknown> | null;
+  error_message: string | null;
+  error_class: string | null;
+}
+
+export interface ToolCallSpan {
+  id: string;
+  span_id: string;
+  parent_span_id: string;
+  tool_name: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  args: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  is_error: boolean;
+  error_message: string | null;
+}
+
+export interface ObsEventSpan {
+  id: string;
+  span_id: string;
+  parent_span_id: string;
+  event_type: string;
+  level: string;
+  payload: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface TraceDetail extends TraceListItem {
+  trigger_metadata: Record<string, unknown> | null;
+  cron_steps: CronStepSpan[];
+  llm_calls: LLMCallSpan[];
+  tool_calls: ToolCallSpan[];
+  events: ObsEventSpan[];
+}
+
+export interface TraceListResponse {
+  items: TraceListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface KpiSparklinePoint {
+  date: string;
+  cost_usd: string;
+}
+
+export interface KpiResponse {
+  cost_today_usd: string;
+  sparkline_7d: KpiSparklinePoint[];
+  cache_hit_rate_24h: number | null;
+  failure_count_24h: number;
+  oldest_dead_letter_age_seconds: number | null;
+}
