@@ -320,3 +320,23 @@ Notes:
 - Numeric(10,6) cost fields serialized as strings via `_fmt_cost()` helper
 - JSON columns in SQLite store Python `None` as JSON `'null'` not SQL NULL; IS NOT NULL query requires the sweeper to use `null()` (SQL NULL) not Python `None`
 - Date filter params must be passed via httpx `params={}` dict (not f-string URL) to avoid `+` being decoded as space in UTC ISO strings
+
+### Session 4 — Phase 4 (completed 2026-05-25)
+
+- [x] Move `web/app/logs/page.tsx` → `web/app/logs/legacy/page.tsx` (old UI preserved as-is)
+- [x] TypeScript types in `web/lib/types.ts` — `TraceListItem`, `TraceDetail`, `CronStepSpan`, `LLMCallSpan`, `ToolCallSpan`, `ObsEventSpan`, `TraceListResponse`, `KpiResponse`
+- [x] `web/hooks/use-traces.ts` — `useTraces(filters)` + `useKpis()`, page-based pagination, loading guard on loadMore
+- [x] `web/hooks/use-trace-detail.ts` — `useTraceDetail(traceId)` with cancelled-flag pattern, `rerunTrace()`, `replaySpan()`
+- [x] `web/components/observability/kpi-tiles.tsx` — 4 tiles, inline SVG sparkline, skeleton loading
+- [x] `web/components/observability/trace-list.tsx` — filter row (debounced name, type/status selects), selection highlight, load-more
+- [x] `web/components/observability/span-tree.tsx` — hierarchical tree from parent_span_id, icons per type, collapsible, sibling-button accessibility
+- [x] `web/components/observability/trace-detail.tsx` (exported as `TraceDetailPanel`) — split pane, 5 tabs, rerun/replay buttons, tab resets on span change
+- [x] `web/app/logs/page.tsx` — full Execution Explorer page; destructured refresh refs to prevent interval reset every render; auto-refresh (off/5s/30s)
+- [x] `web/__tests__/observability.test.tsx` — 16 Vitest tests; stable vi.fn() mocks, vi.resetModules() per describe, waitFor guards
+- [x] `web/e2e/execution-explorer.spec.ts` — 1 E2E test; routes mocked before navigation
+- [x] Gate: 330 Vitest passed (1 pre-existing failure in task-list.test.tsx unrelated). TypeScript clean.
+
+Notes:
+- `TraceDetailPanel` named to avoid clash with `TraceDetail` interface from types.ts
+- `&amp;` in JSX is a double-escape — use literal `&` in JSX text (linter rewrites it; fix manually)
+- `useTraces`/`useKpis` return new objects each render — destructure `.refresh` refs to keep useEffect deps stable
