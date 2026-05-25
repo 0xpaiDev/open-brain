@@ -79,27 +79,14 @@ function SpanRow({
   return (
     <div>
       <div
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-surface-container-low transition-colors ${
-          isSelected ? "bg-primary/10" : ""
-        }`}
+        className="flex items-center gap-1.5"
         style={{ paddingLeft: `${8 + depth * 20}px` }}
-        onClick={() => onSpanSelect(node.spanId, node.spanType)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            onSpanSelect(node.spanId, node.spanType);
-          }
-        }}
       >
         {hasChildren ? (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen((v) => !v);
-            }}
-            className="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0"
+            onClick={() => setOpen((v) => !v)}
+            className="text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0 p-0.5"
             aria-label={open ? "Collapse" : "Expand"}
           >
             <span className="material-symbols-outlined text-sm">
@@ -107,25 +94,33 @@ function SpanRow({
             </span>
           </button>
         ) : (
-          <span className="w-4 flex-shrink-0" />
+          <span className="w-5 flex-shrink-0" />
         )}
 
-        <span className="material-symbols-outlined text-sm text-on-surface-variant flex-shrink-0">
-          {getIcon(node.spanType)}
-        </span>
+        <button
+          type="button"
+          onClick={() => onSpanSelect(node.spanId, node.spanType)}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg flex-1 min-w-0 text-left hover:bg-surface-container-low transition-colors ${
+            isSelected ? "bg-primary/10" : ""
+          }`}
+        >
+          <span className="material-symbols-outlined text-sm text-on-surface-variant flex-shrink-0">
+            {getIcon(node.spanType)}
+          </span>
 
-        <span className="text-sm text-on-surface truncate flex-1 min-w-0">
-          {node.label}
-        </span>
+          <span className="text-sm text-on-surface truncate flex-1 min-w-0">
+            {node.label}
+          </span>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <StatusBadge status={node.status} />
-          {node.durationMs !== null && (
-            <span className="text-xs text-on-surface-variant">
-              {formatDurationMs(node.durationMs)}
-            </span>
-          )}
-        </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <StatusBadge status={node.status} />
+            {node.durationMs !== null && (
+              <span className="text-xs text-on-surface-variant">
+                {formatDurationMs(node.durationMs)}
+              </span>
+            )}
+          </div>
+        </button>
       </div>
 
       {hasChildren && open && (

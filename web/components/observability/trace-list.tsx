@@ -88,20 +88,21 @@ export function TraceList({
     filters.trigger_name ?? "",
   );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onFiltersChangeRef = useRef(onFiltersChange);
+  useEffect(() => { onFiltersChangeRef.current = onFiltersChange; });
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const val = triggerNameInput.trim() || null;
       if (val !== (filters.trigger_name ?? null)) {
-        onFiltersChange({ ...filters, trigger_name: val });
+        onFiltersChangeRef.current({ ...filters, trigger_name: val });
       }
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggerNameInput]);
+  }, [triggerNameInput, filters]);
 
   if (error) {
     return (

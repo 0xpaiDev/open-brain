@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import type {
   CronStepSpan,
@@ -102,6 +102,16 @@ interface SpanDetailPanelProps {
   replayingSpanId: string | null;
 }
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function SpanDetailPanel({
   trace,
   selectedSpanId,
@@ -110,6 +120,10 @@ function SpanDetailPanel({
   replayingSpanId,
 }: SpanDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>("summary");
+
+  useEffect(() => {
+    setTab("summary");
+  }, [selectedSpanId]);
 
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "summary", label: "Summary" },
@@ -191,7 +205,7 @@ function SpanDetailPanel({
                 <MetaRow label="Cost" value={formatCost((span as LLMCallSpan).cost_usd)} />
                 <MetaRow label="Input tokens" value={String((span as LLMCallSpan).input_tokens)} />
                 <MetaRow label="Output tokens" value={String((span as LLMCallSpan).output_tokens)} />
-                <MetaRow label="Stop reason" value={(span as LLMCallSpan).stop_reason} />
+                <MetaRow label="Stop reason" value={(span as LLMCallSpan).stop_reason ?? "—"} />
               </>
             ) : selectedSpanType === "tool_call" ? (
               <>
@@ -215,7 +229,7 @@ function SpanDetailPanel({
               <>
                 <MetaRow label="Event type" value={(span as ObsEventSpan).event_type} />
                 <MetaRow label="Level" value={(span as ObsEventSpan).level} />
-                <MetaRow label="Occurred at" value={(span as ObsEventSpan).occurred_at} />
+                <MetaRow label="Occurred at" value={formatTime((span as ObsEventSpan).occurred_at)} />
               </>
             ) : null}
           </div>
