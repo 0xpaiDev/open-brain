@@ -32,6 +32,7 @@ from src.api.routes.tasks import router as tasks_router
 from src.api.routes.todo_labels import router as todo_labels_router
 from src.api.routes.todos import router as todos_router
 from src.api.routes.training import router as training_router
+from src.api.routes.observability import router as observability_router
 from src.api.routes.voice import router as voice_router
 from src.core.config import get_settings
 from src.core.database import close_db, init_db
@@ -112,3 +113,4 @@ app.include_router(strava_router, tags=["Strava"])
 app.include_router(training_router, tags=["Training"])
 app.include_router(learning_router, tags=["Learning"])
 app.include_router(modules_router, tags=["Modules"])
+app.include_router(observability_router, tags=["Observability"])

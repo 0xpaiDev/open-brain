@@ -303,3 +303,20 @@ Notes:
 - `CronStep.metadata` renamed to `step_metadata` (SQLAlchemy reserves `metadata` attribute)
 - `observability_raw_ttl_days` added to `INTENTIONAL_UNUSED` in `check_config.py` (sweeper created in Phase 5)
 - Observability uses its own dedicated session (independent commit from business logic — failure traces persist even when caller rolls back)
+
+### Session 3 — Phase 3 (completed 2026-05-24)
+
+- [x] `src/api/routes/observability.py` — 5 routes with `@limiter.limit("60/minute")`
+  - `GET /v1/traces/kpis` — cost today, 7d sparkline, 24h cache-hit-rate, 24h failure count, oldest dead-letter age
+  - `GET /v1/traces` — paginated list; filters: trigger_type, status, trigger_name, date_from/to, min/max cost, page/page_size
+  - `GET /v1/traces/{trace_id}` — full detail with selectinload; raw_request/raw_response excluded from llm_calls
+  - `POST /v1/traces/{trace_id}/rerun` — 404 / 422 / 200 with new_trace_id
+  - `POST /v1/spans/{span_table}/{span_id}/replay` — 400 (bad table) / 501 (tool_calls) / 422 (swept) / 200
+- [x] Router wired into `src/api/main.py`
+- [x] `tests/test_observability_routes.py` — 36 tests covering all 5 routes + edge cases
+- [x] Gate: 1007 passed, 0 failed. No new lint errors introduced.
+
+Notes:
+- Numeric(10,6) cost fields serialized as strings via `_fmt_cost()` helper
+- JSON columns in SQLite store Python `None` as JSON `'null'` not SQL NULL; IS NOT NULL query requires the sweeper to use `null()` (SQL NULL) not Python `None`
+- Date filter params must be passed via httpx `params={}` dict (not f-string URL) to avoid `+` being decoded as space in UTC ISO strings
