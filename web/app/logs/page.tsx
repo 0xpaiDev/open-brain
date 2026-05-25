@@ -9,7 +9,7 @@ export default function ExecutionExplorerPage() {
             Execution Explorer
           </h1>
           <p className="text-on-surface-variant text-sm">
-            Trace &amp; cost visibility
+            Trace & cost visibility
           </p>
         </div>
       </div>
