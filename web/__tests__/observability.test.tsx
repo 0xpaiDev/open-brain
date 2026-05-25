@@ -7,6 +7,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { setApiKey } from "@/lib/api";
+import { useTraceDetail } from "@/hooks/use-trace-detail";
 import type {
   TraceListResponse,
   TraceListItem,
@@ -113,6 +114,7 @@ vi.mock("sonner", () => ({
 
 describe("useTraces hook", () => {
   beforeEach(() => {
+    vi.resetModules();
     setApiKey("test-key");
   });
 
@@ -210,6 +212,7 @@ describe("useTraces hook", () => {
 
 describe("useKpis hook", () => {
   beforeEach(() => {
+    vi.resetModules();
     setApiKey("test-key");
   });
 
@@ -314,6 +317,10 @@ describe("TraceList component", () => {
     onTraceClick: vi.fn(),
     selectedTraceId: null,
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   // 9. Renders rows for provided items
   test("renders a row for each provided trace item", async () => {
@@ -431,26 +438,28 @@ describe("SpanTree component", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Mock the useTraceDetail hook so TraceDetailPanel doesn't need real network
-vi.mock("@/hooks/use-trace-detail", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/hooks/use-trace-detail")>();
-  return { ...actual }; // overridden per-test below
-});
+vi.mock("@/hooks/use-trace-detail", () => ({
+  useTraceDetail: vi.fn(),
+  rerunTrace: vi.fn().mockResolvedValue({ new_trace_id: "new-123" }),
+  replaySpan: vi.fn().mockResolvedValue({ new_span_id: "ns-1", status: "success" }),
+}));
 
 describe("TraceDetailPanel component", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   // 14. Shows loading spinner while fetching
   test("shows loading spinner when useTraceDetail returns loading=true", async () => {
-    // Override the module's useTraceDetail for this test
-    const traceDetailModule = await import("@/hooks/use-trace-detail");
-    vi.spyOn(traceDetailModule, "useTraceDetail").mockReturnValue({
+    (useTraceDetail as ReturnType<typeof vi.fn>).mockReturnValue({
       trace: null,
       loading: true,
       error: null,
-      refresh: async () => {},
+      refresh: vi.fn(),
     });
 
     const { TraceDetailPanel } = await import(
@@ -471,12 +480,11 @@ describe("TraceDetailPanel component", () => {
 
   // 15. Rerun button always visible
   test("Rerun button is visible when trace loaded", async () => {
-    const traceDetailModule = await import("@/hooks/use-trace-detail");
-    vi.spyOn(traceDetailModule, "useTraceDetail").mockReturnValue({
+    (useTraceDetail as ReturnType<typeof vi.fn>).mockReturnValue({
       trace: SAMPLE_TRACE_DETAIL,
       loading: false,
       error: null,
-      refresh: async () => {},
+      refresh: vi.fn(),
     });
 
     const { TraceDetailPanel } = await import(
@@ -506,12 +514,11 @@ describe("TraceDetailPanel component", () => {
       ],
     };
 
-    const traceDetailModule = await import("@/hooks/use-trace-detail");
-    vi.spyOn(traceDetailModule, "useTraceDetail").mockReturnValue({
+    (useTraceDetail as ReturnType<typeof vi.fn>).mockReturnValue({
       trace: failedLlmTrace,
       loading: false,
       error: null,
-      refresh: async () => {},
+      refresh: vi.fn(),
     });
 
     const { TraceDetailPanel } = await import(
@@ -540,7 +547,9 @@ describe("TraceDetailPanel component", () => {
     }
 
     // Initially no span selected → no Replay button
-    expect(getReplayButton()).toBeNull();
+    await waitFor(() => {
+      expect(getReplayButton()).toBeNull();
+    });
 
     // Select the failed llm_call span
     const llmSpanBtn = screen.getByText("distill_memories").closest("button")!;

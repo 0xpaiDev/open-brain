@@ -45,12 +45,7 @@ const MOCK_TRACE_DETAIL = {
 
 test.describe("Execution Explorer", () => {
   test.beforeEach(async ({ page }) => {
-    // Set API key in localStorage so the app doesn't show the auth wall
-    await page.goto("/logs");
-    await page.evaluate(() =>
-      localStorage.setItem("ob_api_key", "test-e2e-key"),
-    );
-
+    // Register routes BEFORE navigation so they intercept the initial page load
     // Mock KPIs endpoint
     await page.route("**/v1/traces/kpis", async (route) => {
       await route.fulfill({
@@ -84,7 +79,13 @@ test.describe("Execution Explorer", () => {
       }
     });
 
-    // Reload to pick up the mocks
+    // Navigate to the page, then set API key in localStorage and reload
+    await page.goto("/logs");
+    await page.evaluate(() =>
+      localStorage.setItem("ob_api_key", "test-e2e-key"),
+    );
+
+    // Reload to pick up the localStorage key with routes already registered
     await page.reload();
   });
 
