@@ -23,4 +23,5 @@ persist to disk but only take effect next session.
 
 - 2026-05-17 → ongoing — Commitments system (specs 0/B/A with dependency chain)
 - 2026-05-24: **Chat tools library shipped** — 7 tools (5 todo + 2 memory), Sonnet-based tool loop, hybrid intent classifier (regex + Haiku), ChatLog table (0023 migration), localStorage UI toggle. All 3 PRs merged, deployed to prod, 955 backend tests + 315 frontend tests passing.
-- Next: Commitments Spec 0 (chart fix, standalone); Spec B + A follow
+- 2026-05-25: **Execution Explorer V1 shipped** — 5-table observability schema (migration 0024), cost tracking, recording API, 5 API routes, retention sweeper, full web UI (trace list, span tree, KPI tiles, rerun/replay), 1007 backend + 330 frontend tests. Pending deploy to prod.
+- Next: Deploy migration 0024; then Commitments Spec 0 (chart fix, standalone); Spec B + A follow

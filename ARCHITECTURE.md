@@ -1,8 +1,8 @@
 # Open Brain Architecture
 
-**Version**: 2.7
-**Date**: 2026-05-24
-**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** **Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD (Spec B).** **Chat Tools Library — hybrid intent classifier, Anthropic tool-use loop, 7 domain tools, ChatLog audit table.** Modules: Foundation, Todo, Morning Pulse, Training, Learning, Chat.
+**Version**: 2.8
+**Date**: 2026-05-25
+**Status**: All phases + Training & Commitments V1 + multi-exercise commitments (routine + plan kinds) + Learning Library V2 backend (bulk import + materials API) complete. Discord integration removed. **Claude Code Memory Flywheel V1 — SessionEnd/Start hooks, local memory cron, memory_expand tier-2 endpoint.** **Exercise Library + Per-Day Schedule + Import Wizard + Plan CRUD (Spec B).** **Chat Tools Library — hybrid intent classifier, Anthropic tool-use loop, 7 domain tools, ChatLog audit table.** **Execution Explorer V1 (observability: traces, llm_calls, cost tracking, sweep job, web UI).** Modules: Foundation, Todo, Morning Pulse, Training, Learning, Chat, Observability.
 
 ## Phase 6 Module System (complete)
 
@@ -301,6 +301,30 @@ New LLM modules supporting chat tools:
 - `src/api/services/chat_tools.py` — aggregates `MEMORY_TOOLS + TODO_TOOLS` into `ALL_TOOLS`; `_DISPATCH_TABLE` maps tool names to handlers; `dispatch()` entry point
 - `src/api/services/memory_tools.py` — `search_memory_filtered` + `expand_memory` tool schemas and handlers
 - `src/api/services/todo_tools.py` — `list_todos`, `create_todo`, `complete_todo`, `defer_todo`, `edit_todo` tool schemas and handlers
+
+### Module: Observability (Execution Explorer)
+
+Hierarchical execution tracing with cost and token visibility.
+
+**Schema (migration 0024):**
+- `traces` — root; one per external trigger (cron tick, HTTP request, chat turn). Fields: trigger_type, trigger_name, status, total_cost_usd, llm_call_count, causal_parent_trace_id (for async worker handoffs), rerun_of_trace_id.
+- `cron_steps` — mid-tier spans for named phases within a cron job.
+- `llm_calls` — typed LLM spans: model, tokens, cost_usd, pricing_version, raw_request/raw_response (nulled by sweeper after TTL).
+- `tool_calls` — typed tool spans: tool_name, args, result, is_error.
+- `events` — untyped JSONB side-effect log.
+
+**Instrumentation** (`src/observability/`):
+- `context.py` — `ObservabilityContext` (structlog.contextvars propagation, span ID generation)
+- `recording.py` — `record_llm_call()`, `record_tool_call()`, `record_event()` context managers
+- `rerun.py` — dispatch registry for trace-level rerun by trigger_type
+
+**Cost tracking** (`src/llm/pricing.py`): hardcoded dict; `compute_cost_usd(model, usage)` called at write time; `pricing_version` stored per row.
+
+**Retention** (`src/jobs/observability_sweep.py`): daily at 04:00 UTC; nulls `raw_request`/`raw_response` on `success` traces older than `OB_OBSERVABILITY_RAW_TTL_DAYS` (default 90). Failed and running traces exempt.
+
+**API** (`src/api/routes/observability.py`): 5 routes under `/v1/traces`, all rate-limited.
+
+**Web** (`web/app/logs/`): Execution Explorer page with KPI tiles (7-day cost sparkline, cache hit rate, 24h failures), paginated trace list with filters, split-pane span tree + 5-tab detail panel. Auto-refresh (off/5s/30s). Legacy `/logs/legacy` route preserved.
 
 ### Job monitoring
 - **job_runs**: Execution log for scheduled jobs (pulse, importance, synthesis, commitment_miss); used by `/v1/jobs/status`

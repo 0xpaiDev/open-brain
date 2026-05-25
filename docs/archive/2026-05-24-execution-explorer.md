@@ -1,6 +1,7 @@
 ---
-status: in-progress
+status: shipped
 created: 2026-05-24
+shipped: 2026-05-25
 ---
 
 # Execution Explorer — Foundational Observability
@@ -340,3 +341,12 @@ Notes:
 - `TraceDetailPanel` named to avoid clash with `TraceDetail` interface from types.ts
 - `&amp;` in JSX is a double-escape — use literal `&` in JSX text (linter rewrites it; fix manually)
 - `useTraces`/`useKpis` return new objects each render — destructure `.refresh` refs to keep useEffect deps stable
+
+### Session 5 — Phase 5 (completed 2026-05-25)
+
+- [x] `src/jobs/observability_sweep.py` — sweeps raw_request/raw_response on success traces older than OB_OBSERVABILITY_RAW_TTL_DAYS; running traces exempt (allowlist, not blocklist)
+- [x] `crontab` — `0 4 * * * python -m src.jobs.observability_sweep`
+- [x] `scripts/check_config.py` — removed `observability_raw_ttl_days` from INTENTIONAL_UNUSED
+- [x] 4 sweep tests appended to `tests/test_observability.py` (nulls, exempts failed, exempts running, keeps recent)
+- [x] Gate: 1011 passed, 10 skipped. V1 complete.
+- [x] Docs: PROGRESS.md, ARCHITECTURE.md, context/DECISIONS.md, context/STATE.md updated
