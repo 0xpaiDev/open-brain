@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.rate_limit import chat_limit, limiter
 from src.api.services.chat_tools import ALL_TOOLS, dispatch
 from src.core.database import get_db
+from src.observability import start_trace
 from src.llm.client import AnthropicClient, ExtractionFailed, VoyageEmbeddingClient
 from src.llm.intent_classifier import classify_intent
 from src.llm.rag_prompts import (
@@ -210,20 +211,30 @@ async def chat(
         intent_tool, intent_method = await classify_intent(body.message)
 
     if intent_tool is not None:
-        response_text = await run_tool_loop(
-            system_prompt=system_prompt,
-            messages=messages_for_llm,
-            tools=ALL_TOOLS,
-            model="claude-sonnet-4-6",
-            max_tokens=2048,
-            session=session,
-            user_id=_uuid.UUID(int=0),
-            dispatch=dispatch,
-            user_message=body.message,
-            tools_enabled=body.tools_enabled,
-            intent_tool=intent_tool,
-            intent_method=intent_method,
-        )
+        async with start_trace(
+            trigger_type="chat",
+            trigger_name="chat_tools",
+            trigger_metadata={
+                "message": body.message[:200],
+                "intent_tool": intent_tool,
+                "intent_method": intent_method,
+                "model": "claude-sonnet-4-6",
+            },
+        ):
+            response_text = await run_tool_loop(
+                system_prompt=system_prompt,
+                messages=messages_for_llm,
+                tools=ALL_TOOLS,
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                session=session,
+                user_id=_uuid.UUID(int=0),
+                dispatch=dispatch,
+                user_message=body.message,
+                tools_enabled=body.tools_enabled,
+                intent_tool=intent_tool,
+                intent_method=intent_method,
+            )
     else:
         response_text = await anthropic.complete_with_history(
             system_prompt=system_prompt,
