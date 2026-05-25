@@ -1,7 +1,7 @@
 """Observability raw-payload retention sweep for Open Brain.
 
 Nulls raw_request and raw_response on LLMCall rows whose parent trace:
-  - has status != 'failed'  (failed traces are exempt from sweeping)
+  - has status == 'success'  (only fully successful traces are swept)
   - has started_at older than OB_OBSERVABILITY_RAW_TTL_DAYS days
 
 Settings used
@@ -31,7 +31,7 @@ async def sweep_raw_payloads(session: AsyncSession, ttl_days: int) -> int:
     """Null raw_request and raw_response on expired, non-failed LLMCall rows.
 
     A row is eligible for sweeping when:
-      - Its parent trace has status != 'failed'
+      - Its parent trace has status == 'success' (failed and running traces are exempt)
       - Its parent trace started_at is older than ttl_days days ago
 
     Args:
@@ -43,16 +43,16 @@ async def sweep_raw_payloads(session: AsyncSession, ttl_days: int) -> int:
     """
     cutoff = datetime.now(UTC) - timedelta(days=ttl_days)
 
-    # Subquery: trace ids that are eligible (not failed, old enough)
+    # Subquery: trace ids that are eligible (success only, old enough)
     eligible_trace_ids = select(Trace.id).where(
-        Trace.status != "failed",
+        Trace.status == "success",
         Trace.started_at < cutoff,
     )
 
     stmt = (
         sa_update(LLMCall)
         .where(
-            LLMCall.raw_request.isnot(None),
+            LLMCall.raw_request.is_not(None),
             LLMCall.trace_id.in_(eligible_trace_ids),
         )
         .values(raw_request=None, raw_response=None)

@@ -361,6 +361,26 @@ class TestObservabilitySweep:
         assert rows_swept == 0
         await async_session.refresh(call)
         assert call.raw_request is not None
+        assert call.raw_response is not None
+
+    @pytest.mark.asyncio
+    async def test_sweep_exempts_running_traces(self, async_session):
+        from src.jobs.observability_sweep import sweep_raw_payloads
+
+        trace = _make_trace(status="running", age_days=91)
+        async_session.add(trace)
+        await async_session.flush()
+
+        call = _make_llm_call(trace_id=trace.id)
+        async_session.add(call)
+        await async_session.flush()
+
+        rows_swept = await sweep_raw_payloads(async_session, ttl_days=90)
+
+        assert rows_swept == 0
+        await async_session.refresh(call)
+        assert call.raw_request is not None
+        assert call.raw_response is not None
 
     @pytest.mark.asyncio
     async def test_sweep_keeps_recent_rows(self, async_session):
@@ -379,3 +399,4 @@ class TestObservabilitySweep:
         assert rows_swept == 0
         await async_session.refresh(call)
         assert call.raw_request is not None
+        assert call.raw_response is not None
