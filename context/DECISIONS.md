@@ -7,6 +7,10 @@ do not touch this file.
 
 Read at session start as part of the tier-0 frozen snapshot.
 
+## 2026-05-25 — No HTTP request tracing (middleware removed)
+
+`ObservabilityMiddleware` opened a DB connection per `/v1/*` request, exhausting the pool (size 3 + overflow 2) when the dashboard made ~10 concurrent calls. Removed permanently. Cron and worker traces via `run_tracked` are sufficient — per-request HTTP traces add noise not signal in a single-user system, and the e2-medium pool cannot support it. Do not re-add HTTP middleware without pool resizing.
+
 ## 2026-05-25 — Execution Explorer: success-only sweep (not not-failed)
 
 The retention sweeper uses `status == "success"` (allowlist) rather than `status != "failed"` (blocklist) to select traces eligible for raw payload sweep. This exempts orphaned `"running"` traces (e.g. process-killed jobs) in addition to `"failed"` ones, preserving post-mortem data for any non-terminal trace state.
