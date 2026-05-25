@@ -13,10 +13,37 @@ interface UseTraceDetailReturn {
 
 export function useTraceDetail(traceId: string | null): UseTraceDetailReturn {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!traceId);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTrace = useCallback(async () => {
+  useEffect(() => {
+    if (!traceId) {
+      setTrace(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    api<TraceDetail>("GET", `/v1/traces/${traceId}`)
+      .then((res) => {
+        if (!cancelled) setTrace(res);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to load trace detail");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [traceId]);
+
+  const refresh = useCallback(async () => {
     if (!traceId) return;
     setLoading(true);
     setError(null);
@@ -30,15 +57,7 @@ export function useTraceDetail(traceId: string | null): UseTraceDetailReturn {
     }
   }, [traceId]);
 
-  useEffect(() => {
-    if (!traceId) {
-      setTrace(null);
-      return;
-    }
-    fetchTrace();
-  }, [traceId, fetchTrace]);
-
-  return { trace, loading, error, refresh: fetchTrace };
+  return { trace, loading, error, refresh };
 }
 
 export async function rerunTrace(traceId: string): Promise<{ new_trace_id: string }> {

@@ -90,7 +90,7 @@ export function useTraces(filters: TraceFilters): UseTracesReturn {
   const hasMore = items.length < total;
 
   const loadMore = useCallback(async () => {
-    if (!hasMore) return;
+    if (!hasMore || loading) return;
     const nextPage = page + 1;
     try {
       const res = await api<TraceListResponse>("GET", buildUrl(nextPage));
@@ -100,7 +100,7 @@ export function useTraces(filters: TraceFilters): UseTracesReturn {
     } catch {
       setError("Failed to load more traces");
     }
-  }, [hasMore, buildUrl, page]);
+  }, [hasMore, loading, buildUrl, page]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
