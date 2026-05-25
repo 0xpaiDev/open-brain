@@ -15,35 +15,35 @@ export default function ExecutionExplorerPage() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<RefreshInterval>("off");
 
-  const traces = useTraces(filters);
-  const kpis = useKpis();
+  const { refresh: refreshTraces, ...tracesState } = useTraces(filters);
+  const { refresh: refreshKpis, ...kpisState } = useKpis();
 
   const refresh = useCallback(async () => {
-    await Promise.all([traces.refresh(), kpis.refresh()]);
-  }, [traces, kpis]);
+    await Promise.all([refreshTraces(), refreshKpis()]);
+  }, [refreshTraces, refreshKpis]);
 
   useEffect(() => {
     if (refreshInterval === "off") return;
     const ms = refreshInterval === "5s" ? 5000 : 30000;
     const id = setInterval(() => {
-      traces.refresh();
-      kpis.refresh();
+      refreshTraces();
+      refreshKpis();
     }, ms);
     return () => clearInterval(id);
-  }, [refreshInterval, traces, kpis]);
+  }, [refreshInterval, refreshTraces, refreshKpis]);
 
-  function handleTraceClick(id: string) {
+  const handleTraceClick = useCallback((id: string) => {
     setSelectedTraceId((prev) => (prev === id ? null : id));
-  }
+  }, []);
 
-  function handleClose() {
+  const handleClose = useCallback(() => {
     setSelectedTraceId(null);
-  }
+  }, []);
 
-  function handleRerunComplete(_newId: string) {
-    traces.refresh();
-    kpis.refresh();
-  }
+  const handleRerunComplete = useCallback((_newId: string) => {
+    refreshTraces();
+    refreshKpis();
+  }, [refreshTraces, refreshKpis]);
 
   return (
     <div className="py-8 space-y-6">
@@ -54,7 +54,7 @@ export default function ExecutionExplorerPage() {
             Execution Explorer
           </h1>
           <p className="text-on-surface-variant text-sm">
-            Trace &amp; cost visibility
+            Trace & cost visibility
           </p>
         </div>
 
@@ -92,16 +92,16 @@ export default function ExecutionExplorerPage() {
       </div>
 
       {/* KPI tiles */}
-      <KpiTiles kpis={kpis.kpis} loading={kpis.loading} />
+      <KpiTiles kpis={kpisState.kpis} loading={kpisState.loading} />
 
       {/* Trace list */}
       <TraceList
-        items={traces.items}
-        total={traces.total}
-        loading={traces.loading}
-        error={traces.error}
-        hasMore={traces.hasMore}
-        loadMore={traces.loadMore}
+        items={tracesState.items}
+        total={tracesState.total}
+        loading={tracesState.loading}
+        error={tracesState.error}
+        hasMore={tracesState.hasMore}
+        loadMore={tracesState.loadMore}
         filters={filters}
         onFiltersChange={setFilters}
         onTraceClick={handleTraceClick}
