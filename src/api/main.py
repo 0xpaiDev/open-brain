@@ -10,7 +10,6 @@ from fastapi.responses import Response
 from slowapi.errors import RateLimitExceeded
 
 from src.api.middleware.auth import APIKeyMiddleware
-from src.api.middleware.observability import ObservabilityMiddleware
 from src.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from src.api.routes.calendar_api import router as calendar_router
 from src.api.routes.chat import router as chat_router
@@ -89,8 +88,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
-app.add_middleware(ObservabilityMiddleware)
-
 # Routes — tags appear as sections in /docs Swagger UI
 app.include_router(health_router, tags=["Health"])
 app.include_router(memory_router, tags=["Memory"])
