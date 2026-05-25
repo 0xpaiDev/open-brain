@@ -283,3 +283,99 @@ async def test_contextvar_isolation_across_tasks(obs_db):
     # task_a should have a trace_id, task_b should not (runs outside a trace)
     assert any(r is not None for r in results)
     assert any(r is None for r in results)
+
+
+# ── Retention sweeper ─────────────────────────────────────────────────────────
+
+
+def _make_trace(status: str, age_days: int):
+    """Build a Trace ORM object with started_at set to age_days ago."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from src.core.models import Trace
+
+    return Trace(
+        id=uuid4(),
+        trigger_type="cron",
+        trigger_name="test_job",
+        status=status,
+        started_at=datetime.now(UTC) - timedelta(days=age_days),
+    )
+
+
+def _make_llm_call(trace_id):
+    """Build an LLMCall ORM object with raw payloads populated."""
+    from uuid import uuid4
+
+    from src.core.models import LLMCall
+
+    return LLMCall(
+        id=uuid4(),
+        trace_id=trace_id,
+        span_id="span-1",
+        call_site="test.call",
+        model="claude-haiku-4-5",
+        status="success",
+        pricing_version="v1",
+        request_summary={"message_count": 1},
+        raw_request={"messages": [{"role": "user", "content": "hello"}]},
+        raw_response={"content": [{"text": "hi"}]},
+    )
+
+
+class TestObservabilitySweep:
+    @pytest.mark.asyncio
+    async def test_sweep_nulls_raw_payloads_on_old_successful_traces(self, async_session):
+        from src.jobs.observability_sweep import sweep_raw_payloads
+
+        trace = _make_trace(status="success", age_days=91)
+        async_session.add(trace)
+        await async_session.flush()
+
+        call = _make_llm_call(trace_id=trace.id)
+        async_session.add(call)
+        await async_session.flush()
+
+        rows_swept = await sweep_raw_payloads(async_session, ttl_days=90)
+
+        assert rows_swept == 1
+        await async_session.refresh(call)
+        assert call.raw_request is None
+        assert call.raw_response is None
+
+    @pytest.mark.asyncio
+    async def test_sweep_exempts_failed_traces(self, async_session):
+        from src.jobs.observability_sweep import sweep_raw_payloads
+
+        trace = _make_trace(status="failed", age_days=91)
+        async_session.add(trace)
+        await async_session.flush()
+
+        call = _make_llm_call(trace_id=trace.id)
+        async_session.add(call)
+        await async_session.flush()
+
+        rows_swept = await sweep_raw_payloads(async_session, ttl_days=90)
+
+        assert rows_swept == 0
+        await async_session.refresh(call)
+        assert call.raw_request is not None
+
+    @pytest.mark.asyncio
+    async def test_sweep_keeps_recent_rows(self, async_session):
+        from src.jobs.observability_sweep import sweep_raw_payloads
+
+        trace = _make_trace(status="success", age_days=1)
+        async_session.add(trace)
+        await async_session.flush()
+
+        call = _make_llm_call(trace_id=trace.id)
+        async_session.add(call)
+        await async_session.flush()
+
+        rows_swept = await sweep_raw_payloads(async_session, ttl_days=90)
+
+        assert rows_swept == 0
+        await async_session.refresh(call)
+        assert call.raw_request is not None

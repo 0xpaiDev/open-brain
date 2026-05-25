@@ -18,3 +18,6 @@
 
 # Weekly training summary - Monday 01:00 UTC (after synthesis)
 0 1 * * 1 python -m src.jobs.training_weekly
+
+# Observability raw-payload sweep - 04:00 UTC daily (after pulse)
+0 4 * * * python -m src.jobs.observability_sweep
