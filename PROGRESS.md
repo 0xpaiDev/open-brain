@@ -62,21 +62,13 @@
 
 ## Next Up
 
-- **Deploy Execution Explorer V1**: apply migration 0024 on Supabase; restart API+worker to activate observability instrumentation and sweeper
-- **Deploy** all pending changes (migrations 0016–0023 + Learning V2 + Commitments tab + plan import sets + Discord removal + Learning cron cross-day dedup + topic context on TodoResponse + **memory_expand endpoint + `claude-code-session` source in `AUTO_CAPTURE_SOURCES`** + **exercise library + per-day schedule + import wizard + plan CRUD** + **inline log form + last_logged on ExerciseResponse** + **Morning Pulse Briefing: 3 new detectors, build_briefing, migration 0022 drop notes, cron 04:00 UTC** + **Chat Tools Library: intent classifier, tool-use loop, 7 domain tools, ChatLog migration 0023, ToolsToggle UI** — `src/llm/intent_classifier.py`, `src/llm/tool_agent.py`, `src/api/services/chat_tools.py`, `src/api/services/memory_tools.py`, `src/api/services/todo_tools.py`, `src/api/routes/chat.py`, `web/components/chat/tools-toggle.tsx`, `web/hooks/use-chat.ts`, `alembic/versions/0023_chat_logs.py`) — `git pull` on GCP VM then `docker compose --profile migrate run --rm migrate` + restart services; remove `discord-bot` container if running (`docker rm -f openbrain-discord`)
-- **Chat tools v2**: add memory-write tools (`defer_memory`, `adjust_importance`, `supersede_memory`) and pulse tools; add `GET /v1/chat/logs` route + frontend log page (`src/api/routes/chat.py`, `src/api/services/chat_tools.py`)
-- **Verify chat tools UI**: at `0xpai.com/chat` — enable Tools toggle → send "show my todos" → tool-driven response; disable → RAG path; reload → toggle persists (`web/app/chat/page.tsx`, `web/hooks/use-chat.ts`)
-- **Install memory flywheel locally (this machine)**: symlink both hooks into `~/.claude/hooks/`, add `OB_SESSION_END_BACKEND=cli` + `OPENBRAIN_*` to `~/.claude/openbrain.env`, add SessionStart + SessionEnd entries to `~/.claude/settings.json`, run `make memory-install-cron` (sudo), add `[boot] command = "service cron start"` to `/etc/wsl.conf` then `wsl --shutdown`. Verify via `make memory-state` + tail `/tmp/ob-session-*.log` on next CC session — see `docs/setup-manuals/setup-new-machine.md` (`scripts/claude-code/`, `scripts/memory/`)
-- **First weekly curator run** to consolidate over-cap personal layer files (MF1) — `make memory-curate`, review diff before next run
-- **Import first real plan** via the new 3-step wizard at `/commitments/import`; verify unknown exercises resolve correctly and entry_exercises rows are created
-- **Visual verification of plan CRUD editor** at `/commitments/[id]/edit`: day-swap, exercise picker, week grouping — test on mobile viewport
-- **Visual verification of Spec A inline log form** at `/` dashboard: tap Log on a routine exercise → expand form, fields match metric/progression_metric, prefilled from last_logged or target; after Confirm → check + summary shown (`web/components/dashboard/commitment-list.tsx`)
-- **Day-swap UI from commitment detail page** (Spec A second half — not yet implemented; rest-day → workout-day swap on `/commitments/[id]` page)
-- **Visual verification** of scroll-hide nav: scroll down on mobile viewport → top nav + bottom tabs should slide away; scroll up → both reappear with 300ms transition (`web/components/layout/top-nav.tsx`, `web/components/layout/bottom-tabs.tsx`)
-- **Visual verification** of Commitments tab: active list cards + overlay links, collapsible form, history section with badges, sidebar + mobile bottom-tabs — desktop + iPhone 14 Pro DevTools (393×852)
-- **Visual verification** of Learning redesign: stat cards, progress ring, filter pills, collapsible topic cards, Switch toggles, delete buttons
-- **Write tests** for Learning components: `progress-ring.test.tsx`, `switch.test.tsx`, `learning-item-row.test.tsx`, `learning-topic-card.test.tsx`, `learning-page.test.tsx` (`web/__tests__/`)
-- Seed first learning topics + sections + items via `/learning/import` using `docs/learning-import-template.md` + Claude.ai
-- Verify pulse signal pipeline telemetry; address P1+P2 if always `open` (`src/pulse_signals/context.py`, `src/pulse_signals/prompts.py`, `src/pulse_signals/detectors/open.py`)
-- Multi-metric aggregate form support in Commitments tab (`web/components/commitments/commitment-create-form.tsx`)
-- Dashboard commitment cards currently have no detail link — consider adding "View" chevron to `MultiExerciseCommitmentCard` (`web/components/dashboard/commitment-list.tsx`)
+- **Deploy all pending changes** — `git pull` on GCP VM; `docker compose --profile migrate run --rm migrate` (migrations 0016–0024 including Execution Explorer schema); restart services; remove `discord-bot` container if still running (`docker rm -f openbrain-discord`)
+- **Chat tools v2**: memory-write tools (`defer_memory`, `adjust_importance`, `supersede_memory`) + `GET /v1/chat/logs` route + frontend log page (`src/api/routes/chat.py`, `src/api/services/chat_tools.py`)
+- **Verify chat tools UI**: `0xpai.com/chat` — Tools toggle on → "show my todos" → tool response; off → RAG; reload → persists (`web/app/chat/page.tsx`, `web/hooks/use-chat.ts`)
+- **Install memory flywheel locally**: see `docs/setup-manuals/setup-new-machine.md` (`scripts/claude-code/`, `scripts/memory/`)
+- **First weekly curator run** (MF1 over-cap files) — `make memory-curate`, review diff
+- **Import first real plan** via 3-step wizard at `/commitments/import`; verify entry_exercises rows
+- **Day-swap UI** from commitment detail page (Spec A second half — `/commitments/[id]`)
+- **Visual checks** needed: plan CRUD editor, inline log form, scroll-hide nav, Commitments tab, Learning redesign — mobile viewport + iPhone 14 Pro DevTools
+- **Write tests** for Learning components (`web/__tests__/`: progress-ring, switch, learning-item-row, topic-card, page)
+- Multi-metric aggregate form support (`web/components/commitments/commitment-create-form.tsx`)

@@ -4,6 +4,24 @@ Covering **2026-03-13 to 2026-05-24** | 6 phases + dashboard + training/commitme
 
 ---
 
+## Session — 2026-05-25 (Execution Explorer V1 — Phases 3–5)
+
+**What changed**:
+- Phase 3 committed: `src/api/routes/observability.py` (5 routes, rate-limited), router wired into `main.py`, 36 backend tests (1007 total)
+- Phase 4 web UI: `/logs/legacy` preserved; `useTraces`/`useKpis`/`useTraceDetail` hooks; `kpi-tiles`, `trace-list`, `span-tree`, `trace-detail` components; full `ExecutionExplorerPage` with auto-refresh; 16 Vitest + 1 Playwright E2E (330 frontend total)
+- Phase 5 ops: `src/jobs/observability_sweep.py` (success-only allowlist; failed + running exempt); crontab `0 4 * * *`; config sentinel removed; docs updated; spec archived
+- Backend tests: 1007 → 1011
+
+**Files touched**: `src/api/routes/observability.py` (new), `src/api/main.py`, `web/app/logs/page.tsx`, `web/app/logs/legacy/page.tsx` (new), `web/lib/types.ts`, `web/hooks/use-traces.ts` (new), `web/hooks/use-trace-detail.ts` (new), `web/components/observability/` (4 new files), `web/__tests__/observability.test.tsx` (new), `web/e2e/execution-explorer.spec.ts` (new), `src/jobs/observability_sweep.py` (new), `crontab`, `scripts/check_config.py`, `PROGRESS.md`, `ARCHITECTURE.md` (v2.8), `context/DECISIONS.md`, `context/STATE.md`, `docs/archive/2026-05-24-execution-explorer.md`
+
+**Decisions made**: Success-only sweep allowlist (not `!= failed` blocklist — exempts orphaned `running` traces); hybrid schema 5 typed tables + Event JSONB (already in DECISIONS.md)
+
+**Gotchas found**: `&amp;` in JSX double-escapes (linter inserts it; write literal `&`); React hook return objects are new refs every render — destructure `.refresh` before using in useCallback/useEffect deps to avoid interval reset on every render (`web/app/logs/page.tsx`)
+
+**Test count**: 1011 backend + 330 frontend
+
+---
+
 ## Session — 2026-05-24 (Chat Tools Library — PR1 + PR2 + PR3)
 
 **What changed**:
