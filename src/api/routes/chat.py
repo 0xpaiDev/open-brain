@@ -236,12 +236,17 @@ async def chat(
                 intent_method=intent_method,
             )
     else:
-        response_text = await anthropic.complete_with_history(
-            system_prompt=system_prompt,
-            messages=messages_for_llm,
-            model=resolved_model,
-            max_tokens=2048,
-        )
+        async with start_trace(
+            trigger_type="chat",
+            trigger_name="chat_rag",
+            trigger_metadata={"message": body.message[:200], "model": resolved_model},
+        ):
+            response_text = await anthropic.complete_with_history(
+                system_prompt=system_prompt,
+                messages=messages_for_llm,
+                model=resolved_model,
+                max_tokens=2048,
+            )
 
     # ── 10. Commit + respond ─────────────────────────────────────────────────
     await session.commit()
