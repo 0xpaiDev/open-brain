@@ -541,7 +541,6 @@ async def test_chat_finds_synced_todo(client: AsyncClient, auth_headers: dict, m
 # ── Tools-enabled routing tests ───────────────────────────────────────────────
 
 
-
 @pytest.mark.asyncio
 async def test_chat_tools_enabled_no_intent_still_calls_tool_loop(
     client: AsyncClient, auth_headers: dict, monkeypatch
@@ -549,8 +548,10 @@ async def test_chat_tools_enabled_no_intent_still_calls_tool_loop(
     """tools_enabled=True always takes the tool-loop path, even when classifier returns None."""
     _patch_chat_deps(monkeypatch)
     loop_calls = []
+    classify_calls = []
 
     async def fake_classify(message):
+        classify_calls.append(message)
         return None, "none"
 
     async def fake_loop(**kwargs):
@@ -570,6 +571,8 @@ async def test_chat_tools_enabled_no_intent_still_calls_tool_loop(
     assert len(loop_calls) == 1
     assert loop_calls[0]["intent_tool"] is None
     assert loop_calls[0]["intent_method"] == "none"
+    # classifier still runs even when it returns None (advisory metadata contract)
+    assert len(classify_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -577,7 +580,7 @@ async def test_chat_tools_enabled_with_intent_calls_tool_loop(
     client: AsyncClient, auth_headers: dict, monkeypatch
 ):
     """When tools_enabled and classifier returns intent, run_tool_loop is called with intent metadata."""
-    _patch_chat_deps(monkeypatch)
+    mock_anthropic_instance, _, _ = _patch_chat_deps(monkeypatch)
 
     async def fake_classify(message):
         return "list_todos", "regex"
@@ -603,8 +606,8 @@ async def test_chat_tools_enabled_with_intent_calls_tool_loop(
     assert loop_kwargs_captured["model"] == "claude-haiku-4-5-20251001"
     assert loop_kwargs_captured["intent_tool"] == "list_todos"
     assert loop_kwargs_captured["intent_method"] == "regex"
-    # client instance is forwarded
-    assert loop_kwargs_captured["client"] is not None
+    # client instance forwarded is the SAME instance constructed inside the route
+    assert loop_kwargs_captured["client"] is mock_anthropic_instance
 
 
 @pytest.mark.asyncio
