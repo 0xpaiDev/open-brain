@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.rate_limit import chat_limit, limiter
 from src.api.services.chat_tools import ALL_TOOLS, dispatch
 from src.core.database import get_db
-from src.observability import start_trace
 from src.llm.client import AnthropicClient, ExtractionFailed, VoyageEmbeddingClient
 from src.llm.intent_classifier import classify_intent
 from src.llm.rag_prompts import (
@@ -35,6 +34,7 @@ from src.llm.rag_prompts import (
     build_rag_user_message,
 )
 from src.llm.tool_agent import run_tool_loop
+from src.observability import start_trace
 from src.retrieval.context_builder import build_context
 from src.retrieval.search import SearchResult, hybrid_search
 
@@ -208,9 +208,8 @@ async def chat(
     intent_method: str = "none"
 
     if body.tools_enabled:
+        # Advisory only — result does not gate the path
         intent_tool, intent_method = await classify_intent(body.message)
-
-    if intent_tool is not None:
         async with start_trace(
             trigger_type="chat",
             trigger_name="chat_tools",
@@ -218,14 +217,15 @@ async def chat(
                 "message": body.message[:200],
                 "intent_tool": intent_tool,
                 "intent_method": intent_method,
-                "model": "claude-sonnet-4-6",
+                "model": resolved_model,
             },
         ):
             response_text = await run_tool_loop(
+                client=anthropic,
                 system_prompt=system_prompt,
                 messages=messages_for_llm,
                 tools=ALL_TOOLS,
-                model="claude-sonnet-4-6",
+                model=resolved_model,
                 max_tokens=2048,
                 session=session,
                 user_id=_uuid.UUID(int=0),

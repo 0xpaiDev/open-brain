@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.llm.client import anthropic_client
+from src.llm.client import AnthropicClient
 from src.observability import record_tool_call, start_step
 from src.observability.rerun import register_rerun_handler
 
@@ -25,6 +25,7 @@ class ToolError(Exception):
 
 async def run_tool_loop(
     *,
+    client: AnthropicClient,
     system_prompt: str,
     messages: list[dict],
     tools: list[dict],
@@ -45,7 +46,7 @@ async def run_tool_loop(
 
     for iteration in range(MAX_ITERATIONS):
         async with start_step(f"tool_loop_iter_{iteration}"):
-            raw = await anthropic_client._messages_create(
+            raw = await client._messages_create(
                 messages=loop_messages,
                 system=system_prompt,
                 tools=tools,
@@ -185,4 +186,4 @@ async def _handle_chat_rerun(trace) -> None:
     raise NotImplementedError("Chat reruns must be triggered via the chat API endpoint")
 
 
-register_rerun_handler("http", _handle_chat_rerun)
+register_rerun_handler("chat", _handle_chat_rerun)

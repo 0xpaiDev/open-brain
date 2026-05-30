@@ -541,33 +541,12 @@ async def test_chat_finds_synced_todo(client: AsyncClient, auth_headers: dict, m
 # ── Tools-enabled routing tests ───────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_chat_tools_disabled_uses_rag_path(
-    client: AsyncClient, auth_headers: dict, monkeypatch
-):
-    """tools_enabled=False (default) must never call classify_intent."""
-    _patch_chat_deps(monkeypatch)
-    classify_calls = []
-
-    async def fake_classify(message):
-        classify_calls.append(message)
-        return None, "none"
-
-    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
-    resp = await client.post(
-        "/v1/chat",
-        json={"message": "mark my gym todo as done"},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    assert classify_calls == []
-
 
 @pytest.mark.asyncio
-async def test_chat_tools_enabled_no_intent_uses_rag_path(
+async def test_chat_tools_enabled_no_intent_still_calls_tool_loop(
     client: AsyncClient, auth_headers: dict, monkeypatch
 ):
-    """When tools_enabled but classifier returns None, RAG path is used."""
+    """tools_enabled=True always takes the tool-loop path, even when classifier returns None."""
     _patch_chat_deps(monkeypatch)
     loop_calls = []
 
@@ -587,14 +566,17 @@ async def test_chat_tools_enabled_no_intent_uses_rag_path(
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert loop_calls == []
+    assert resp.json()["response"] == "tool response"
+    assert len(loop_calls) == 1
+    assert loop_calls[0]["intent_tool"] is None
+    assert loop_calls[0]["intent_method"] == "none"
 
 
 @pytest.mark.asyncio
 async def test_chat_tools_enabled_with_intent_calls_tool_loop(
     client: AsyncClient, auth_headers: dict, monkeypatch
 ):
-    """When tools_enabled and classifier returns intent, run_tool_loop is called."""
+    """When tools_enabled and classifier returns intent, run_tool_loop is called with intent metadata."""
     _patch_chat_deps(monkeypatch)
 
     async def fake_classify(message):
@@ -617,5 +599,69 @@ async def test_chat_tools_enabled_with_intent_calls_tool_loop(
     assert resp.status_code == 200
     data = resp.json()
     assert data["response"] == "You have 2 todos."
-    assert loop_kwargs_captured["model"] == "claude-sonnet-4-6"
+    # Uses resolved_model (default haiku), not hardcoded sonnet
+    assert loop_kwargs_captured["model"] == "claude-haiku-4-5-20251001"
     assert loop_kwargs_captured["intent_tool"] == "list_todos"
+    assert loop_kwargs_captured["intent_method"] == "regex"
+    # client instance is forwarded
+    assert loop_kwargs_captured["client"] is not None
+
+
+@pytest.mark.asyncio
+async def test_chat_tools_enabled_uses_resolved_model(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """tools_enabled path uses the resolved model (not hardcoded sonnet)."""
+    _patch_chat_deps(monkeypatch)
+
+    loop_kwargs_captured = {}
+
+    async def fake_classify(message):
+        return None, "none"
+
+    async def fake_loop(**kwargs):
+        loop_kwargs_captured.update(kwargs)
+        return "done"
+
+    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
+    monkeypatch.setattr("src.api.routes.chat.run_tool_loop", fake_loop)
+
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "do something", "tools_enabled": True, "model": "claude-sonnet-4-6"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert loop_kwargs_captured["model"] == "claude-sonnet-4-6"
+
+
+@pytest.mark.asyncio
+async def test_chat_tools_disabled_uses_rag_path_never_calls_loop(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """tools_enabled=False (default) must take the RAG path and never call the tool loop."""
+    mock_anthropic, _, _ = _patch_chat_deps(monkeypatch)
+    loop_calls = []
+    classify_calls = []
+
+    async def fake_classify(message):
+        classify_calls.append(message)
+        return "list_todos", "regex"
+
+    async def fake_loop(**kwargs):
+        loop_calls.append(kwargs)
+        return "should not be reached"
+
+    monkeypatch.setattr("src.api.routes.chat.classify_intent", fake_classify)
+    monkeypatch.setattr("src.api.routes.chat.run_tool_loop", fake_loop)
+
+    resp = await client.post(
+        "/v1/chat",
+        json={"message": "mark my gym todo as done"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert loop_calls == []
+    assert classify_calls == []
+    # RAG synthesis was called
+    mock_anthropic.complete_with_history.assert_awaited_once()
