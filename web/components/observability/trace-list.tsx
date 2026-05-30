@@ -116,7 +116,8 @@ export function TraceList({
   }
 
   const hasFilters =
-    filters.trigger_type || filters.status || filters.trigger_name;
+    filters.trigger_type || filters.status || filters.trigger_name ||
+    filters.date_from || filters.date_to;
 
   return (
     <div className="space-y-3">
@@ -186,6 +187,8 @@ export function TraceList({
                 trigger_type: null,
                 status: null,
                 trigger_name: null,
+                date_from: null,
+                date_to: null,
               });
             }}
             className="text-xs text-on-surface-variant hover:text-on-surface transition-colors"

@@ -267,8 +267,8 @@ async def list_traces(
     trigger_type: str | None = Query(default=None),
     status: str | None = Query(default=None),
     trigger_name: str | None = Query(default=None),
-    date_from: datetime | None = Query(default=None),
-    date_to: datetime | None = Query(default=None),
+    date_from: _date | None = Query(default=None),
+    date_to: _date | None = Query(default=None),
     min_cost: float | None = Query(default=None),
     max_cost: float | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -290,9 +290,9 @@ async def list_traces(
     if trigger_name is not None:
         _apply(Trace.trigger_name == trigger_name)
     if date_from is not None:
-        _apply(Trace.started_at >= date_from)
+        _apply(Trace.started_at >= datetime(date_from.year, date_from.month, date_from.day, tzinfo=UTC))
     if date_to is not None:
-        _apply(Trace.started_at <= date_to)
+        _apply(Trace.started_at < datetime(date_to.year, date_to.month, date_to.day, tzinfo=UTC) + timedelta(days=1))
     if min_cost is not None:
         _apply(Trace.total_cost_usd >= min_cost)
     if max_cost is not None:

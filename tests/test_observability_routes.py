@@ -282,7 +282,8 @@ class TestListTraces:
         now = _now()
         await _make_trace(async_session, started_at=now)
         await _make_trace(async_session, started_at=now - timedelta(days=3))
-        cutoff = (now - timedelta(days=1)).isoformat()
+        # Use YYYY-MM-DD date string (date_from accepts _date, not datetime)
+        cutoff = (now - timedelta(days=1)).date().isoformat()
         resp = await client.get("/v1/traces", headers=auth, params={"date_from": cutoff})
         assert resp.json()["total"] == 1
 
@@ -290,7 +291,8 @@ class TestListTraces:
         now = _now()
         await _make_trace(async_session, started_at=now)
         await _make_trace(async_session, started_at=now - timedelta(days=3))
-        cutoff = (now - timedelta(days=1)).isoformat()
+        # Use YYYY-MM-DD date string; date_to is inclusive-day (< date_to + 1 day)
+        cutoff = (now - timedelta(days=1)).date().isoformat()
         resp = await client.get("/v1/traces", headers=auth, params={"date_to": cutoff})
         assert resp.json()["total"] == 1
 

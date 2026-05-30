@@ -235,6 +235,22 @@ describe("useKpis hook", () => {
     const calledUrl: string = fetchMock.mock.calls[0][0];
     expect(calledUrl).toContain("/v1/traces/kpis");
   });
+
+  test("passes date_from and date_to as query params when provided", async () => {
+    const fetchMock = vi.fn(async () => jsonRes(SAMPLE_KPIS));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { useKpis } = await import("@/hooks/use-traces");
+    const { result } = renderHook(() =>
+      useKpis({ date_from: "2026-05-25", date_to: "2026-05-25" }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const calledUrl: string = fetchMock.mock.calls[0][0];
+    expect(calledUrl).toContain("date_from=2026-05-25");
+    expect(calledUrl).toContain("date_to=2026-05-25");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
