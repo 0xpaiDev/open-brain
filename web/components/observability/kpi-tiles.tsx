@@ -80,9 +80,9 @@ export function KpiTiles({ kpis, loading }: KpiTilesProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div className="bg-surface-container rounded-2xl p-4">
-        <p className="text-xs text-on-surface-variant">Cost today</p>
+        <p className="text-xs text-on-surface-variant">Cost in range</p>
         <p className="text-2xl font-bold text-on-surface mt-1">
-          {kpis ? formatCost(kpis.cost_today_usd) : "—"}
+          {kpis ? formatCost(kpis.cost_in_range_usd) : "—"}
         </p>
         {kpis && kpis.sparkline_7d.length >= 2 && (
           <Sparkline points={kpis.sparkline_7d} />

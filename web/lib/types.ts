@@ -589,7 +589,7 @@ export interface KpiSparklinePoint {
 }
 
 export interface KpiResponse {
-  cost_today_usd: string;
+  cost_in_range_usd: string;
   sparkline_7d: KpiSparklinePoint[];
   cache_hit_rate_24h: number | null;
   failure_count_24h: number;

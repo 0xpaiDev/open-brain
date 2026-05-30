@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
+from datetime import date as _date
 from uuid import uuid4
 
 import structlog
@@ -180,17 +181,25 @@ async def _call_anthropic_replay(rr: dict) -> object:
 @limiter.limit("60/minute")
 async def traces_kpis(
     request: Request,
+    date_from: _date | None = Query(default=None),
+    date_to: _date | None = Query(default=None),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     now = datetime.now(UTC)
     today_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
-    tomorrow_start = today_start + timedelta(days=1)
     h24_ago = now - timedelta(hours=24)
 
-    cost_today_raw = await session.scalar(
+    if date_from is not None and date_to is not None:
+        window_start = datetime(date_from.year, date_from.month, date_from.day, tzinfo=UTC)
+        window_end = datetime(date_to.year, date_to.month, date_to.day, tzinfo=UTC) + timedelta(days=1)
+    else:
+        window_start = today_start
+        window_end = today_start + timedelta(days=1)
+
+    cost_in_range_raw = await session.scalar(
         select(func.sum(Trace.total_cost_usd)).where(
-            Trace.started_at >= today_start,
-            Trace.started_at < tomorrow_start,
+            Trace.started_at >= window_start,
+            Trace.started_at < window_end,
         )
     )
 
@@ -240,7 +249,7 @@ async def traces_kpis(
         oldest_dl_age = now.timestamp() - _to_utc_ts(oldest_dl_started_at)
 
     return {
-        "cost_today_usd": _fmt_cost(cost_today_raw or 0),
+        "cost_in_range_usd": _fmt_cost(cost_in_range_raw or 0),
         "sparkline_7d": sparkline,
         "cache_hit_rate_24h": cache_hit_rate,
         "failure_count_24h": failure_count_24h,

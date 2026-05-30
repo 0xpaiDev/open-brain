@@ -127,7 +127,7 @@ interface UseKpisReturn {
   refresh: () => Promise<void>;
 }
 
-export function useKpis(): UseKpisReturn {
+export function useKpis(filters: TraceFilters = {}): UseKpisReturn {
   const [kpis, setKpis] = useState<KpiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,14 +136,20 @@ export function useKpis(): UseKpisReturn {
     setLoading(true);
     setError(null);
     try {
-      const res = await api<KpiResponse>("GET", "/v1/traces/kpis");
+      const params = new URLSearchParams();
+      if (filters.date_from != null) params.set("date_from", filters.date_from);
+      if (filters.date_to != null) params.set("date_to", filters.date_to);
+      const qs = params.toString();
+      const url = qs ? `/v1/traces/kpis?${qs}` : "/v1/traces/kpis";
+      const res = await api<KpiResponse>("GET", url);
       setKpis(res);
     } catch {
       setError("Failed to load KPIs");
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.date_from, filters.date_to]);
 
   useEffect(() => {
     fetchKpis();

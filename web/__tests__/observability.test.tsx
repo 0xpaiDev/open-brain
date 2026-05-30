@@ -50,7 +50,7 @@ function makeTrace(overrides: Partial<TraceListItem> = {}): TraceListItem {
 }
 
 const SAMPLE_KPIS: KpiResponse = {
-  cost_today_usd: "0.012345",
+  cost_in_range_usd: "0.012345",
   sparkline_7d: [],
   cache_hit_rate_24h: null,
   failure_count_24h: 0,
@@ -230,7 +230,7 @@ describe("useKpis hook", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.kpis).not.toBeNull();
-    expect(result.current.kpis?.cost_today_usd).toBe("0.012345");
+    expect(result.current.kpis?.cost_in_range_usd).toBe("0.012345");
 
     const calledUrl: string = fetchMock.mock.calls[0][0];
     expect(calledUrl).toContain("/v1/traces/kpis");
@@ -355,6 +355,16 @@ describe("TraceList component", () => {
     // The row button should have the ring/bg selection class
     const rowBtn = screen.getByText("selected_job").closest("button")!;
     expect(rowBtn.className).toContain("ring-1");
+  });
+
+  // 11a. Date inputs render with correct aria-labels
+  test("renders From date and To date inputs", async () => {
+    const { TraceList } = await import(
+      "@/components/observability/trace-list"
+    );
+    render(<TraceList {...baseProps} items={[]} total={0} />);
+    expect(screen.getByLabelText("From date")).toBeDefined();
+    expect(screen.getByLabelText("To date")).toBeDefined();
   });
 
   // 11. Calls onTraceClick when a row is clicked

@@ -11,12 +11,13 @@ import { useTraces, useKpis, type TraceFilters } from "@/hooks/use-traces";
 type RefreshInterval = "off" | "5s" | "30s";
 
 export default function ExecutionExplorerPage() {
-  const [filters, setFilters] = useState<TraceFilters>({});
+  const today = new Date().toISOString().split("T")[0];
+  const [filters, setFilters] = useState<TraceFilters>({ date_from: today, date_to: today });
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<RefreshInterval>("off");
 
   const { refresh: refreshTraces, ...tracesState } = useTraces(filters);
-  const { refresh: refreshKpis, ...kpisState } = useKpis();
+  const { refresh: refreshKpis, ...kpisState } = useKpis(filters);
 
   const refresh = useCallback(async () => {
     await Promise.all([refreshTraces(), refreshKpis()]);

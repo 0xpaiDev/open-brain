@@ -127,7 +127,7 @@ class TestTracesKpis:
         resp = await client.get("/v1/traces/kpis", headers=auth)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["cost_today_usd"] == "0.000000"
+        assert body["cost_in_range_usd"] == "0.000000"
         assert len(body["sparkline_7d"]) == 7
         assert body["cache_hit_rate_24h"] is None
         assert body["failure_count_24h"] == 0
@@ -145,7 +145,23 @@ class TestTracesKpis:
         resp = await client.get("/v1/traces/kpis", headers=auth)
         assert resp.status_code == 200
         body = resp.json()
-        assert float(body["cost_today_usd"]) == pytest.approx(0.08, abs=1e-5)
+        assert float(body["cost_in_range_usd"]) == pytest.approx(0.08, abs=1e-5)
+
+    async def test_cost_date_range(self, client, auth, async_session):
+        now = _now()
+        five_days_ago = now - timedelta(days=5)
+        # Trace on 5-days-ago date
+        await _make_trace(async_session, total_cost_usd=0.07, started_at=five_days_ago)
+        # Trace today — should NOT be included when filtering to 5-days-ago
+        await _make_trace(async_session, total_cost_usd=0.99, started_at=now)
+
+        date_str = five_days_ago.date().isoformat()
+        resp = await client.get(
+            f"/v1/traces/kpis?date_from={date_str}&date_to={date_str}", headers=auth
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert float(body["cost_in_range_usd"]) == pytest.approx(0.07, abs=1e-5)
 
     async def test_sparkline_has_7_entries(self, client, auth, async_session):
         now = _now()

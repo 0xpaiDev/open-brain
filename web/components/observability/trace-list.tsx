@@ -161,6 +161,21 @@ export function TraceList({
           aria-label="Filter by trigger name"
         />
 
+        <input
+          type="date"
+          value={filters.date_from ?? ""}
+          onChange={(e) => onFiltersChange({ ...filters, date_from: e.target.value || null })}
+          className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1.5 text-base md:text-sm text-on-surface"
+          aria-label="From date"
+        />
+        <input
+          type="date"
+          value={filters.date_to ?? ""}
+          onChange={(e) => onFiltersChange({ ...filters, date_to: e.target.value || null })}
+          className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1.5 text-base md:text-sm text-on-surface"
+          aria-label="To date"
+        />
+
         {hasFilters && (
           <button
             type="button"
