@@ -13,6 +13,7 @@ import type {
   TraceListItem,
   KpiResponse,
   TraceDetail,
+  LLMCallRaw,
 } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -525,6 +526,69 @@ describe("TraceDetailPanel component", () => {
     );
 
     expect(screen.getByRole("button", { name: /rerun/i })).toBeDefined();
+  });
+
+  // 17. Raw tab lazily fetches /v1/llm-calls/{id} when an llm_call span is selected
+  test("Raw tab fetches /v1/llm-calls/{id} and renders payload", async () => {
+    const rawPayload: LLMCallRaw = {
+      id: "llm-1",
+      raw_request: { model: "claude-haiku-4-5", messages: [{ role: "user", content: "hi" }] },
+      raw_response: { content: "hello" },
+      request_summary: { message_count: 1 },
+      response_summary: null,
+    };
+
+    (useTraceDetail as ReturnType<typeof vi.fn>).mockReturnValue({
+      trace: SAMPLE_TRACE_DETAIL,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    });
+
+    // Mock fetch so the api() call to /v1/llm-calls/{id} returns the payload
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/v1/llm-calls/")) {
+        return jsonRes(rawPayload);
+      }
+      return jsonRes({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setApiKey("test-key");
+
+    const { TraceDetailPanel } = await import(
+      "@/components/observability/trace-detail"
+    );
+    render(
+      <TraceDetailPanel
+        traceId="trace-1"
+        onClose={vi.fn()}
+        onRerunComplete={vi.fn()}
+      />,
+    );
+
+    // Select the llm_call span
+    const llmSpanBtn = screen.getByText("distill_memories").closest("button")!;
+    fireEvent.click(llmSpanBtn);
+
+    // Click the Raw tab
+    const rawTab = screen.getByRole("button", { name: "Raw" });
+    fireEvent.click(rawTab);
+
+    // API should have been called with the correct URL
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/v1/llm-calls/llm-1"),
+        expect.anything(),
+      );
+    });
+
+    // Rendered content: "Request" and "Response" labels should appear
+    await waitFor(() => {
+      expect(screen.getByText("Request")).toBeDefined();
+      expect(screen.getByText("Response")).toBeDefined();
+    });
+
+    vi.unstubAllGlobals();
   });
 
   // 16. Replay button visible only for failed llm_call span

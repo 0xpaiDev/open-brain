@@ -576,6 +576,14 @@ export interface TraceDetail extends TraceListItem {
   events: ObsEventSpan[];
 }
 
+export interface LLMCallRaw {
+  id: string;
+  raw_request: Record<string, unknown> | null;
+  raw_response: Record<string, unknown> | null;
+  request_summary: Record<string, unknown>;
+  response_summary: Record<string, unknown> | null;
+}
+
 export interface TraceListResponse {
   items: TraceListItem[];
   total: number;

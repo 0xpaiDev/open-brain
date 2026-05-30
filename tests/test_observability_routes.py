@@ -92,6 +92,7 @@ async def _make_llm_call(
     trace_id,
     status: str = "success",
     raw_request: dict | None = None,
+    raw_response: dict | None = None,
     started_at: datetime | None = None,
     cost_usd: float = 0.001,
 ) -> LLMCall:
@@ -111,6 +112,7 @@ async def _make_llm_call(
         cost_usd=cost_usd,
         pricing_version="2026-05",
         raw_request=raw_request,
+        raw_response=raw_response,
         request_summary={"message_count": 1},
     )
     session.add(lc)
@@ -571,4 +573,39 @@ class TestReplaySpan:
 
     async def test_requires_auth(self, client):
         resp = await client.post(f"/v1/spans/llm_calls/{uuid4()}/replay")
+        assert resp.status_code == 401
+
+
+# ── GET /v1/llm-calls/{llm_call_id} ───────────────────────────────────────────
+
+
+class TestGetLLMCallRaw:
+    async def test_get_llm_call_raw_returns_payloads(self, client, auth, async_session):
+        trace = await _make_trace(async_session)
+        lc = await _make_llm_call(
+            async_session,
+            trace_id=trace.id,
+            raw_request={"model": "haiku"},
+            raw_response={"content": "hello"},
+        )
+
+        resp = await client.get(f"/v1/llm-calls/{lc.id}", headers=auth)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == str(lc.id)
+        assert body["raw_request"] == {"model": "haiku"}
+        assert body["raw_response"] == {"content": "hello"}
+        assert body["request_summary"] == {"message_count": 1}
+
+    async def test_get_llm_call_raw_404(self, client, auth):
+        resp = await client.get(
+            "/v1/llm-calls/00000000-0000-0000-0000-000000000001", headers=auth
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "LLM call not found"
+
+    async def test_get_llm_call_raw_requires_auth(self, client, async_session):
+        trace = await _make_trace(async_session)
+        lc = await _make_llm_call(async_session, trace_id=trace.id)
+        resp = await client.get(f"/v1/llm-calls/{lc.id}")
         assert resp.status_code == 401

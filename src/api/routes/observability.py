@@ -362,6 +362,28 @@ async def rerun_trace(
     return {"new_trace_id": new_trace_id}
 
 
+# ── GET /v1/llm-calls/{llm_call_id} ───────────────────────────────────────────
+
+
+@router.get("/v1/llm-calls/{llm_call_id}")
+@limiter.limit("60/minute")
+async def get_llm_call_raw(
+    request: Request,
+    llm_call_id: _uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    lc = await session.get(LLMCall, llm_call_id)
+    if lc is None:
+        raise HTTPException(status_code=404, detail="LLM call not found")
+    return {
+        "id": str(lc.id),
+        "raw_request": lc.raw_request,
+        "raw_response": lc.raw_response,
+        "request_summary": lc.request_summary,
+        "response_summary": lc.response_summary,
+    }
+
+
 # ── POST /v1/spans/{span_table}/{span_id}/replay ───────────────────────────────
 
 

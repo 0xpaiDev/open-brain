@@ -5,11 +5,13 @@ import { toast } from "sonner";
 import type {
   CronStepSpan,
   LLMCallSpan,
+  LLMCallRaw,
   ToolCallSpan,
   ObsEventSpan,
   TraceDetail,
 } from "@/lib/types";
 import { useTraceDetail, rerunTrace, replaySpan } from "@/hooks/use-trace-detail";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SpanTree } from "./span-tree";
 
@@ -120,10 +122,34 @@ function SpanDetailPanel({
   replayingSpanId,
 }: SpanDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>("summary");
+  const [rawPayload, setRawPayload] = useState<LLMCallRaw | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
+  const [rawError, setRawError] = useState<string | null>(null);
 
   useEffect(() => {
     setTab("summary");
   }, [selectedSpanId]);
+
+  const span =
+    selectedSpanId && selectedSpanType
+      ? findSpan(trace, selectedSpanId, selectedSpanType)
+      : null;
+
+  useEffect(() => {
+    if (tab !== "raw" || selectedSpanType !== "llm_call" || !span) {
+      setRawPayload(null);
+      return;
+    }
+    const spanId = (span as LLMCallSpan).id;
+    let cancelled = false;
+    setRawLoading(true);
+    setRawError(null);
+    api<LLMCallRaw>("GET", `/v1/llm-calls/${spanId}`)
+      .then((res) => { if (!cancelled) setRawPayload(res); })
+      .catch(() => { if (!cancelled) setRawError("Failed to load raw payload"); })
+      .finally(() => { if (!cancelled) setRawLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, selectedSpanType, span]);
 
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "summary", label: "Summary" },
@@ -132,11 +158,6 @@ function SpanDetailPanel({
     { id: "raw", label: "Raw" },
     { id: "children", label: "Children" },
   ];
-
-  const span =
-    selectedSpanId && selectedSpanType
-      ? findSpan(trace, selectedSpanId, selectedSpanType)
-      : null;
 
   const childCount = selectedSpanId ? countChildren(trace, selectedSpanId) : 0;
 
@@ -268,12 +289,24 @@ function SpanDetailPanel({
         )}
 
         {tab === "raw" && (
-          <div>
+          <div className="space-y-3">
             {selectedSpanType === "llm_call" ? (
-              <p className="text-xs text-on-surface-variant bg-surface-container-low rounded-lg p-3">
-                Raw payloads are not loaded in list view; available only via the
-                direct API endpoint for this span.
-              </p>
+              rawLoading ? (
+                <p className="text-xs text-on-surface-variant">Loading…</p>
+              ) : rawError ? (
+                <p className="text-xs text-error">{rawError}</p>
+              ) : rawPayload ? (
+                <>
+                  <div>
+                    <p className="text-xs text-on-surface-variant mb-1">Request</p>
+                    <JsonBlock value={rawPayload.raw_request ?? rawPayload.request_summary} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-on-surface-variant mb-1">Response</p>
+                    <JsonBlock value={rawPayload.raw_response ?? rawPayload.response_summary ?? undefined} />
+                  </div>
+                </>
+              ) : null
             ) : (
               <p className="text-xs text-on-surface-variant">
                 Raw data is only available for LLM calls.
