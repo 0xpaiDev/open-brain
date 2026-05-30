@@ -19,8 +19,8 @@ cd /opt/open-brain
 git pull
 
 # Rebuild and restart all running services
-docker compose --profile api --profile worker --profile discord build --no-cache
-docker compose --profile api --profile worker --profile discord up -d
+docker compose --profile api --profile worker --profile discord --profile scheduler build --no-cache
+docker compose --profile api --profile worker --profile discord --profile scheduler up -d
 ```
 
 ---
@@ -34,8 +34,8 @@ git pull
 docker compose --profile migrate run --rm migrate
 
 # Then rebuild and restart services
-docker compose --profile api --profile worker --profile discord build --no-cache
-docker compose --profile api --profile worker --profile discord up -d
+docker compose --profile api --profile worker --profile discord --profile scheduler build --no-cache
+docker compose --profile api --profile worker --profile discord --profile scheduler up -d
 ```
 
 **How to tell if a migration is needed**: check if there are new files in `alembic/versions/` since the last deploy.
@@ -51,6 +51,7 @@ git log --oneline alembic/versions/
 ```bash
 docker compose --profile api restart
 docker compose --profile discord restart
+docker compose --profile scheduler restart
 ```
 
 ---
