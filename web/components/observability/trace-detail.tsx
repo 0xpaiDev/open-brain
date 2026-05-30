@@ -128,6 +128,7 @@ function SpanDetailPanel({
 
   useEffect(() => {
     setTab("summary");
+    setRawPayload(null);
   }, [selectedSpanId]);
 
   const span =
@@ -136,11 +137,15 @@ function SpanDetailPanel({
       : null;
 
   useEffect(() => {
-    if (tab !== "raw" || selectedSpanType !== "llm_call" || !span) {
+    if (tab !== "raw" || selectedSpanType !== "llm_call" || !selectedSpanId) {
       setRawPayload(null);
+      setRawError(null);
+      setRawLoading(false);
       return;
     }
-    const spanId = (span as LLMCallSpan).id;
+    const spanObj = findSpan(trace, selectedSpanId, selectedSpanType) as LLMCallSpan | null;
+    if (!spanObj) return;
+    const spanId = spanObj.id;
     let cancelled = false;
     setRawLoading(true);
     setRawError(null);
@@ -149,7 +154,7 @@ function SpanDetailPanel({
       .catch(() => { if (!cancelled) setRawError("Failed to load raw payload"); })
       .finally(() => { if (!cancelled) setRawLoading(false); });
     return () => { cancelled = true; };
-  }, [tab, selectedSpanType, span]);
+  }, [tab, selectedSpanType, selectedSpanId, trace]);
 
   const tabs: { id: DetailTab; label: string }[] = [
     { id: "summary", label: "Summary" },
